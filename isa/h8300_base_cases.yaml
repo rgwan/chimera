@@ -126,6 +126,84 @@ instructions:
       execute: h8_exec_nop
     effects: [pc]
 
+  - id: h8_stc_ccr_r8
+    assembler_template: "stc ccr, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xfff0"
+      match: "0x0200"
+      fields:
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_STC_CCR_R8
+      execute: h8_exec_stc_ccr
+    effects: [pc, rd8]
+
+  - id: h8_ldc_r8_ccr
+    assembler_template: "ldc {rs8}, ccr"
+    length_bytes: 2
+    encoding:
+      mask: "0xfff0"
+      match: "0x0300"
+      fields:
+        rs8: "word[3:0]"
+    sail:
+      decode: H8_LDC_R8_CCR
+      execute: h8_exec_ldc_ccr
+    effects: [pc, ccr_hnzvc]
+
+  - id: h8_orc_imm_ccr
+    assembler_template: "orc #{imm8}, ccr"
+    length_bytes: 2
+    encoding:
+      mask: "0xff00"
+      match: "0x0400"
+      fields:
+        imm8: "word[7:0]"
+    sail:
+      decode: H8_ORC_IMM_CCR
+      execute: h8_exec_orc_ccr
+    effects: [pc, ccr_hnzvc]
+
+  - id: h8_xorc_imm_ccr
+    assembler_template: "xorc #{imm8}, ccr"
+    length_bytes: 2
+    encoding:
+      mask: "0xff00"
+      match: "0x0500"
+      fields:
+        imm8: "word[7:0]"
+    sail:
+      decode: H8_XORC_IMM_CCR
+      execute: h8_exec_xorc_ccr
+    effects: [pc, ccr_hnzvc]
+
+  - id: h8_andc_imm_ccr
+    assembler_template: "andc #{imm8}, ccr"
+    length_bytes: 2
+    encoding:
+      mask: "0xff00"
+      match: "0x0600"
+      fields:
+        imm8: "word[7:0]"
+    sail:
+      decode: H8_ANDC_IMM_CCR
+      execute: h8_exec_andc_ccr
+    effects: [pc, ccr_hnzvc]
+
+  - id: h8_ldc_imm_ccr
+    assembler_template: "ldc #{imm8}, ccr"
+    length_bytes: 2
+    encoding:
+      mask: "0xff00"
+      match: "0x0700"
+      fields:
+        imm8: "word[7:0]"
+    sail:
+      decode: H8_LDC_IMM_CCR
+      execute: h8_exec_ldc_ccr
+    effects: [pc, ccr_hnzvc]
+
   - id: h8_mov8_imm_r8
     assembler_template: "mov.b #{imm8}, {rd8}"
     length_bytes: 2
@@ -920,6 +998,141 @@ cases:
       pc: "0x0002"
       regs: {}
       ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_stc_ccr_r0l
+    instruction: h8_stc_ccr_r8
+    status: supported
+    check_area: execute
+    assembler:
+      - "stc ccr, r0l"
+    words:
+      - "0x0208"
+    decode_keys: ["0", "2"]
+    sail:
+      decode: H8_STC_CCR_R8
+      execute: h8_exec_stc_ccr
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x00"
+      ccr_hnzvc: "10101"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0xa5"
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_ldc_r0l_ccr
+    instruction: h8_ldc_r8_ccr
+    status: supported
+    check_area: flags
+    assembler:
+      - "ldc r0l, ccr"
+    words:
+      - "0x0308"
+    decode_keys: ["0", "3"]
+    sail:
+      decode: H8_LDC_R8_CCR
+      execute: h8_exec_ldc_ccr
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x2d"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "11101"
+      trap: false
+
+  - id: h8_orc_imm_ccr
+    instruction: h8_orc_imm_ccr
+    status: supported
+    check_area: flags
+    assembler:
+      - "orc #0x21, ccr"
+    words:
+      - "0x0421"
+    decode_keys: ["0", "4"]
+    sail:
+      decode: H8_ORC_IMM_CCR
+      execute: h8_exec_orc_ccr
+    initial:
+      pc: "0x0000"
+      regs: {}
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10001"
+      trap: false
+
+  - id: h8_xorc_imm_ccr
+    instruction: h8_xorc_imm_ccr
+    status: supported
+    check_area: flags
+    assembler:
+      - "xorc #0x23, ccr"
+    words:
+      - "0x0523"
+    decode_keys: ["0", "5"]
+    sail:
+      decode: H8_XORC_IMM_CCR
+      execute: h8_exec_xorc_ccr
+    initial:
+      pc: "0x0000"
+      regs: {}
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "00000"
+      trap: false
+
+  - id: h8_andc_imm_ccr
+    instruction: h8_andc_imm_ccr
+    status: supported
+    check_area: flags
+    assembler:
+      - "andc #0x2c, ccr"
+    words:
+      - "0x062c"
+    decode_keys: ["0", "6"]
+    sail:
+      decode: H8_ANDC_IMM_CCR
+      execute: h8_exec_andc_ccr
+    initial:
+      pc: "0x0000"
+      regs: {}
+      ccr_hnzvc: "11111"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "11100"
+      trap: false
+
+  - id: h8_ldc_imm_ccr
+    instruction: h8_ldc_imm_ccr
+    status: supported
+    check_area: flags
+    assembler:
+      - "ldc #0x2d, ccr"
+    words:
+      - "0x072d"
+    decode_keys: ["0", "7"]
+    sail:
+      decode: H8_LDC_IMM_CCR
+      execute: h8_exec_ldc_ccr
+    initial:
+      pc: "0x0000"
+      regs: {}
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "11101"
       trap: false
 
   - id: h8_mov8_imm_r0h

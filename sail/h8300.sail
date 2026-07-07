@@ -45,6 +45,12 @@ union H8Inst = {
   H8_JMP_R16I : h8_r16,
   H8_JMP_ABS16 : word,
   H8_JMP_ABS8I : byte,
+  H8_STC_CCR_R8 : H8R8,
+  H8_LDC_R8_CCR : H8R8,
+  H8_ORC_IMM_CCR : byte,
+  H8_XORC_IMM_CCR : byte,
+  H8_ANDC_IMM_CCR : byte,
+  H8_LDC_IMM_CCR : byte,
   H8_MOV8_IMM : (H8R8, byte),
   H8_MOV16_IMM : (h8_r16, word),
   H8_MOV8_R16I_R8 : (H8R8, h8_r16),
@@ -175,8 +181,32 @@ function read_r16(st : H8State, idx : h8_r16) -> word =
 function write_r16(st : H8State, idx : h8_r16, value : word) -> H8State =
   {st with r = vector_update(st.r, idx, value)}
 
+function h8_ccr_from_byte(value : byte) -> H8CCR =
+  struct {i = value[7], u6 = value[6], h = value[5], u4 = value[4],
+          n = value[3], z = value[2], v = value[1], c = value[0]}
+
+function h8_ccr_to_byte(ccr : H8CCR) -> byte =
+  ccr.i @ ccr.u6 @ ccr.h @ ccr.u4 @ ccr.n @ ccr.z @ ccr.v @ ccr.c
+
 function h8_exec_nop(st : H8State) -> H8State =
   {st with pc = st.pc + 0x0002}
+
+function h8_exec_stc_ccr(st : H8State, rd : H8R8) -> H8State = {
+  let st1 = write_r8(st, rd, h8_ccr_to_byte(st.ccr));
+  {st1 with pc = st.pc + 0x0002}
+}
+
+function h8_exec_ldc_ccr(st : H8State, value : byte) -> H8State =
+  {st with ccr = h8_ccr_from_byte(value), pc = st.pc + 0x0002}
+
+function h8_exec_orc_ccr(st : H8State, value : byte) -> H8State =
+  h8_exec_ldc_ccr(st, h8_ccr_to_byte(st.ccr) | value)
+
+function h8_exec_xorc_ccr(st : H8State, value : byte) -> H8State =
+  h8_exec_ldc_ccr(st, xor_vec(h8_ccr_to_byte(st.ccr), value))
+
+function h8_exec_andc_ccr(st : H8State, value : byte) -> H8State =
+  h8_exec_ldc_ccr(st, h8_ccr_to_byte(st.ccr) & value)
 
 function h8_nz_flags(width : H8Width, result : word, ccr : H8CCR) -> H8CCR = {
   match width {
@@ -641,6 +671,18 @@ function h8_decode_profile(profile : H8Profile, first : word, ext : word) -> opt
   match op0[7 .. 4] {
     0x0 => if op0 == 0x00 & op1 == 0x00 then
              Some(H8_NOP())
+           else if op0 == 0x02 & op1[7 .. 4] == 0b0000 then
+             Some(H8_STC_CCR_R8(rr8_rd))
+           else if op0 == 0x03 & op1[7 .. 4] == 0b0000 then
+             Some(H8_LDC_R8_CCR(rr8_rd))
+           else if op0 == 0x04 then
+             Some(H8_ORC_IMM_CCR(op1))
+           else if op0 == 0x05 then
+             Some(H8_XORC_IMM_CCR(op1))
+           else if op0 == 0x06 then
+             Some(H8_ANDC_IMM_CCR(op1))
+           else if op0 == 0x07 then
+             Some(H8_LDC_IMM_CCR(op1))
            else if op0 == 0x08 then
              Some(H8_ADD8_R8_R8(rr8_rd, rr8_rs))
            else if op0 == 0x09 & h8_word_rr_allowed(profile, op1) then
@@ -769,6 +811,12 @@ function h8_execute(st : H8State, inst : H8Inst) -> H8ExecResult =
     H8_JMP_R16I(rs_addr) => struct {st = h8_exec_jmp_r16_ind(st, rs_addr), trap = false},
     H8_JMP_ABS16(target) => struct {st = h8_exec_jmp_abs16(st, target), trap = false},
     H8_JMP_ABS8I(_) => struct {st = st, trap = true},
+    H8_STC_CCR_R8(rd) => struct {st = h8_exec_stc_ccr(st, rd), trap = false},
+    H8_LDC_R8_CCR(rs) => struct {st = h8_exec_ldc_ccr(st, read_r8(st, rs)), trap = false},
+    H8_ORC_IMM_CCR(value) => struct {st = h8_exec_orc_ccr(st, value), trap = false},
+    H8_XORC_IMM_CCR(value) => struct {st = h8_exec_xorc_ccr(st, value), trap = false},
+    H8_ANDC_IMM_CCR(value) => struct {st = h8_exec_andc_ccr(st, value), trap = false},
+    H8_LDC_IMM_CCR(value) => struct {st = h8_exec_ldc_ccr(st, value), trap = false},
     H8_MOV8_IMM(rd, imm) => struct {st = h8_exec_mov8_imm(st, rd, imm), trap = false},
     H8_MOV16_IMM(rd, imm) => struct {st = h8_exec_mov16_imm(st, rd, imm), trap = false},
     H8_MOV8_R16I_R8(_, _) => struct {st = st, trap = true},
@@ -910,6 +958,34 @@ function h8_test_hnzvc(h : bit, n : bit, z : bit, v : bit, c : bit) -> H8CCR =
 
 function h8_ccr_hnzvc(ccr : H8CCR) -> bits(5) =
   ccr.h @ ccr.n @ ccr.z @ ccr.v @ ccr.c
+
+function h8_ccr_control_selftest() -> bool = {
+  let r0l : H8R8 = struct {reg = 0, high = false};
+  let stc_base = {h8_reset() with ccr = h8_ccr_from_byte(0xD7)};
+  let ldc_reg_base = write_r8(h8_reset(), r0l, 0x5A);
+  let or_base = {h8_reset() with ccr = h8_ccr_from_byte(0x10)};
+  let xor_base = {h8_reset() with ccr = h8_ccr_from_byte(0x50)};
+  let and_base = {h8_reset() with ccr = h8_ccr_from_byte(0x50)};
+  let stc_res = h8_decode_execute(stc_base, 0x0208, 0x0000);
+  let ldc_reg_res = h8_decode_execute(ldc_reg_base, 0x0308, 0x0000);
+  let or_res = h8_decode_execute(or_base, 0x0440, 0x0000);
+  let xor_res = h8_decode_execute(xor_base, 0x0540, 0x0000);
+  let and_res = h8_decode_execute(and_base, 0x0640, 0x0000);
+  let ldc_imm_res = h8_decode_execute(h8_reset(), 0x07D7, 0x0000);
+  read_r8(stc_res.st, r0l) == 0xD7
+    & h8_ccr_to_byte(stc_res.st.ccr) == 0xD7
+    & h8_ccr_to_byte(ldc_reg_res.st.ccr) == 0x5A
+    & h8_ccr_to_byte(or_res.st.ccr) == 0x50
+    & h8_ccr_to_byte(xor_res.st.ccr) == 0x10
+    & h8_ccr_to_byte(and_res.st.ccr) == 0x40
+    & h8_ccr_to_byte(ldc_imm_res.st.ccr) == 0xD7
+    & not_bool(stc_res.trap)
+    & not_bool(ldc_reg_res.trap)
+    & not_bool(or_res.trap)
+    & not_bool(xor_res.trap)
+    & not_bool(and_res.trap)
+    & not_bool(ldc_imm_res.trap)
+}
 
 function h8_reg_arith_selftest() -> bool = {
   let r0h : H8R8 = struct {reg = 0, high = true};
@@ -1195,6 +1271,7 @@ function h8_memory_selftest() -> bool = {
 function h8_selftest() -> bool =
   h8_reg_arith_selftest()
     & h8_r16_state_selftest()
+    & h8_ccr_control_selftest()
     & h8_flag_selftest()
     & h8_branch_selftest()
     & h8_decode_selftest()

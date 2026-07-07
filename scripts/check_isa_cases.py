@@ -214,7 +214,7 @@ def validate_case_memory(memory: object, path: str, errors: list[str]) -> dict[s
 def validate_sail_symbols(sail: dict[str, object], path: str, sail_text: str, errors: list[str]) -> None:
     for field in ("decode", "execute"):
         symbol = sail.get(field)
-        if not isinstance(symbol, str) or symbol not in sail_text:
+        if not isinstance(symbol, str) or re.search(rf"\b{re.escape(symbol)}\b", sail_text) is None:
             fail(errors, f"{path}.{field}", "symbol not found in Sail model")
 
 

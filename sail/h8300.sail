@@ -42,6 +42,9 @@ struct H8State = {
 union H8Inst = {
   H8_NOP : unit,
   H8_BRANCH : (H8BranchCond, byte),
+  H8_JMP_R16I : h8_r16,
+  H8_JMP_ABS16 : word,
+  H8_JMP_ABS8I : byte,
   H8_MOV8_IMM : (H8R8, byte),
   H8_MOV16_IMM : (h8_r16, word),
   H8_MOV8_R16I_R8 : (H8R8, h8_r16),
@@ -466,6 +469,18 @@ function h8_exec_branch(st : H8State, cond : H8BranchCond, disp : byte) -> H8Sta
     {st with pc = next_pc}
 }
 
+function h8_exec_jmp_r16_ind(st : H8State, rs_addr : h8_r16) -> H8State =
+  {st with pc = read_r16(st, rs_addr)}
+
+function h8_exec_jmp_abs16(st : H8State, target : word) -> H8State =
+  {st with pc = target}
+
+function h8_exec_jmp_abs8_ind(m : H8Machine, addr : byte) -> H8Machine = {
+  let target : word = h8_mem_read16(m.mem, 0x00 @ addr);
+  let st1 = {m.st with pc = target};
+  {m with st = st1, trap = false}
+}
+
 function h8_branch_cond_from_code(code : bits(4)) -> H8BranchCond =
   match code {
     0x0 => H8_BRA,
@@ -534,6 +549,14 @@ function h8_decode_profile(profile : H8Profile, first : word, ext : word) -> opt
              Some(H8_BRANCH(h8_branch_cond_from_code(op0[3 .. 0]), op1))
            else
              None(),
+    0x5 => if op0 == 0x59 & op1[7] == 0b0 & op1[3 .. 0] == 0x0 then
+             Some(H8_JMP_R16I(h8_r16_from_code(op1[6 .. 4])))
+           else if op0 == 0x5A & op1 == 0x00 then
+             Some(H8_JMP_ABS16(ext))
+           else if op0 == 0x5B then
+             Some(H8_JMP_ABS8I(op1))
+           else
+             None(),
     0x6 => if op0 == 0x68 & op1[7] == 0b0 then
              Some(H8_MOV8_R16I_R8(rr8_rd, h8_r16_from_code(op1[6 .. 4])))
            else if op0 == 0x68 & op1[7] == 0b1 then
@@ -589,6 +612,9 @@ function h8_execute(st : H8State, inst : H8Inst) -> H8ExecResult =
   match inst {
     H8_NOP() => struct {st = h8_exec_nop(st), trap = false},
     H8_BRANCH(cond, disp) => struct {st = h8_exec_branch(st, cond, disp), trap = false},
+    H8_JMP_R16I(rs_addr) => struct {st = h8_exec_jmp_r16_ind(st, rs_addr), trap = false},
+    H8_JMP_ABS16(target) => struct {st = h8_exec_jmp_abs16(st, target), trap = false},
+    H8_JMP_ABS8I(_) => struct {st = st, trap = true},
     H8_MOV8_IMM(rd, imm) => struct {st = h8_exec_mov8_imm(st, rd, imm), trap = false},
     H8_MOV16_IMM(rd, imm) => struct {st = h8_exec_mov16_imm(st, rd, imm), trap = false},
     H8_MOV8_R16I_R8(_, _) => struct {st = st, trap = true},
@@ -638,6 +664,7 @@ function h8_decode_execute(st : H8State, first : word, ext : word) -> H8ExecResu
 
 function h8_execute_machine(m : H8Machine, inst : H8Inst) -> H8Machine =
   match inst {
+    H8_JMP_ABS8I(addr) => h8_exec_jmp_abs8_ind(m, addr),
     H8_MOV8_R16I_R8(rd, rs_addr) => h8_exec_mov8_mem_to_reg(m, rd, rs_addr),
     H8_MOV8_R8_R16I(rd_addr, rs) => h8_exec_mov8_reg_to_mem(m, rd_addr, rs),
     H8_MOV16_R16I_R16(rd, rs_addr) => h8_exec_mov16_mem_to_reg(m, rd, rs_addr),

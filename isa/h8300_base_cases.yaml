@@ -648,6 +648,45 @@ instructions:
       decode: H8_BRANCH
       execute: h8_exec_branch
     effects: [pc, branch]
+
+  - id: h8_jmp_r16i
+    assembler_template: "jmp @{rs16}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff8f"
+      match: "0x5900"
+      fields:
+        rs16: "word[6:4]"
+    sail:
+      decode: H8_JMP_R16I
+      execute: h8_exec_jmp_r16_ind
+    effects: [pc]
+
+  - id: h8_jmp_abs16
+    assembler_template: "jmp @{target16}:16"
+    length_bytes: 4
+    encoding:
+      mask: "0xffff"
+      match: "0x5a00"
+      fields:
+        target16: "ext[15:0]"
+    sail:
+      decode: H8_JMP_ABS16
+      execute: h8_exec_jmp_abs16
+    effects: [pc]
+
+  - id: h8_jmp_abs8i
+    assembler_template: "jmp @@{vector8}:8"
+    length_bytes: 2
+    encoding:
+      mask: "0xff00"
+      match: "0x5b00"
+      fields:
+        vector8: "word[7:0]"
+    sail:
+      decode: H8_JMP_ABS8I
+      execute: h8_exec_jmp_abs8_ind
+    effects: [pc, mem_read]
 cases:
   - id: h8_nop
     instruction: h8_nop
@@ -1250,6 +1289,87 @@ cases:
         addr: "0x0140"
         wmask: "11"
         wdata: "0x1234"
+
+  - id: h8_jmp_r1i
+    instruction: h8_jmp_r16i
+    status: supported
+    check_area: branch
+    assembler:
+      - "jmp @r1"
+    words:
+      - "0x5910"
+    decode_keys: ["5", "9"]
+    sail:
+      decode: H8_JMP_R16I
+      execute: h8_exec_jmp_r16_ind
+    initial:
+      pc: "0x0000"
+      regs:
+        r1: "0x1234"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x1234"
+      regs: {}
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_jmp_abs16_1234
+    instruction: h8_jmp_abs16
+    status: supported
+    check_area: branch
+    assembler:
+      - "jmp @0x1234:16"
+    words:
+      - "0x5a00"
+      - "0x1234"
+    decode_keys: ["5", "a", "0", "0"]
+    sail:
+      decode: H8_JMP_ABS16
+      execute: h8_exec_jmp_abs16
+    initial:
+      pc: "0x0000"
+      regs: {}
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x1234"
+      regs: {}
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_jmp_abs8i_40
+    instruction: h8_jmp_abs8i
+    status: supported
+    check_area: memory
+    assembler:
+      - "jmp @@0x40:8"
+    words:
+      - "0x5b40"
+    decode_keys: ["5", "b"]
+    sail:
+      decode: H8_JMP_ABS8I
+      execute: h8_exec_jmp_abs8_ind
+    initial:
+      pc: "0x0000"
+      regs: {}
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x1234"
+      regs: {}
+      ccr_hnzvc: preserve
+      trap: false
+    memory:
+      initial:
+        "0x0040": "0x12"
+        "0x0041": "0x34"
+      expected:
+        "0x0040": "0x12"
+        "0x0041": "0x34"
+      access:
+        kind: read
+        width: word
+        addr: "0x0040"
+        wmask: "00"
+        rdata: "0x1234"
 
   - id: h8_mov8_abs8_r0l
     instruction: h8_mov8_abs8_r8

@@ -57,6 +57,9 @@ function read_r16(st : H8State, idx : h8_r16) -> word =
 function write_r16(st : H8State, idx : h8_r16, value : word) -> H8State =
   {st with r = vector_update(st.r, idx, value)}
 
+function h8_exec_nop(st : H8State) -> H8State =
+  {st with pc = st.pc + 0x0002}
+
 function h8_nz_flags(width : H8Width, result : word, ccr : H8CCR) -> H8CCR = {
   match width {
     H8_BYTE => {
@@ -117,9 +120,21 @@ function h8_exec_mov8_imm(st : H8State, rd : H8R8, value : byte) -> H8State = {
   {st1 with ccr = h8_nz_flags(H8_BYTE, 0x00 @ value, st.ccr), pc = st.pc + 0x0002}
 }
 
+function h8_exec_mov8(st : H8State, rd : H8R8, rs : H8R8) -> H8State = {
+  let value : byte = read_r8(st, rs);
+  let st1 = write_r8(st, rd, value);
+  {st1 with ccr = h8_nz_flags(H8_BYTE, 0x00 @ value, st.ccr), pc = st.pc + 0x0002}
+}
+
 function h8_exec_mov16_imm(st : H8State, rd : h8_r16, value : word) -> H8State = {
   let st1 = write_r16(st, rd, value);
   {st1 with ccr = h8_nz_flags(H8_WORD, value, st.ccr), pc = st.pc + 0x0004}
+}
+
+function h8_exec_mov16(st : H8State, rd : h8_r16, rs : h8_r16) -> H8State = {
+  let value : word = read_r16(st, rs);
+  let st1 = write_r16(st, rd, value);
+  {st1 with ccr = h8_nz_flags(H8_WORD, value, st.ccr), pc = st.pc + 0x0002}
 }
 
 function h8_exec_add8(st : H8State, rd : H8R8, value : byte) -> H8State = {
@@ -129,10 +144,61 @@ function h8_exec_add8(st : H8State, rd : H8R8, value : byte) -> H8State = {
   {st1 with ccr = h8_add_flags(H8_BYTE, 0x00 @ lhs, 0x00 @ value, 0x00 @ result, st.ccr), pc = st.pc + 0x0002}
 }
 
+function h8_exec_add16(st : H8State, rd : h8_r16, value : word) -> H8State = {
+  let lhs : word = read_r16(st, rd);
+  let result : word = lhs + value;
+  let st1 = write_r16(st, rd, result);
+  {st1 with ccr = h8_add_flags(H8_WORD, lhs, value, result, st.ccr), pc = st.pc + 0x0002}
+}
+
+function h8_exec_sub8(st : H8State, rd : H8R8, value : byte) -> H8State = {
+  let lhs : byte = read_r8(st, rd);
+  let result : byte = lhs - value;
+  let st1 = write_r8(st, rd, result);
+  {st1 with ccr = h8_sub_flags(H8_BYTE, 0x00 @ lhs, 0x00 @ value, 0x00 @ result, st.ccr), pc = st.pc + 0x0002}
+}
+
+function h8_exec_sub16(st : H8State, rd : h8_r16, value : word) -> H8State = {
+  let lhs : word = read_r16(st, rd);
+  let result : word = lhs - value;
+  let st1 = write_r16(st, rd, result);
+  {st1 with ccr = h8_sub_flags(H8_WORD, lhs, value, result, st.ccr), pc = st.pc + 0x0002}
+}
+
 function h8_exec_cmp8(st : H8State, rd : H8R8, value : byte) -> H8State = {
   let lhs : byte = read_r8(st, rd);
   let result : byte = lhs - value;
   {st with ccr = h8_sub_flags(H8_BYTE, 0x00 @ lhs, 0x00 @ value, 0x00 @ result, st.ccr), pc = st.pc + 0x0002}
+}
+
+function h8_exec_cmp16(st : H8State, rd : h8_r16, value : word) -> H8State = {
+  let lhs : word = read_r16(st, rd);
+  let result : word = lhs - value;
+  {st with ccr = h8_sub_flags(H8_WORD, lhs, value, result, st.ccr), pc = st.pc + 0x0002}
+}
+
+function h8_exec_and8(st : H8State, rd : H8R8, value : byte) -> H8State = {
+  let result : byte = read_r8(st, rd) & value;
+  let st1 = write_r8(st, rd, result);
+  {st1 with ccr = h8_logic_flags(H8_BYTE, 0x00 @ result, st.ccr), pc = st.pc + 0x0002}
+}
+
+function h8_exec_or8(st : H8State, rd : H8R8, value : byte) -> H8State = {
+  let result : byte = read_r8(st, rd) | value;
+  let st1 = write_r8(st, rd, result);
+  {st1 with ccr = h8_logic_flags(H8_BYTE, 0x00 @ result, st.ccr), pc = st.pc + 0x0002}
+}
+
+function h8_exec_xor8(st : H8State, rd : H8R8, value : byte) -> H8State = {
+  let result : byte = xor_vec(read_r8(st, rd), value);
+  let st1 = write_r8(st, rd, result);
+  {st1 with ccr = h8_logic_flags(H8_BYTE, 0x00 @ result, st.ccr), pc = st.pc + 0x0002}
+}
+
+function h8_exec_not8(st : H8State, rd : H8R8) -> H8State = {
+  let result : byte = not_vec(read_r8(st, rd));
+  let st1 = write_r8(st, rd, result);
+  {st1 with ccr = h8_logic_flags(H8_BYTE, 0x00 @ result, st.ccr), pc = st.pc + 0x0002}
 }
 
 function h8_branch_taken(cond : H8BranchCond, ccr : H8CCR) -> bool = {
@@ -171,19 +237,63 @@ function h8_reset() -> H8State =
   struct {pc = 0x0000, r = [0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000],
           ccr = struct {i = 0b1, u6 = 0b0, h = 0b0, u4 = 0b0, n = 0b0, z = 0b0, v = 0b0, c = 0b0}}
 
-function h8_selftest() -> bool = {
+function h8_test_ccr(n : bit, z : bit, v : bit, c : bit) -> H8CCR =
+  struct {i = 0b1, u6 = 0b0, h = 0b0, u4 = 0b0, n = n, z = z, v = v, c = c}
+
+function h8_reg_arith_selftest() -> bool = {
   let r0h : H8R8 = struct {reg = 0, high = true};
   let r0l : H8R8 = struct {reg = 0, high = false};
+  let r1l : H8R8 = struct {reg = 1, high = false};
   let st0 = h8_reset();
-  let st1 = h8_exec_mov8_imm(st0, r0h, 0x12);
+  let st_nop = h8_exec_nop(st0);
+  let st1 = h8_exec_mov8_imm(st_nop, r0h, 0x12);
   let st2 = h8_exec_mov8_imm(st1, r0l, 0x34);
-  let st3 = h8_exec_add8(st2, r0l, 0xCC);
-  let st4 = h8_exec_cmp8(st3, r0l, 0x00);
-  let st5 = h8_exec_branch(st4, H8_BEQ, 0xFE);
-  read_r16(st2, 0) == 0x1234
-    & read_r8(st3, r0l) == 0x00
-    & st3.ccr.z == 0b1
-    & st3.ccr.c == 0b1
-    & st4.ccr.z == 0b1
-    & st5.pc == st4.pc
+  let st3 = h8_exec_mov8(st2, r1l, r0l);
+  let st4 = h8_exec_add8(st3, r0l, 0xCC);
+  let st5 = h8_exec_cmp8(st4, r0l, 0x00);
+  let st6 = h8_exec_mov16_imm(st5, 2, 0x7FFF);
+  let st7 = h8_exec_add16(st6, 2, 0x0001);
+  let st8 = h8_exec_sub16(st7, 2, 0x0001);
+  let st9 = h8_exec_cmp16(st8, 2, 0x7FFF);
+  let st10 = h8_exec_mov16(st9, 3, 2);
+  let st11 = h8_exec_sub8(st10, r1l, 0x35);
+  let st12 = h8_exec_and8(st11, r1l, 0x0F);
+  let st13 = h8_exec_or8(st12, r1l, 0x80);
+  let st14 = h8_exec_xor8(st13, r1l, 0xFF);
+  let st15 = h8_exec_not8(st14, r1l);
+  let st16 = h8_exec_branch(st15, H8_BNE, 0xFE);
+  let ok_alias = read_r16(st2, 0) == 0x1234 & read_r8(st3, r1l) == 0x34;
+  let ok_add8 = read_r8(st4, r0l) == 0x00 & st4.ccr.z == 0b1 & st4.ccr.c == 0b1;
+  let ok_cmp8 = st5.ccr.z == 0b1;
+  let ok_add16 = read_r16(st7, 2) == 0x8000 & st7.ccr.n == 0b1 & st7.ccr.v == 0b1 & st7.ccr.c == 0b0;
+  let ok_sub16 = read_r16(st8, 2) == 0x7FFF & st8.ccr.h == 0b1 & st8.ccr.v == 0b1;
+  let ok_cmp16 = read_r16(st9, 2) == 0x7FFF & st9.ccr.z == 0b1;
+  let ok_mov16 = read_r16(st10, 3) == 0x7FFF;
+  let ok_sub8 = read_r8(st11, r1l) == 0xFF & st11.ccr.n == 0b1 & st11.ccr.c == 0b1;
+  let ok_logic = read_r8(st15, r1l) == 0x8F & st15.ccr.n == 0b1 & st15.ccr.v == 0b0;
+  ok_alias & ok_add8 & ok_cmp8 & ok_add16 & ok_sub16 & ok_cmp16 & ok_mov16 & ok_sub8 & ok_logic & st16.pc == st15.pc
 }
+
+function h8_branch_selftest() -> bool = {
+  let c0 = h8_test_ccr(0b0, 0b0, 0b0, 0b0);
+  let c1 = h8_test_ccr(0b1, 0b1, 0b1, 0b1);
+  h8_branch_taken(H8_BRA, c0)
+    & not_bool(h8_branch_taken(H8_BRN, c1))
+    & h8_branch_taken(H8_BHI, c0)
+    & h8_branch_taken(H8_BLS, c1)
+    & h8_branch_taken(H8_BCC, c0)
+    & h8_branch_taken(H8_BCS, c1)
+    & h8_branch_taken(H8_BNE, c0)
+    & h8_branch_taken(H8_BEQ, c1)
+    & h8_branch_taken(H8_BVC, c0)
+    & h8_branch_taken(H8_BVS, c1)
+    & h8_branch_taken(H8_BPL, c0)
+    & h8_branch_taken(H8_BMI, c1)
+    & h8_branch_taken(H8_BGE, c0)
+    & h8_branch_taken(H8_BLT, h8_test_ccr(0b1, 0b0, 0b0, 0b0))
+    & h8_branch_taken(H8_BGT, c0)
+    & h8_branch_taken(H8_BLE, c1)
+}
+
+function h8_selftest() -> bool =
+  h8_reg_arith_selftest() & h8_branch_selftest()

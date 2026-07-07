@@ -89,9 +89,14 @@ EOF
 
         sailModelCheck = pkgs.runCommand "chimera-sail-model" {
           nativeBuildInputs = [
+            pkgs.gcc
             pkgs.ocamlPackages.sail
             pythonEnv
             pkgs.z3
+          ];
+          buildInputs = [
+            pkgs.gmp
+            pkgs.zlib
           ];
         } ''
           cp -R ${self} src

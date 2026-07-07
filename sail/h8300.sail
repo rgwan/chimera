@@ -46,7 +46,14 @@ union H8Inst = {
   H8_CMP8_IMM : (H8R8, byte),
   H8_OR8_IMM : (H8R8, byte),
   H8_XOR8_IMM : (H8R8, byte),
-  H8_AND8_IMM : (H8R8, byte)
+  H8_AND8_IMM : (H8R8, byte),
+  H8_ADD8_R8_R8 : (H8R8, H8R8),
+  H8_MOV8_R8_R8 : (H8R8, H8R8),
+  H8_OR8_R8_R8 : (H8R8, H8R8),
+  H8_XOR8_R8_R8 : (H8R8, H8R8),
+  H8_AND8_R8_R8 : (H8R8, H8R8),
+  H8_SUB8_R8_R8 : (H8R8, H8R8),
+  H8_CMP8_R8_R8 : (H8R8, H8R8)
 }
 
 struct H8ExecResult = {
@@ -307,8 +314,29 @@ function h8_branch_cond_from_code(code : bits(4)) -> H8BranchCond =
 function h8_decode(first : word, ext : word) -> option(H8Inst) = {
   let op0 : byte = first[15 .. 8];
   let op1 : byte = first[7 .. 0];
+  let rr8_rs = h8_r8_from_code(op1[7 .. 4]);
+  let rr8_rd = h8_r8_from_code(op1[3 .. 0]);
   match op0[7 .. 4] {
-    0x0 => if op0 == 0x00 & op1 == 0x00 then Some(H8_NOP()) else None(),
+    0x0 => if op0 == 0x00 & op1 == 0x00 then
+             Some(H8_NOP())
+           else if op0 == 0x08 then
+             Some(H8_ADD8_R8_R8(rr8_rd, rr8_rs))
+           else if op0 == 0x0C then
+             Some(H8_MOV8_R8_R8(rr8_rd, rr8_rs))
+           else
+             None(),
+    0x1 => if op0 == 0x14 then
+             Some(H8_OR8_R8_R8(rr8_rd, rr8_rs))
+           else if op0 == 0x15 then
+             Some(H8_XOR8_R8_R8(rr8_rd, rr8_rs))
+           else if op0 == 0x16 then
+             Some(H8_AND8_R8_R8(rr8_rd, rr8_rs))
+           else if op0 == 0x18 then
+             Some(H8_SUB8_R8_R8(rr8_rd, rr8_rs))
+           else if op0 == 0x1C then
+             Some(H8_CMP8_R8_R8(rr8_rd, rr8_rs))
+           else
+             None(),
     0x4 => if op1[0] == 0b0 then
              Some(H8_BRANCH(h8_branch_cond_from_code(op0[3 .. 0]), op1))
            else
@@ -337,7 +365,14 @@ function h8_execute(st : H8State, inst : H8Inst) -> H8ExecResult =
     H8_CMP8_IMM(rd, imm) => struct {st = h8_exec_cmp8(st, rd, imm), trap = false},
     H8_OR8_IMM(rd, imm) => struct {st = h8_exec_or8(st, rd, imm), trap = false},
     H8_XOR8_IMM(rd, imm) => struct {st = h8_exec_xor8(st, rd, imm), trap = false},
-    H8_AND8_IMM(rd, imm) => struct {st = h8_exec_and8(st, rd, imm), trap = false}
+    H8_AND8_IMM(rd, imm) => struct {st = h8_exec_and8(st, rd, imm), trap = false},
+    H8_ADD8_R8_R8(rd, rs) => struct {st = h8_exec_add8(st, rd, read_r8(st, rs)), trap = false},
+    H8_MOV8_R8_R8(rd, rs) => struct {st = h8_exec_mov8(st, rd, rs), trap = false},
+    H8_OR8_R8_R8(rd, rs) => struct {st = h8_exec_or8(st, rd, read_r8(st, rs)), trap = false},
+    H8_XOR8_R8_R8(rd, rs) => struct {st = h8_exec_xor8(st, rd, read_r8(st, rs)), trap = false},
+    H8_AND8_R8_R8(rd, rs) => struct {st = h8_exec_and8(st, rd, read_r8(st, rs)), trap = false},
+    H8_SUB8_R8_R8(rd, rs) => struct {st = h8_exec_sub8(st, rd, read_r8(st, rs)), trap = false},
+    H8_CMP8_R8_R8(rd, rs) => struct {st = h8_exec_cmp8(st, rd, read_r8(st, rs)), trap = false}
   }
 
 function h8_decode_execute(st : H8State, first : word, ext : word) -> H8ExecResult =
@@ -534,6 +569,46 @@ function h8_logic_imm_decode_selftest() -> bool = {
     & not_bool(and_res.trap)
 }
 
+function h8_r8_r8_decode_selftest() -> bool = {
+  let r0l : H8R8 = struct {reg = 0, high = false};
+  let r1h : H8R8 = struct {reg = 1, high = true};
+  let ccr0 = h8_test_hnzvc(0b1, 0b0, 0b0, 0b1, 0b1);
+  let add_base = write_r8(write_r8(h8_reset(), r0l, 0x7F), r1h, 0x01);
+  let mov_base = write_r8(write_r8({h8_reset() with ccr = ccr0}, r0l, 0x00), r1h, 0x80);
+  let or_base = write_r8(write_r8({h8_reset() with ccr = ccr0}, r0l, 0x01), r1h, 0x80);
+  let xor_base = write_r8(write_r8({h8_reset() with ccr = ccr0}, r0l, 0x80), r1h, 0x80);
+  let and_base = write_r8(write_r8({h8_reset() with ccr = ccr0}, r0l, 0xF0), r1h, 0x0F);
+  let sub_base = write_r8(write_r8(h8_reset(), r0l, 0x00), r1h, 0x01);
+  let add_res = h8_decode_execute(add_base, 0x0818, 0x0000);
+  let mov_res = h8_decode_execute(mov_base, 0x0C18, 0x0000);
+  let or_res = h8_decode_execute(or_base, 0x1418, 0x0000);
+  let xor_res = h8_decode_execute(xor_base, 0x1518, 0x0000);
+  let and_res = h8_decode_execute(and_base, 0x1618, 0x0000);
+  let sub_res = h8_decode_execute(sub_base, 0x1818, 0x0000);
+  let cmp_res = h8_decode_execute(sub_base, 0x1C18, 0x0000);
+  read_r8(add_res.st, r0l) == 0x80
+    & h8_ccr_hnzvc(add_res.st.ccr) == 0b11010
+    & read_r8(mov_res.st, r0l) == 0x80
+    & h8_ccr_hnzvc(mov_res.st.ccr) == 0b11001
+    & read_r8(or_res.st, r0l) == 0x81
+    & h8_ccr_hnzvc(or_res.st.ccr) == 0b11001
+    & read_r8(xor_res.st, r0l) == 0x00
+    & h8_ccr_hnzvc(xor_res.st.ccr) == 0b10101
+    & read_r8(and_res.st, r0l) == 0x00
+    & h8_ccr_hnzvc(and_res.st.ccr) == 0b10101
+    & read_r8(sub_res.st, r0l) == 0xFF
+    & h8_ccr_hnzvc(sub_res.st.ccr) == 0b11001
+    & read_r8(cmp_res.st, r0l) == 0x00
+    & h8_ccr_hnzvc(cmp_res.st.ccr) == 0b11001
+    & not_bool(add_res.trap)
+    & not_bool(mov_res.trap)
+    & not_bool(or_res.trap)
+    & not_bool(xor_res.trap)
+    & not_bool(and_res.trap)
+    & not_bool(sub_res.trap)
+    & not_bool(cmp_res.trap)
+}
+
 function h8_memory_selftest() -> bool = {
   let r0h : H8R8 = struct {reg = 0, high = true};
   let mem0 = h8_empty_mem();
@@ -571,4 +646,5 @@ function h8_selftest() -> bool =
     & h8_branch_selftest()
     & h8_decode_selftest()
     & h8_logic_imm_decode_selftest()
+    & h8_r8_r8_decode_selftest()
     & h8_memory_selftest()

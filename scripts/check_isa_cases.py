@@ -161,7 +161,14 @@ def validate_case(
         if not isinstance(key, str) or NIBBLE_RE.fullmatch(key) is None:
             fail(errors, f"{path}.decode_keys[{key_index}]", "decode key must be one nibble")
 
-    validate_sail_symbols(expect_dict(errors, item.get("sail"), f"{path}.sail"), f"{path}.sail", sail_text, errors)
+    case_sail = expect_dict(errors, item.get("sail"), f"{path}.sail")
+    validate_sail_symbols(case_sail, f"{path}.sail", sail_text, errors)
+    if isinstance(instruction_id, str) and instruction_id in instructions:
+        instruction_sail = instructions[instruction_id].get("sail")
+        if isinstance(instruction_sail, dict):
+            for field in ("decode", "execute"):
+                if case_sail.get(field) != instruction_sail.get(field):
+                    fail(errors, f"{path}.sail.{field}", "does not match instruction mapping")
 
     initial = expect_dict(errors, item.get("initial"), f"{path}.initial")
     expected = expect_dict(errors, item.get("expected"), f"{path}.expected")

@@ -20,6 +20,7 @@ audits:
     - fetch storage width is a multiple of 9
   psychology:
     - each case has one canonical id
+    - case names match instruction Sail names
     - assembler spelling is not the case owner
     - failures map to one check area
 instructions:
@@ -91,6 +92,34 @@ instructions:
       execute: h8_exec_cmp8
     effects: [pc, ccr_hnzvc]
 
+  - id: h8_add8_r8_r8
+    assembler_template: "add.b {rs8}, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff00"
+      match: "0x0800"
+      fields:
+        rs8: "word[7:4]"
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_ADD8_R8_R8
+      execute: h8_exec_add8
+    effects: [pc, rd8, ccr_hnzvc]
+
+  - id: h8_mov8_r8_r8
+    assembler_template: "mov.b {rs8}, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff00"
+      match: "0x0c00"
+      fields:
+        rs8: "word[7:4]"
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_MOV8_R8_R8
+      execute: h8_exec_mov8
+    effects: [pc, rd8, ccr_nzv]
+
   - id: h8_or8_imm_r8
     assembler_template: "or.b #{imm8}, {rd8}"
     length_bytes: 2
@@ -102,6 +131,20 @@ instructions:
         imm8: "word[7:0]"
     sail:
       decode: H8_OR8_IMM
+      execute: h8_exec_or8
+    effects: [pc, rd8, ccr_nzv]
+
+  - id: h8_or8_r8_r8
+    assembler_template: "or.b {rs8}, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff00"
+      match: "0x1400"
+      fields:
+        rs8: "word[7:4]"
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_OR8_R8_R8
       execute: h8_exec_or8
     effects: [pc, rd8, ccr_nzv]
 
@@ -119,6 +162,20 @@ instructions:
       execute: h8_exec_xor8
     effects: [pc, rd8, ccr_nzv]
 
+  - id: h8_xor8_r8_r8
+    assembler_template: "xor.b {rs8}, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff00"
+      match: "0x1500"
+      fields:
+        rs8: "word[7:4]"
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_XOR8_R8_R8
+      execute: h8_exec_xor8
+    effects: [pc, rd8, ccr_nzv]
+
   - id: h8_and8_imm_r8
     assembler_template: "and.b #{imm8}, {rd8}"
     length_bytes: 2
@@ -132,6 +189,48 @@ instructions:
       decode: H8_AND8_IMM
       execute: h8_exec_and8
     effects: [pc, rd8, ccr_nzv]
+
+  - id: h8_and8_r8_r8
+    assembler_template: "and.b {rs8}, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff00"
+      match: "0x1600"
+      fields:
+        rs8: "word[7:4]"
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_AND8_R8_R8
+      execute: h8_exec_and8
+    effects: [pc, rd8, ccr_nzv]
+
+  - id: h8_sub8_r8_r8
+    assembler_template: "sub.b {rs8}, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff00"
+      match: "0x1800"
+      fields:
+        rs8: "word[7:4]"
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_SUB8_R8_R8
+      execute: h8_exec_sub8
+    effects: [pc, rd8, ccr_hnzvc]
+
+  - id: h8_cmp8_r8_r8
+    assembler_template: "cmp.b {rs8}, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff00"
+      match: "0x1c00"
+      fields:
+        rs8: "word[7:4]"
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_CMP8_R8_R8
+      execute: h8_exec_cmp8
+    effects: [pc, ccr_hnzvc]
 
   - id: h8_bne_rel8
     assembler_template: bne {rel8}
@@ -263,6 +362,56 @@ cases:
       ccr_hnzvc: "00100"
       trap: false
 
+  - id: h8_add8_r1h_r0l
+    instruction: h8_add8_r8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "add.b r1h, r0l"
+    words:
+      - "0x0818"
+    decode_keys: ["0", "8"]
+    sail:
+      decode: H8_ADD8_R8_R8
+      execute: h8_exec_add8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x7f"
+        r1h: "0x01"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0x80"
+      ccr_hnzvc: "11010"
+      trap: false
+
+  - id: h8_mov8_r1h_r0l
+    instruction: h8_mov8_r8_r8
+    status: supported
+    check_area: execute
+    assembler:
+      - "mov.b r1h, r0l"
+    words:
+      - "0x0c18"
+    decode_keys: ["0", "c"]
+    sail:
+      decode: H8_MOV8_R8_R8
+      execute: h8_exec_mov8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x00"
+        r1h: "0x80"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0x80"
+      ccr_hnzvc: "11001"
+      trap: false
+
   - id: h8_mov16_imm_r2
     instruction: h8_mov16_imm_r16
     status: supported
@@ -357,6 +506,131 @@ cases:
       regs:
         r1l: "0x00"
       ccr_hnzvc: "10101"
+      trap: false
+
+  - id: h8_or8_r1h_r0l
+    instruction: h8_or8_r8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "or.b r1h, r0l"
+    words:
+      - "0x1418"
+    decode_keys: ["1", "4"]
+    sail:
+      decode: H8_OR8_R8_R8
+      execute: h8_exec_or8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x01"
+        r1h: "0x80"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0x81"
+      ccr_hnzvc: "11001"
+      trap: false
+
+  - id: h8_xor8_r1h_r0l
+    instruction: h8_xor8_r8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "xor.b r1h, r0l"
+    words:
+      - "0x1518"
+    decode_keys: ["1", "5"]
+    sail:
+      decode: H8_XOR8_R8_R8
+      execute: h8_exec_xor8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x80"
+        r1h: "0x80"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0x00"
+      ccr_hnzvc: "10101"
+      trap: false
+
+  - id: h8_and8_r1h_r0l
+    instruction: h8_and8_r8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "and.b r1h, r0l"
+    words:
+      - "0x1618"
+    decode_keys: ["1", "6"]
+    sail:
+      decode: H8_AND8_R8_R8
+      execute: h8_exec_and8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0xf0"
+        r1h: "0x0f"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0x00"
+      ccr_hnzvc: "10101"
+      trap: false
+
+  - id: h8_sub8_r1h_r0l
+    instruction: h8_sub8_r8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "sub.b r1h, r0l"
+    words:
+      - "0x1818"
+    decode_keys: ["1", "8"]
+    sail:
+      decode: H8_SUB8_R8_R8
+      execute: h8_exec_sub8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x00"
+        r1h: "0x01"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0xff"
+      ccr_hnzvc: "11001"
+      trap: false
+
+  - id: h8_cmp8_r1h_r0l
+    instruction: h8_cmp8_r8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "cmp.b r1h, r0l"
+    words:
+      - "0x1c18"
+    decode_keys: ["1", "c"]
+    sail:
+      decode: H8_CMP8_R8_R8
+      execute: h8_exec_cmp8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x00"
+        r1h: "0x01"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0x00"
+      ccr_hnzvc: "11001"
       trap: false
 
   - id: h8_bne_rel8_taken

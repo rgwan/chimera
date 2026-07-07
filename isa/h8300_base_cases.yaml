@@ -106,6 +106,20 @@ instructions:
       execute: h8_exec_add8
     effects: [pc, rd8, ccr_hnzvc]
 
+  - id: h8_add16_r16_r16
+    assembler_template: "add.w {rs16}, {rd16}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff88"
+      match: "0x0900"
+      fields:
+        rs16: "word[6:4]"
+        rd16: "word[2:0]"
+    sail:
+      decode: H8_ADD16_R16_R16
+      execute: h8_exec_add16
+    effects: [pc, rd16, ccr_hnzvc]
+
   - id: h8_mov8_r8_r8
     assembler_template: "mov.b {rs8}, {rd8}"
     length_bytes: 2
@@ -119,6 +133,20 @@ instructions:
       decode: H8_MOV8_R8_R8
       execute: h8_exec_mov8
     effects: [pc, rd8, ccr_nzv]
+
+  - id: h8_mov16_r16_r16
+    assembler_template: "mov.w {rs16}, {rd16}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff88"
+      match: "0x0d00"
+      fields:
+        rs16: "word[6:4]"
+        rd16: "word[2:0]"
+    sail:
+      decode: H8_MOV16_R16_R16
+      execute: h8_exec_mov16
+    effects: [pc, rd16, ccr_nzv]
 
   - id: h8_or8_imm_r8
     assembler_template: "or.b #{imm8}, {rd8}"
@@ -218,6 +246,20 @@ instructions:
       execute: h8_exec_sub8
     effects: [pc, rd8, ccr_hnzvc]
 
+  - id: h8_sub16_r16_r16
+    assembler_template: "sub.w {rs16}, {rd16}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff88"
+      match: "0x1900"
+      fields:
+        rs16: "word[6:4]"
+        rd16: "word[2:0]"
+    sail:
+      decode: H8_SUB16_R16_R16
+      execute: h8_exec_sub16
+    effects: [pc, rd16, ccr_hnzvc]
+
   - id: h8_cmp8_r8_r8
     assembler_template: "cmp.b {rs8}, {rd8}"
     length_bytes: 2
@@ -230,6 +272,20 @@ instructions:
     sail:
       decode: H8_CMP8_R8_R8
       execute: h8_exec_cmp8
+    effects: [pc, ccr_hnzvc]
+
+  - id: h8_cmp16_r16_r16
+    assembler_template: "cmp.w {rs16}, {rd16}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff88"
+      match: "0x1d00"
+      fields:
+        rs16: "word[6:4]"
+        rd16: "word[2:0]"
+    sail:
+      decode: H8_CMP16_R16_R16
+      execute: h8_exec_cmp16
     effects: [pc, ccr_hnzvc]
 
   - id: h8_bne_rel8
@@ -409,6 +465,56 @@ cases:
       pc: "0x0002"
       regs:
         r0l: "0x80"
+      ccr_hnzvc: "11001"
+      trap: false
+
+  - id: h8_add16_r1_r0
+    instruction: h8_add16_r16_r16
+    status: supported
+    check_area: flags
+    assembler:
+      - "add.w r1, r0"
+    words:
+      - "0x0910"
+    decode_keys: ["0", "9"]
+    sail:
+      decode: H8_ADD16_R16_R16
+      execute: h8_exec_add16
+    initial:
+      pc: "0x0000"
+      regs:
+        r0: "0x7fff"
+        r1: "0x0001"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0: "0x8000"
+      ccr_hnzvc: "11010"
+      trap: false
+
+  - id: h8_mov16_r2_r3
+    instruction: h8_mov16_r16_r16
+    status: supported
+    check_area: execute
+    assembler:
+      - "mov.w r2, r3"
+    words:
+      - "0x0d23"
+    decode_keys: ["0", "d"]
+    sail:
+      decode: H8_MOV16_R16_R16
+      execute: h8_exec_mov16
+    initial:
+      pc: "0x0000"
+      regs:
+        r2: "0x8000"
+        r3: "0x0000"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r3: "0x8000"
       ccr_hnzvc: "11001"
       trap: false
 
@@ -630,6 +736,56 @@ cases:
       pc: "0x0002"
       regs:
         r0l: "0x00"
+      ccr_hnzvc: "11001"
+      trap: false
+
+  - id: h8_sub16_r1_r0
+    instruction: h8_sub16_r16_r16
+    status: supported
+    check_area: flags
+    assembler:
+      - "sub.w r1, r0"
+    words:
+      - "0x1910"
+    decode_keys: ["1", "9"]
+    sail:
+      decode: H8_SUB16_R16_R16
+      execute: h8_exec_sub16
+    initial:
+      pc: "0x0000"
+      regs:
+        r0: "0x0000"
+        r1: "0x0001"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0: "0xffff"
+      ccr_hnzvc: "11001"
+      trap: false
+
+  - id: h8_cmp16_r1_r0
+    instruction: h8_cmp16_r16_r16
+    status: supported
+    check_area: flags
+    assembler:
+      - "cmp.w r1, r0"
+    words:
+      - "0x1d10"
+    decode_keys: ["1", "d"]
+    sail:
+      decode: H8_CMP16_R16_R16
+      execute: h8_exec_cmp16
+    initial:
+      pc: "0x0000"
+      regs:
+        r0: "0x0000"
+        r1: "0x0001"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0: "0x0000"
       ccr_hnzvc: "11001"
       trap: false
 

@@ -15,6 +15,7 @@ enum H8BranchCond = {
   H8_BVC, H8_BVS, H8_BPL, H8_BMI,
   H8_BGE, H8_BLT, H8_BGT, H8_BLE
 }
+enum H8Profile = {H8_BASE, H8_EXTENDED}
 
 struct H8CCR = {
   i : bit,
@@ -54,7 +55,11 @@ union H8Inst = {
   H8_XOR8_R8_R8 : (H8R8, H8R8),
   H8_AND8_R8_R8 : (H8R8, H8R8),
   H8_SUB8_R8_R8 : (H8R8, H8R8),
-  H8_CMP8_R8_R8 : (H8R8, H8R8)
+  H8_CMP8_R8_R8 : (H8R8, H8R8),
+  H8_ADD16_R16_R16 : (h8_r16, h8_r16),
+  H8_MOV16_R16_R16 : (h8_r16, h8_r16),
+  H8_SUB16_R16_R16 : (h8_r16, h8_r16),
+  H8_CMP16_R16_R16 : (h8_r16, h8_r16)
 }
 
 struct H8ExecResult = {
@@ -315,18 +320,30 @@ function h8_branch_cond_from_code(code : bits(4)) -> H8BranchCond =
     0xF => H8_BLE
   }
 
-function h8_decode(first : word, ext : word) -> option(H8Inst) = {
+function h8_word_rr_allowed(profile : H8Profile, op1 : byte) -> bool =
+  match profile {
+    H8_BASE => op1[7] == 0b0 & op1[3] == 0b0,
+    H8_EXTENDED => true
+  }
+
+function h8_decode_profile(profile : H8Profile, first : word, ext : word) -> option(H8Inst) = {
   let op0 : byte = first[15 .. 8];
   let op1 : byte = first[7 .. 0];
   let rr8_rs = h8_r8_from_code(op1[7 .. 4]);
   let rr8_rd = h8_r8_from_code(op1[3 .. 0]);
+  let rr16_rs = h8_r16_from_nibble(op1[7 .. 4]);
+  let rr16_rd = h8_r16_from_nibble(op1[3 .. 0]);
   match op0[7 .. 4] {
     0x0 => if op0 == 0x00 & op1 == 0x00 then
              Some(H8_NOP())
            else if op0 == 0x08 then
              Some(H8_ADD8_R8_R8(rr8_rd, rr8_rs))
+           else if op0 == 0x09 & h8_word_rr_allowed(profile, op1) then
+             Some(H8_ADD16_R16_R16(rr16_rd, rr16_rs))
            else if op0 == 0x0C then
              Some(H8_MOV8_R8_R8(rr8_rd, rr8_rs))
+           else if op0 == 0x0D & h8_word_rr_allowed(profile, op1) then
+             Some(H8_MOV16_R16_R16(rr16_rd, rr16_rs))
            else
              None(),
     0x1 => if op0 == 0x14 then
@@ -337,8 +354,12 @@ function h8_decode(first : word, ext : word) -> option(H8Inst) = {
              Some(H8_AND8_R8_R8(rr8_rd, rr8_rs))
            else if op0 == 0x18 then
              Some(H8_SUB8_R8_R8(rr8_rd, rr8_rs))
+           else if op0 == 0x19 & h8_word_rr_allowed(profile, op1) then
+             Some(H8_SUB16_R16_R16(rr16_rd, rr16_rs))
            else if op0 == 0x1C then
              Some(H8_CMP8_R8_R8(rr8_rd, rr8_rs))
+           else if op0 == 0x1D & h8_word_rr_allowed(profile, op1) then
+             Some(H8_CMP16_R16_R16(rr16_rd, rr16_rs))
            else
              None(),
     0x4 => if op1[0] == 0b0 then
@@ -359,6 +380,9 @@ function h8_decode(first : word, ext : word) -> option(H8Inst) = {
   }
 }
 
+function h8_decode(first : word, ext : word) -> option(H8Inst) =
+  h8_decode_profile(H8_BASE, first, ext)
+
 function h8_execute(st : H8State, inst : H8Inst) -> H8ExecResult =
   match inst {
     H8_NOP() => struct {st = h8_exec_nop(st), trap = false},
@@ -376,14 +400,21 @@ function h8_execute(st : H8State, inst : H8Inst) -> H8ExecResult =
     H8_XOR8_R8_R8(rd, rs) => struct {st = h8_exec_xor8(st, rd, read_r8(st, rs)), trap = false},
     H8_AND8_R8_R8(rd, rs) => struct {st = h8_exec_and8(st, rd, read_r8(st, rs)), trap = false},
     H8_SUB8_R8_R8(rd, rs) => struct {st = h8_exec_sub8(st, rd, read_r8(st, rs)), trap = false},
-    H8_CMP8_R8_R8(rd, rs) => struct {st = h8_exec_cmp8(st, rd, read_r8(st, rs)), trap = false}
+    H8_CMP8_R8_R8(rd, rs) => struct {st = h8_exec_cmp8(st, rd, read_r8(st, rs)), trap = false},
+    H8_ADD16_R16_R16(rd, rs) => struct {st = h8_exec_add16(st, rd, read_r16(st, rs)), trap = false},
+    H8_MOV16_R16_R16(rd, rs) => struct {st = h8_exec_mov16(st, rd, rs), trap = false},
+    H8_SUB16_R16_R16(rd, rs) => struct {st = h8_exec_sub16(st, rd, read_r16(st, rs)), trap = false},
+    H8_CMP16_R16_R16(rd, rs) => struct {st = h8_exec_cmp16(st, rd, read_r16(st, rs)), trap = false}
   }
 
-function h8_decode_execute(st : H8State, first : word, ext : word) -> H8ExecResult =
-  match h8_decode(first, ext) {
+function h8_decode_execute_profile(st : H8State, profile : H8Profile, first : word, ext : word) -> H8ExecResult =
+  match h8_decode_profile(profile, first, ext) {
     Some(inst) => h8_execute(st, inst),
     None() => struct {st = st, trap = true}
   }
+
+function h8_decode_execute(st : H8State, first : word, ext : word) -> H8ExecResult =
+  h8_decode_execute_profile(st, H8_BASE, first, ext)
 
 function h8_step(m : H8Machine) -> H8Machine =
   if m.trap then
@@ -629,6 +660,47 @@ function h8_r8_r8_decode_selftest() -> bool = {
     & not_bool(cmp_res.trap)
 }
 
+function h8_r16_r16_decode_selftest() -> bool = {
+  let ccr0 = h8_test_hnzvc(0b1, 0b0, 0b0, 0b1, 0b1);
+  let add_base = write_r16(write_r16(h8_reset(), 0, 0x7FFF), 1, 0x0001);
+  let mov_base = write_r16(write_r16({h8_reset() with ccr = ccr0}, 2, 0x8000), 3, 0x0000);
+  let sub_base = write_r16(write_r16(h8_reset(), 0, 0x0000), 1, 0x0001);
+  let ext_base = write_r16(write_r16(h8_reset(), 0, 0x0001), 8, 0x0002);
+  let add_res = h8_decode_execute(add_base, 0x0910, 0x0000);
+  let mov_res = h8_decode_execute(mov_base, 0x0D23, 0x0000);
+  let sub_res = h8_decode_execute(sub_base, 0x1910, 0x0000);
+  let cmp_res = h8_decode_execute(sub_base, 0x1D10, 0x0000);
+  let base_rejects =
+    is_none(h8_decode(0x0980, 0x0000))
+    & is_none(h8_decode(0x0908, 0x0000))
+    & is_none(h8_decode(0x0988, 0x0000))
+    & is_none(h8_decode(0x0D80, 0x0000))
+    & is_none(h8_decode(0x0D08, 0x0000))
+    & is_none(h8_decode(0x0D88, 0x0000))
+    & is_none(h8_decode(0x1980, 0x0000))
+    & is_none(h8_decode(0x1908, 0x0000))
+    & is_none(h8_decode(0x1988, 0x0000))
+    & is_none(h8_decode(0x1D80, 0x0000))
+    & is_none(h8_decode(0x1D08, 0x0000))
+    & is_none(h8_decode(0x1D88, 0x0000));
+  let ext_res = h8_decode_execute_profile(ext_base, H8_EXTENDED, 0x0980, 0x0000);
+  read_r16(add_res.st, 0) == 0x8000
+    & h8_ccr_hnzvc(add_res.st.ccr) == 0b11010
+    & read_r16(mov_res.st, 3) == 0x8000
+    & h8_ccr_hnzvc(mov_res.st.ccr) == 0b11001
+    & read_r16(sub_res.st, 0) == 0xFFFF
+    & h8_ccr_hnzvc(sub_res.st.ccr) == 0b11001
+    & read_r16(cmp_res.st, 0) == 0x0000
+    & h8_ccr_hnzvc(cmp_res.st.ccr) == 0b11001
+    & base_rejects
+    & read_r16(ext_res.st, 0) == 0x0003
+    & not_bool(add_res.trap)
+    & not_bool(mov_res.trap)
+    & not_bool(sub_res.trap)
+    & not_bool(cmp_res.trap)
+    & not_bool(ext_res.trap)
+}
+
 function h8_memory_selftest() -> bool = {
   let r0h : H8R8 = struct {reg = 0, high = true};
   let mem0 = h8_empty_mem();
@@ -668,4 +740,5 @@ function h8_selftest() -> bool =
     & h8_decode_selftest()
     & h8_logic_imm_decode_selftest()
     & h8_r8_r8_decode_selftest()
+    & h8_r16_r16_decode_selftest()
     & h8_memory_selftest()

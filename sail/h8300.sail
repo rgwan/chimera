@@ -56,6 +56,10 @@ union H8Inst = {
   H8_MOV8_R8_R16D16 : (h8_r16, H8R8, word),
   H8_MOV16_R16D16_R16 : (h8_r16, h8_r16, word),
   H8_MOV16_R16_R16D16 : (h8_r16, h8_r16, word),
+  H8_MOV8_ABS16_R8 : (H8R8, word),
+  H8_MOV8_R8_ABS16 : (word, H8R8),
+  H8_MOV16_ABS16_R16 : (h8_r16, word),
+  H8_MOV16_R16_ABS16 : (word, h8_r16),
   H8_ADD8_IMM : (H8R8, byte),
   H8_CMP8_IMM : (H8R8, byte),
   H8_OR8_IMM : (H8R8, byte),
@@ -319,6 +323,34 @@ function h8_exec_mov16_reg_to_disp(m : H8Machine, rd_addr : h8_r16, rs : h8_r16,
   {m with st = st1, mem = mem1, trap = false}
 }
 
+function h8_exec_mov8_abs_to_reg(m : H8Machine, rd : H8R8, addr : word) -> H8Machine = {
+  let value : byte = h8_mem_read8(m.mem, addr);
+  let st1 = write_r8(m.st, rd, value);
+  let st2 = {st1 with ccr = h8_nz_flags(H8_BYTE, 0x00 @ value, m.st.ccr), pc = m.st.pc + 0x0004};
+  {m with st = st2, trap = false}
+}
+
+function h8_exec_mov8_reg_to_abs(m : H8Machine, addr : word, rs : H8R8) -> H8Machine = {
+  let value : byte = read_r8(m.st, rs);
+  let mem1 = h8_mem_write8(m.mem, addr, value);
+  let st1 = {m.st with ccr = h8_nz_flags(H8_BYTE, 0x00 @ value, m.st.ccr), pc = m.st.pc + 0x0004};
+  {m with st = st1, mem = mem1, trap = false}
+}
+
+function h8_exec_mov16_abs_to_reg(m : H8Machine, rd : h8_r16, addr : word) -> H8Machine = {
+  let value : word = h8_mem_read16(m.mem, addr);
+  let st1 = write_r16(m.st, rd, value);
+  let st2 = {st1 with ccr = h8_nz_flags(H8_WORD, value, m.st.ccr), pc = m.st.pc + 0x0004};
+  {m with st = st2, trap = false}
+}
+
+function h8_exec_mov16_reg_to_abs(m : H8Machine, addr : word, rs : h8_r16) -> H8Machine = {
+  let value : word = read_r16(m.st, rs);
+  let mem1 = h8_mem_write16(m.mem, addr, value);
+  let st1 = {m.st with ccr = h8_nz_flags(H8_WORD, value, m.st.ccr), pc = m.st.pc + 0x0004};
+  {m with st = st1, mem = mem1, trap = false}
+}
+
 function h8_exec_add8(st : H8State, rd : H8R8, value : byte) -> H8State = {
   let lhs : byte = read_r8(st, rd);
   let result : byte = lhs + value;
@@ -489,6 +521,14 @@ function h8_decode_profile(profile : H8Profile, first : word, ext : word) -> opt
              Some(H8_MOV16_R16I_R16(h8_r16_from_code(op1[2 .. 0]), h8_r16_from_code(op1[6 .. 4])))
            else if op0 == 0x69 & op1[7] == 0b1 & op1[3] == 0b0 then
              Some(H8_MOV16_R16_R16I(h8_r16_from_code(op1[6 .. 4]), h8_r16_from_code(op1[2 .. 0])))
+           else if op0 == 0x6A & op1[7 .. 4] == 0b0000 then
+             Some(H8_MOV8_ABS16_R8(rr8_rd, ext))
+           else if op0 == 0x6A & op1[7 .. 4] == 0b1000 then
+             Some(H8_MOV8_R8_ABS16(ext, rr8_rd))
+           else if op0 == 0x6B & op1[7 .. 3] == 0b00000 then
+             Some(H8_MOV16_ABS16_R16(h8_r16_from_code(op1[2 .. 0]), ext))
+           else if op0 == 0x6B & op1[7 .. 3] == 0b10000 then
+             Some(H8_MOV16_R16_ABS16(ext, h8_r16_from_code(op1[2 .. 0])))
            else if op0 == 0x6C & op1[7] == 0b0 then
              Some(H8_MOV8_R16P_R8(rr8_rd, h8_r16_from_code(op1[6 .. 4])))
            else if op0 == 0x6C & op1[7] == 0b1 then
@@ -542,6 +582,10 @@ function h8_execute(st : H8State, inst : H8Inst) -> H8ExecResult =
     H8_MOV8_R8_R16D16(_, _, _) => struct {st = st, trap = true},
     H8_MOV16_R16D16_R16(_, _, _) => struct {st = st, trap = true},
     H8_MOV16_R16_R16D16(_, _, _) => struct {st = st, trap = true},
+    H8_MOV8_ABS16_R8(_, _) => struct {st = st, trap = true},
+    H8_MOV8_R8_ABS16(_, _) => struct {st = st, trap = true},
+    H8_MOV16_ABS16_R16(_, _) => struct {st = st, trap = true},
+    H8_MOV16_R16_ABS16(_, _) => struct {st = st, trap = true},
     H8_ADD8_IMM(rd, imm) => struct {st = h8_exec_add8(st, rd, imm), trap = false},
     H8_CMP8_IMM(rd, imm) => struct {st = h8_exec_cmp8(st, rd, imm), trap = false},
     H8_OR8_IMM(rd, imm) => struct {st = h8_exec_or8(st, rd, imm), trap = false},
@@ -583,6 +627,10 @@ function h8_execute_machine(m : H8Machine, inst : H8Inst) -> H8Machine =
     H8_MOV8_R8_R16D16(rd_addr, rs, disp) => h8_exec_mov8_reg_to_disp(m, rd_addr, rs, disp),
     H8_MOV16_R16D16_R16(rd, rs_addr, disp) => h8_exec_mov16_disp_to_reg(m, rd, rs_addr, disp),
     H8_MOV16_R16_R16D16(rd_addr, rs, disp) => h8_exec_mov16_reg_to_disp(m, rd_addr, rs, disp),
+    H8_MOV8_ABS16_R8(rd, addr) => h8_exec_mov8_abs_to_reg(m, rd, addr),
+    H8_MOV8_R8_ABS16(addr, rs) => h8_exec_mov8_reg_to_abs(m, addr, rs),
+    H8_MOV16_ABS16_R16(rd, addr) => h8_exec_mov16_abs_to_reg(m, rd, addr),
+    H8_MOV16_R16_ABS16(addr, rs) => h8_exec_mov16_reg_to_abs(m, addr, rs),
     _ => {
       let result = h8_execute(m.st, inst);
       {m with st = result.st, trap = result.trap}

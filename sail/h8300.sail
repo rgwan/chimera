@@ -4,6 +4,7 @@
 type byte = bits(8)
 type word = bits(16)
 type h8_r16 = range(0, 7)
+type H8Memory = vector(65536, byte)
 
 enum H8Width = {H8_BYTE, H8_WORD}
 enum H8AluOp = {H8_ADD, H8_SUB, H8_CMP, H8_AND, H8_OR, H8_XOR, H8_NOT}
@@ -50,10 +51,37 @@ struct H8ExecResult = {
   trap : bool
 }
 
+struct H8Machine = {
+  st : H8State,
+  mem : H8Memory,
+  trap : bool
+}
+
 function mask16(addr : word) -> word = addr
 
 function align_word_addr(addr : word) -> word =
   addr[15 .. 1] @ 0b0
+
+function h8_empty_mem() -> H8Memory =
+  vector_init(0x00)
+
+function h8_mem_read8(mem : H8Memory, addr : word) -> byte =
+  mem[unsigned(addr)]
+
+function h8_mem_write8(mem : H8Memory, addr : word, value : byte) -> H8Memory =
+  vector_update(mem, unsigned(addr), value)
+
+val h8_load_bytes : forall 'n, 0 < 'n <= 65536. (H8Memory, word, vector('n, byte)) -> H8Memory
+function h8_load_bytes(mem, base, bytes) = {
+  var out = mem;
+  foreach (i from 0 to ('n - 1)) {
+    out = h8_mem_write8(out, base + i, bytes[('n - 1) - i])
+  };
+  out
+}
+
+function h8_fetch16(mem : H8Memory, addr : word) -> word =
+  h8_mem_read8(mem, addr) @ h8_mem_read8(mem, addr + 0x0001)
 
 function h8_r8_from_code(code : bits(4)) -> H8R8 =
   struct {reg = unsigned(code[2 .. 0]), high = code[3] == 0b0}
@@ -309,9 +337,36 @@ function h8_decode_execute(st : H8State, first : word, ext : word) -> H8ExecResu
     None() => struct {st = st, trap = true}
   }
 
+function h8_step(m : H8Machine) -> H8Machine =
+  if m.trap then
+    m
+  else {
+    let first : word = h8_fetch16(m.mem, m.st.pc);
+    let ext : word = h8_fetch16(m.mem, m.st.pc + 0x0002);
+    let result = h8_decode_execute(m.st, first, ext);
+    {m with st = result.st, trap = result.trap}
+  }
+
+type h8_step_count = {'n, 0 < 'n. int('n)}
+
+function h8_run(m : H8Machine, step_limit : h8_step_count) -> H8Machine = {
+  var out = m;
+  foreach (i from 0 to (step_limit - 1)) {
+    out = h8_step(out)
+  };
+  out
+}
+
 function h8_reset() -> H8State =
   struct {pc = 0x0000, r = [0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000],
           ccr = struct {i = 0b1, u6 = 0b0, h = 0b0, u4 = 0b0, n = 0b0, z = 0b0, v = 0b0, c = 0b0}}
+
+function h8_reset_machine() -> H8Machine =
+  struct {st = h8_reset(), mem = h8_empty_mem(), trap = false}
+
+val h8_load_program : forall 'n, 0 < 'n <= 65536. (H8Machine, word, vector('n, byte)) -> H8Machine
+function h8_load_program(m, base, bytes) =
+  {m with mem = h8_load_bytes(m.mem, base, bytes)}
 
 function h8_test_ccr(n : bit, z : bit, v : bit, c : bit) -> H8CCR =
   struct {i = 0b1, u6 = 0b0, h = 0b0, u4 = 0b0, n = n, z = z, v = v, c = c}
@@ -447,8 +502,40 @@ function h8_decode_selftest() -> bool = {
     & s8.trap
 }
 
+function h8_memory_selftest() -> bool = {
+  let r0h : H8R8 = struct {reg = 0, high = true};
+  let mem0 = h8_empty_mem();
+  let mem_fetch = h8_load_bytes(mem0, 0x0000, [0xF0, 0x12]);
+  let mem_wrap0 = h8_mem_write8(mem0, 0xFFFF, 0x12);
+  let mem_wrap1 = h8_mem_write8(mem_wrap0, 0x0000, 0x34);
+  let mov16_mach = h8_load_program(h8_reset_machine(), 0x0000, [0x79, 0x02, 0xAB, 0xCD]);
+  let mov16_done = h8_step(mov16_mach);
+  let seq_prog = h8_load_program(h8_reset_machine(), 0x0000,
+    [0xF0, 0x12, 0xF8, 0x34, 0x80, 0xEE, 0xA0, 0x00, 0x79, 0x02, 0xAB, 0xCD]);
+  let seq_done = h8_run(seq_prog, 5);
+  let branch_base = {h8_reset_machine() with st = {h8_reset() with pc = 0x000E, ccr = h8_test_ccr(0b0, 0b0, 0b0, 0b0)}};
+  let branch_prog = h8_load_program(branch_base, 0x000E, [0x46, 0xFE]);
+  let branch_done = h8_run(branch_prog, 3);
+  let bad_prog = h8_load_program(h8_reset_machine(), 0x0000, [0x01, 0x00]);
+  let bad_done = h8_step(bad_prog);
+  h8_fetch16(mem_fetch, 0x0000) == 0xF012
+    & h8_fetch16(mem_wrap1, 0xFFFF) == 0x1234
+    & read_r16(mov16_done.st, 2) == 0xABCD
+    & mov16_done.st.pc == 0x0004
+    & not_bool(mov16_done.trap)
+    & read_r16(seq_done.st, 0) == 0x0034
+    & read_r16(seq_done.st, 2) == 0xABCD
+    & seq_done.st.pc == 0x000C
+    & not_bool(seq_done.trap)
+    & branch_done.st.pc == 0x000E
+    & not_bool(branch_done.trap)
+    & bad_done.trap
+    & bad_done.st.pc == 0x0000
+}
+
 function h8_selftest() -> bool =
   h8_reg_arith_selftest()
     & h8_flag_selftest()
     & h8_branch_selftest()
     & h8_decode_selftest()
+    & h8_memory_selftest()

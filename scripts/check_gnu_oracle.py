@@ -47,6 +47,14 @@ def expected_hex(case: dict[str, object]) -> str:
     return "".join(str(word)[2:].lower() for word in words)
 
 
+def program_bytes(case: dict[str, object]) -> list[int]:
+    bytes_out = []
+    for word in case["words"]:
+        value = int(str(word), 16)
+        bytes_out.extend([(value >> 8) & 0xFF, value & 0xFF])
+    return bytes_out
+
+
 def asm_text(case: dict[str, object]) -> str:
     lines = [
         ".text",
@@ -151,9 +159,7 @@ def combine_bool_expr(checks: list[str]) -> str:
 def sail_case_body(case: dict[str, object]) -> str:
     initial = case["initial"]
     expected = case["expected"]
-    words = [int(str(word), 16) for word in case["words"]]
-    first = f"0x{words[0]:04X}"
-    ext = f"0x{words[1]:04X}" if len(words) > 1 else "0x0000"
+    byte_literal = ", ".join(f"0x{value:02X}" for value in program_bytes(case))
     initial_hnzvc = str(initial["ccr_hnzvc"])
     expected_hnzvc = str(expected["ccr_hnzvc"])
     if expected_hnzvc == "preserve":
@@ -169,7 +175,9 @@ def sail_case_body(case: dict[str, object]) -> str:
         next_name = f"st{index}"
         lines.append(f"  let {next_name} = {set_reg_expr(state_name, name, value)};")
         state_name = next_name
-    lines.append(f"  let res = h8_decode_execute({state_name}, {first}, {ext});")
+    lines.append(f"  let mach0 = {{h8_reset_machine() with st = {state_name}}};")
+    lines.append(f"  let mach1 = h8_load_program(mach0, {initial['pc']}, [{byte_literal}]);")
+    lines.append("  let res = h8_run(mach1, 1);")
     checks = [
         f"(res.st.pc == {expected['pc']})",
         "(res.trap)" if expected["trap"] else "(not_bool(res.trap))",

@@ -591,6 +591,19 @@ instructions:
       execute: h8_exec_not8
     effects: [pc, rd8, ccr_nzv]
 
+  - id: h8_neg8_r8
+    assembler_template: "neg.b {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xfff0"
+      match: "0x1780"
+      fields:
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_NEG8_R8
+      execute: h8_exec_neg8
+    effects: [pc, rd8, ccr_hnzvc]
+
   - id: h8_sub8_r8_r8
     assembler_template: "sub.b {rs8}, {rd8}"
     length_bytes: 2
@@ -1970,6 +1983,78 @@ cases:
       regs:
         r1h: "0x00"
       ccr_hnzvc: "10101"
+      trap: false
+
+  - id: h8_neg8_r0l_zero
+    instruction: h8_neg8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "neg.b r0l"
+    words:
+      - "0x1788"
+    decode_keys: ["1", "7"]
+    sail:
+      decode: H8_NEG8_R8
+      execute: h8_exec_neg8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x00"
+      ccr_hnzvc: "11111"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0x00"
+      ccr_hnzvc: "00100"
+      trap: false
+
+  - id: h8_neg8_r1h_overflow
+    instruction: h8_neg8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "neg.b r1h"
+    words:
+      - "0x1781"
+    decode_keys: ["1", "7"]
+    sail:
+      decode: H8_NEG8_R8
+      execute: h8_exec_neg8
+    initial:
+      pc: "0x0000"
+      regs:
+        r1h: "0x80"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1h: "0x80"
+      ccr_hnzvc: "01011"
+      trap: false
+
+  - id: h8_neg8_r1l_borrow
+    instruction: h8_neg8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "neg.b r1l"
+    words:
+      - "0x1789"
+    decode_keys: ["1", "7"]
+    sail:
+      decode: H8_NEG8_R8
+      execute: h8_exec_neg8
+    initial:
+      pc: "0x0000"
+      regs:
+        r1l: "0x01"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1l: "0xff"
+      ccr_hnzvc: "11001"
       trap: false
 
   - id: h8_sub8_r1h_r0l

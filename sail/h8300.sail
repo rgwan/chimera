@@ -3,7 +3,8 @@
 
 type byte = bits(8)
 type word = bits(16)
-type h8_r16 = range(0, 7)
+type h8_r8_pair = range(0, 7)
+type h8_r16 = range(0, 15)
 type H8Memory = vector(65536, byte)
 
 enum H8Width = {H8_BYTE, H8_WORD}
@@ -27,13 +28,13 @@ struct H8CCR = {
 }
 
 struct H8R8 = {
-  reg : h8_r16,
+  reg : h8_r8_pair,
   high : bool
 }
 
 struct H8State = {
   pc : word,
-  r : vector(8, word),
+  r : vector(16, word),
   ccr : H8CCR
 }
 
@@ -97,6 +98,9 @@ function h8_r8_from_code(code : bits(4)) -> H8R8 =
   struct {reg = unsigned(code[2 .. 0]), high = code[3] == 0b0}
 
 function h8_r16_from_code(code : bits(3)) -> h8_r16 =
+  unsigned(code)
+
+function h8_r16_from_nibble(code : bits(4)) -> h8_r16 =
   unsigned(code)
 
 function read_r8(st : H8State, idx : H8R8) -> byte =
@@ -402,7 +406,8 @@ function h8_run(m : H8Machine, step_limit : h8_step_count) -> H8Machine = {
 }
 
 function h8_reset() -> H8State =
-  struct {pc = 0x0000, r = [0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000],
+  struct {pc = 0x0000, r = [0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+                            0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000],
           ccr = struct {i = 0b1, u6 = 0b0, h = 0b0, u4 = 0b0, n = 0b0, z = 0b0, v = 0b0, c = 0b0}}
 
 function h8_reset_machine() -> H8Machine =
@@ -453,6 +458,21 @@ function h8_reg_arith_selftest() -> bool = {
   let ok_sub8 = read_r8(st11, r1l) == 0xFF & st11.ccr.n == 0b1 & st11.ccr.c == 0b1;
   let ok_logic = read_r8(st15, r1l) == 0x8F & st15.ccr.n == 0b1 & st15.ccr.v == 0b0;
   ok_alias & ok_add8 & ok_cmp8 & ok_add16 & ok_sub16 & ok_cmp16 & ok_mov16 & ok_sub8 & ok_logic & st16.pc == st15.pc
+}
+
+function h8_r16_state_selftest() -> bool = {
+  let r0h : H8R8 = struct {reg = 0, high = true};
+  let r0l : H8R8 = struct {reg = 0, high = false};
+  let st0 = h8_reset();
+  let st1 = write_r16(st0, 8, 0x1234);
+  let st2 = write_r16(st1, 0, 0xABCD);
+  let st3 = write_r8(st2, r0h, 0x56);
+  let st4 = write_r8(st3, r0l, 0x78);
+  read_r16(st1, 8) == 0x1234
+    & read_r16(st2, 0) == 0xABCD
+    & read_r16(st2, 8) == 0x1234
+    & read_r16(st4, 0) == 0x5678
+    & read_r16(st4, 8) == 0x1234
 }
 
 function h8_flag_selftest() -> bool = {
@@ -642,6 +662,7 @@ function h8_memory_selftest() -> bool = {
 
 function h8_selftest() -> bool =
   h8_reg_arith_selftest()
+    & h8_r16_state_selftest()
     & h8_flag_selftest()
     & h8_branch_selftest()
     & h8_decode_selftest()

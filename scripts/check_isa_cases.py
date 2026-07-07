@@ -19,7 +19,7 @@ ID_RE = re.compile(r"^h8_[a-z0-9_]+$")
 NIBBLE_RE = re.compile(r"^[0-9a-f]$")
 WORD_RE = re.compile(r"^0x[0-9a-f]{4}$")
 BYTE_REG_RE = re.compile(r"^r[0-7][hl]$")
-WORD_REG_RE = re.compile(r"^r[0-7]$")
+WORD_REG_RE = re.compile(r"^[re][0-7]$")
 HNZVC_RE = re.compile(r"^[01]{5}$")
 
 

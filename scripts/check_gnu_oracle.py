@@ -117,7 +117,8 @@ def sail_ccr_expr(hnzvc: str) -> str:
 
 def sail_reg_ref(name: str) -> str:
     if len(name) == 2:
-        return name[1]
+        index = int(name[1])
+        return str(index + 8 if name[0] == "e" else index)
     reg = name[1]
     high = "true" if name[2] == "h" else "false"
     return f"struct {{reg = {reg}, high = {high}}}"
@@ -126,6 +127,8 @@ def sail_reg_ref(name: str) -> str:
 def apply_reg(regs: list[int], name: str, value: str) -> None:
     val = int(value, 16)
     index = int(name[1])
+    if name[0] == "e":
+        index += 8
     if len(name) == 2:
         regs[index] = val & 0xFFFF
     elif name[2] == "h":
@@ -135,7 +138,7 @@ def apply_reg(regs: list[int], name: str, value: str) -> None:
 
 
 def expected_regs(case: dict[str, object]) -> list[int]:
-    regs = [0] * 8
+    regs = [0] * 16
     for name, value in dict(case["initial"].get("regs", {})).items():
         apply_reg(regs, name, value)
     for name, value in dict(case["expected"].get("regs", {})).items():

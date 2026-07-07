@@ -238,6 +238,34 @@ instructions:
       execute: h8_exec_mov16
     effects: [pc, rd16, ccr_nzv]
 
+  - id: h8_mov8_abs8_r8
+    assembler_template: "mov.b @{abs8}:8, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xf000"
+      match: "0x2000"
+      fields:
+        rd8: "word[11:8]"
+        abs8: "word[7:0]"
+    sail:
+      decode: H8_MOV8_ABS8_R8
+      execute: h8_exec_mov8_abs8_to_reg
+    effects: [pc, rd8, ccr_nzv, mem_read]
+
+  - id: h8_mov8_r8_abs8
+    assembler_template: "mov.b {rs8}, @{abs8}:8"
+    length_bytes: 2
+    encoding:
+      mask: "0xf000"
+      match: "0x3000"
+      fields:
+        rs8: "word[11:8]"
+        abs8: "word[7:0]"
+    sail:
+      decode: H8_MOV8_R8_ABS8
+      execute: h8_exec_mov8_reg_to_abs8
+    effects: [pc, ccr_nzv, mem_write]
+
   - id: h8_mov8_r16i_r8
     assembler_template: "mov.b @{rs16}, {rd8}"
     length_bytes: 2
@@ -1222,6 +1250,77 @@ cases:
         addr: "0x0140"
         wmask: "11"
         wdata: "0x1234"
+
+  - id: h8_mov8_abs8_r0l
+    instruction: h8_mov8_abs8_r8
+    status: supported
+    check_area: memory
+    assembler:
+      - "mov.b @0x40:8, r0l"
+    words:
+      - "0x2840"
+    decode_keys: ["2", "8"]
+    sail:
+      decode: H8_MOV8_ABS8_R8
+      execute: h8_exec_mov8_abs8_to_reg
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x00"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0x80"
+      ccr_hnzvc: "11001"
+      trap: false
+    memory:
+      initial:
+        "0xff40": "0x80"
+      expected:
+        "0xff40": "0x80"
+      access:
+        kind: read
+        width: byte
+        addr: "0xff40"
+        wmask: "00"
+        rdata: "0x0080"
+
+  - id: h8_mov8_r0l_abs8
+    instruction: h8_mov8_r8_abs8
+    status: supported
+    check_area: memory
+    assembler:
+      - "mov.b r0l, @0x40:8"
+    words:
+      - "0x3840"
+    decode_keys: ["3", "8"]
+    sail:
+      decode: H8_MOV8_R8_ABS8
+      execute: h8_exec_mov8_reg_to_abs8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x00"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10101"
+      trap: false
+    memory:
+      initial:
+        "0xff40": "0xaa"
+        "0xff41": "0x55"
+      expected:
+        "0xff40": "0x00"
+        "0xff41": "0x55"
+      access:
+        kind: write
+        width: byte
+        addr: "0xff40"
+        wmask: "01"
+        wdata: "0x0000"
 
   - id: h8_mov8_abs16_r0l
     instruction: h8_mov8_abs16_r8

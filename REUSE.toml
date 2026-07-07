@@ -1,7 +1,7 @@
 version = 1
 SPDX-PackageName = "Chimera"
 SPDX-PackageSupplier = "Huang Rui <vowstar@gmail.com>"
-SPDX-PackageDownloadLocation = "https://github.com/vowstar/chimera"
+SPDX-PackageDownloadLocation = "https://github.com/rgwan/chimera"
 
 [[annotations]]
 path = "README.md"
@@ -10,7 +10,7 @@ SPDX-FileCopyrightText = "2026 Huang Rui <vowstar@gmail.com>"
 SPDX-License-Identifier = "MIT"
 
 [[annotations]]
-path = [".gitignore", "flake.lock"]
+path = [".gitignore", "flake.lock", "sail/h8300.sail_project"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Huang Rui <vowstar@gmail.com>"
 SPDX-License-Identifier = "MIT"

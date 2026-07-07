@@ -1,14 +1,17 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
 
-.PHONY: build smoke verify-smoke check clean
+.PHONY: build smoke sail-model verify-smoke check clean
 
 build: smoke
 
 smoke:
 	build-chimera --smoke
 
-verify-smoke: smoke
+sail-model:
+	python3 scripts/check_sail_model.py
+
+verify-smoke: smoke sail-model
 
 check:
 	nix flake check

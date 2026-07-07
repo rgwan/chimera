@@ -87,11 +87,26 @@ EOF
           build-chimera --smoke
         '';
 
+        sailModelCheck = pkgs.runCommand "chimera-sail-model" {
+          nativeBuildInputs = [
+            pkgs.ocamlPackages.sail
+            pythonEnv
+            pkgs.z3
+          ];
+        } ''
+          cp -R ${self} src
+          chmod -R u+w src
+          cd src
+          python3 scripts/check_sail_model.py
+          touch $out
+        '';
+
         shellHook = ''
           echo "========================================"
           echo "Chimera Zaozi Development Environment"
           echo "========================================"
           echo "Build smoke: build-chimera --smoke"
+          echo "Sail model:   make sail-model"
           echo "Full shell:   nix develop .#full"
           echo "Verify:      nix flake check"
           echo "========================================"
@@ -101,8 +116,10 @@ EOF
           buildScript
           pkgs.git
           pkgs.gnumake
+          pkgs.ocamlPackages.sail
           pkgs.reuse
           pkgs.scala-cli
+          pkgs.z3
           pythonEnv
         ];
 
@@ -113,6 +130,7 @@ EOF
       in
       {
         packages.default = smokeCheck;
+        packages.sail-model = sailModelCheck;
 
         apps.default = {
           type = "app";
@@ -129,6 +147,7 @@ EOF
         checks = {
           build-smoke = smokeCheck;
           reuse = reuseCheck;
+          sail-model = sailModelCheck;
         };
 
         devShells.default = pkgs.mkShell {

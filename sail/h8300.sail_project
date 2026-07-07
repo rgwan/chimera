@@ -1,0 +1,10 @@
+prelude {
+  files
+    prelude.sail
+}
+
+h8300 {
+  requires prelude
+  files
+    h8300.sail
+}

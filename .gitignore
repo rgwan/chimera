@@ -26,6 +26,9 @@ __pycache__/
 /result-*
 .direnv/
 
+# Sail
+/sail_smt_cache
+
 # Scala CLI / BSP metadata
 .bsp/
 .scala-build/

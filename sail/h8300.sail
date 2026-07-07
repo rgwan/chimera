@@ -71,6 +71,7 @@ union H8Inst = {
   H8_XOR8_IMM : (H8R8, byte),
   H8_AND8_IMM : (H8R8, byte),
   H8_ADD8_R8_R8 : (H8R8, H8R8),
+  H8_INC8_R8 : H8R8,
   H8_MOV8_R8_R8 : (H8R8, H8R8),
   H8_OR8_R8_R8 : (H8R8, H8R8),
   H8_XOR8_R8_R8 : (H8R8, H8R8),
@@ -85,6 +86,7 @@ union H8Inst = {
   H8_ROTR8_R8 : H8R8,
   H8_NOT8_R8 : H8R8,
   H8_NEG8_R8 : H8R8,
+  H8_DEC8_R8 : H8R8,
   H8_SUB8_R8_R8 : (H8R8, H8R8),
   H8_CMP8_R8_R8 : (H8R8, H8R8),
   H8_ADD16_R16_R16 : (h8_r16, h8_r16),
@@ -189,6 +191,9 @@ function h8_logic_flags(width : H8Width, result : word, ccr : H8CCR) -> H8CCR =
 
 function h8_shift_flags8(result : byte, carry : bit, overflow : bit, ccr : H8CCR) -> H8CCR =
   {ccr with n = result[7], z = bool_to_bit(result == 0x00), v = overflow, c = carry}
+
+function h8_nzv_flags8(result : byte, overflow : bit, ccr : H8CCR) -> H8CCR =
+  {ccr with n = result[7], z = bool_to_bit(result == 0x00), v = overflow}
 
 function h8_add_flags(width : H8Width, lhs : word, rhs : word, result : word, ccr : H8CCR) -> H8CCR = {
   match width {
@@ -426,6 +431,22 @@ function h8_exec_cmp16(st : H8State, rd : h8_r16, value : word) -> H8State = {
   {st with ccr = h8_sub_flags(H8_WORD, lhs, value, result, st.ccr), pc = st.pc + 0x0002}
 }
 
+function h8_exec_inc8(st : H8State, rd : H8R8) -> H8State = {
+  let value : byte = read_r8(st, rd);
+  let result : byte = value + 0x01;
+  let st1 = write_r8(st, rd, result);
+  {st1 with ccr = h8_nzv_flags8(result, bool_to_bit(value == 0x7F), st.ccr),
+            pc = st.pc + 0x0002}
+}
+
+function h8_exec_dec8(st : H8State, rd : H8R8) -> H8State = {
+  let value : byte = read_r8(st, rd);
+  let result : byte = value - 0x01;
+  let st1 = write_r8(st, rd, result);
+  {st1 with ccr = h8_nzv_flags8(result, bool_to_bit(value == 0x80), st.ccr),
+            pc = st.pc + 0x0002}
+}
+
 function h8_exec_and8(st : H8State, rd : H8R8, value : byte) -> H8State = {
   let result : byte = read_r8(st, rd) & value;
   let st1 = write_r8(st, rd, result);
@@ -587,6 +608,8 @@ function h8_decode_profile(profile : H8Profile, first : word, ext : word) -> opt
              Some(H8_ADD8_R8_R8(rr8_rd, rr8_rs))
            else if op0 == 0x09 & h8_word_rr_allowed(profile, op1) then
              Some(H8_ADD16_R16_R16(rr16_rd, rr16_rs))
+           else if op0 == 0x0A & op1[7 .. 4] == 0b0000 then
+             Some(H8_INC8_R8(rr8_rd))
            else if op0 == 0x0C then
              Some(H8_MOV8_R8_R8(rr8_rd, rr8_rs))
            else if op0 == 0x0D & h8_word_rr_allowed(profile, op1) then
@@ -619,6 +642,8 @@ function h8_decode_profile(profile : H8Profile, first : word, ext : word) -> opt
              Some(H8_NOT8_R8(rr8_rd))
            else if op0 == 0x17 & op1[7 .. 4] == 0b1000 then
              Some(H8_NEG8_R8(rr8_rd))
+           else if op0 == 0x1A & op1[7 .. 4] == 0b0000 then
+             Some(H8_DEC8_R8(rr8_rd))
            else if op0 == 0x18 then
              Some(H8_SUB8_R8_R8(rr8_rd, rr8_rs))
            else if op0 == 0x19 & h8_word_rr_allowed(profile, op1) then
@@ -727,6 +752,7 @@ function h8_execute(st : H8State, inst : H8Inst) -> H8ExecResult =
     H8_XOR8_IMM(rd, imm) => struct {st = h8_exec_xor8(st, rd, imm), trap = false},
     H8_AND8_IMM(rd, imm) => struct {st = h8_exec_and8(st, rd, imm), trap = false},
     H8_ADD8_R8_R8(rd, rs) => struct {st = h8_exec_add8(st, rd, read_r8(st, rs)), trap = false},
+    H8_INC8_R8(rd) => struct {st = h8_exec_inc8(st, rd), trap = false},
     H8_MOV8_R8_R8(rd, rs) => struct {st = h8_exec_mov8(st, rd, rs), trap = false},
     H8_OR8_R8_R8(rd, rs) => struct {st = h8_exec_or8(st, rd, read_r8(st, rs)), trap = false},
     H8_XOR8_R8_R8(rd, rs) => struct {st = h8_exec_xor8(st, rd, read_r8(st, rs)), trap = false},
@@ -741,6 +767,7 @@ function h8_execute(st : H8State, inst : H8Inst) -> H8ExecResult =
     H8_ROTR8_R8(rd) => struct {st = h8_exec_rotr8(st, rd), trap = false},
     H8_NOT8_R8(rd) => struct {st = h8_exec_not8(st, rd), trap = false},
     H8_NEG8_R8(rd) => struct {st = h8_exec_neg8(st, rd), trap = false},
+    H8_DEC8_R8(rd) => struct {st = h8_exec_dec8(st, rd), trap = false},
     H8_SUB8_R8_R8(rd, rs) => struct {st = h8_exec_sub8(st, rd, read_r8(st, rs)), trap = false},
     H8_CMP8_R8_R8(rd, rs) => struct {st = h8_exec_cmp8(st, rd, read_r8(st, rs)), trap = false},
     H8_ADD16_R16_R16(rd, rs) => struct {st = h8_exec_add16(st, rd, read_r16(st, rs)), trap = false},

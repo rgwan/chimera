@@ -210,6 +210,19 @@ instructions:
       execute: h8_exec_add16
     effects: [pc, rd16, ccr_hnzvc]
 
+  - id: h8_inc8_r8
+    assembler_template: "inc.b {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xfff0"
+      match: "0x0a00"
+      fields:
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_INC8_R8
+      execute: h8_exec_inc8
+    effects: [pc, rd8, ccr_nzv]
+
   - id: h8_mov8_r8_r8
     assembler_template: "mov.b {rs8}, {rd8}"
     length_bytes: 2
@@ -707,6 +720,19 @@ instructions:
       decode: H8_NEG8_R8
       execute: h8_exec_neg8
     effects: [pc, rd8, ccr_hnzvc]
+
+  - id: h8_dec8_r8
+    assembler_template: "dec.b {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xfff0"
+      match: "0x1a00"
+      fields:
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_DEC8_R8
+      execute: h8_exec_dec8
+    effects: [pc, rd8, ccr_nzv]
 
   - id: h8_sub8_r8_r8
     assembler_template: "sub.b {rs8}, {rd8}"
@@ -1795,6 +1821,78 @@ cases:
       ccr_hnzvc: "11010"
       trap: false
 
+  - id: h8_inc8_r0l_overflow
+    instruction: h8_inc8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "inc.b r0l"
+    words:
+      - "0x0a08"
+    decode_keys: ["0", "a"]
+    sail:
+      decode: H8_INC8_R8
+      execute: h8_exec_inc8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x7f"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0x80"
+      ccr_hnzvc: "11011"
+      trap: false
+
+  - id: h8_inc8_r1h_zero
+    instruction: h8_inc8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "inc.b r1h"
+    words:
+      - "0x0a01"
+    decode_keys: ["0", "a"]
+    sail:
+      decode: H8_INC8_R8
+      execute: h8_exec_inc8
+    initial:
+      pc: "0x0000"
+      regs:
+        r1h: "0xff"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1h: "0x00"
+      ccr_hnzvc: "10101"
+      trap: false
+
+  - id: h8_inc8_r0h_half_keep
+    instruction: h8_inc8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "inc.b r0h"
+    words:
+      - "0x0a00"
+    decode_keys: ["0", "a"]
+    sail:
+      decode: H8_INC8_R8
+      execute: h8_exec_inc8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0h: "0x0f"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0h: "0x10"
+      ccr_hnzvc: "00000"
+      trap: false
+
   - id: h8_mov8_r1h_r0l
     instruction: h8_mov8_r8_r8
     status: supported
@@ -2351,6 +2449,78 @@ cases:
       regs:
         r1l: "0xff"
       ccr_hnzvc: "11001"
+      trap: false
+
+  - id: h8_dec8_r0l_overflow
+    instruction: h8_dec8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "dec.b r0l"
+    words:
+      - "0x1a08"
+    decode_keys: ["1", "a"]
+    sail:
+      decode: H8_DEC8_R8
+      execute: h8_exec_dec8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x80"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0x7f"
+      ccr_hnzvc: "10011"
+      trap: false
+
+  - id: h8_dec8_r1h_negative
+    instruction: h8_dec8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "dec.b r1h"
+    words:
+      - "0x1a01"
+    decode_keys: ["1", "a"]
+    sail:
+      decode: H8_DEC8_R8
+      execute: h8_exec_dec8
+    initial:
+      pc: "0x0000"
+      regs:
+        r1h: "0x00"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1h: "0xff"
+      ccr_hnzvc: "11001"
+      trap: false
+
+  - id: h8_dec8_r0h_half_keep
+    instruction: h8_dec8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "dec.b r0h"
+    words:
+      - "0x1a00"
+    decode_keys: ["1", "a"]
+    sail:
+      decode: H8_DEC8_R8
+      execute: h8_exec_dec8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0h: "0x00"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0h: "0xff"
+      ccr_hnzvc: "01000"
       trap: false
 
   - id: h8_sub8_r1h_r0l

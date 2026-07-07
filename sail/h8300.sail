@@ -36,10 +36,30 @@ struct H8State = {
   ccr : H8CCR
 }
 
+union H8Inst = {
+  H8_NOP : unit,
+  H8_BRANCH : (H8BranchCond, byte),
+  H8_MOV8_IMM : (H8R8, byte),
+  H8_MOV16_IMM : (h8_r16, word),
+  H8_ADD8_IMM : (H8R8, byte),
+  H8_CMP8_IMM : (H8R8, byte)
+}
+
+struct H8ExecResult = {
+  st : H8State,
+  trap : bool
+}
+
 function mask16(addr : word) -> word = addr
 
 function align_word_addr(addr : word) -> word =
   addr[15 .. 1] @ 0b0
+
+function h8_r8_from_code(code : bits(4)) -> H8R8 =
+  struct {reg = unsigned(code[2 .. 0]), high = code[3] == 0b0}
+
+function h8_r16_from_code(code : bits(3)) -> h8_r16 =
+  unsigned(code)
 
 function read_r8(st : H8State, idx : H8R8) -> byte =
   if idx.high then st.r[idx.reg][15 .. 8] else st.r[idx.reg][7 .. 0]
@@ -233,6 +253,62 @@ function h8_exec_branch(st : H8State, cond : H8BranchCond, disp : byte) -> H8Sta
     {st with pc = next_pc}
 }
 
+function h8_branch_cond_from_code(code : bits(4)) -> H8BranchCond =
+  match code {
+    0x0 => H8_BRA,
+    0x1 => H8_BRN,
+    0x2 => H8_BHI,
+    0x3 => H8_BLS,
+    0x4 => H8_BCC,
+    0x5 => H8_BCS,
+    0x6 => H8_BNE,
+    0x7 => H8_BEQ,
+    0x8 => H8_BVC,
+    0x9 => H8_BVS,
+    0xA => H8_BPL,
+    0xB => H8_BMI,
+    0xC => H8_BGE,
+    0xD => H8_BLT,
+    0xE => H8_BGT,
+    0xF => H8_BLE
+  }
+
+function h8_decode(first : word, ext : word) -> option(H8Inst) = {
+  let op0 : byte = first[15 .. 8];
+  let op1 : byte = first[7 .. 0];
+  match op0[7 .. 4] {
+    0x0 => if op0 == 0x00 & op1 == 0x00 then Some(H8_NOP()) else None(),
+    0x4 => if op1[0] == 0b0 then
+             Some(H8_BRANCH(h8_branch_cond_from_code(op0[3 .. 0]), op1))
+           else
+             None(),
+    0x7 => if op0 == 0x79 & op1[7 .. 3] == 0b00000 then
+             Some(H8_MOV16_IMM(h8_r16_from_code(op1[2 .. 0]), ext))
+           else
+             None(),
+    0x8 => Some(H8_ADD8_IMM(h8_r8_from_code(op0[3 .. 0]), op1)),
+    0xA => Some(H8_CMP8_IMM(h8_r8_from_code(op0[3 .. 0]), op1)),
+    0xF => Some(H8_MOV8_IMM(h8_r8_from_code(op0[3 .. 0]), op1)),
+    _ => None()
+  }
+}
+
+function h8_execute(st : H8State, inst : H8Inst) -> H8ExecResult =
+  match inst {
+    H8_NOP() => struct {st = h8_exec_nop(st), trap = false},
+    H8_BRANCH(cond, disp) => struct {st = h8_exec_branch(st, cond, disp), trap = false},
+    H8_MOV8_IMM(rd, imm) => struct {st = h8_exec_mov8_imm(st, rd, imm), trap = false},
+    H8_MOV16_IMM(rd, imm) => struct {st = h8_exec_mov16_imm(st, rd, imm), trap = false},
+    H8_ADD8_IMM(rd, imm) => struct {st = h8_exec_add8(st, rd, imm), trap = false},
+    H8_CMP8_IMM(rd, imm) => struct {st = h8_exec_cmp8(st, rd, imm), trap = false}
+  }
+
+function h8_decode_execute(st : H8State, first : word, ext : word) -> H8ExecResult =
+  match h8_decode(first, ext) {
+    Some(inst) => h8_execute(st, inst),
+    None() => struct {st = st, trap = true}
+  }
+
 function h8_reset() -> H8State =
   struct {pc = 0x0000, r = [0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000],
           ccr = struct {i = 0b1, u6 = 0b0, h = 0b0, u4 = 0b0, n = 0b0, z = 0b0, v = 0b0, c = 0b0}}
@@ -295,5 +371,37 @@ function h8_branch_selftest() -> bool = {
     & h8_branch_taken(H8_BLE, c1)
 }
 
+function h8_decode_selftest() -> bool = {
+  let r0h : H8R8 = struct {reg = 0, high = true};
+  let r0l : H8R8 = struct {reg = 0, high = false};
+  let st0 = h8_reset();
+  let s0 = h8_decode_execute(st0, 0x0000, 0x0000);
+  let s1 = h8_decode_execute(s0.st, 0xF012, 0x0000);
+  let s2 = h8_decode_execute(s1.st, 0xF834, 0x0000);
+  let s3 = h8_decode_execute(s2.st, 0x80EE, 0x0000);
+  let s4 = h8_decode_execute(s3.st, 0xA000, 0x0000);
+  let s5 = h8_decode_execute(s4.st, 0x7902, 0xABCD);
+  let s6 = h8_decode_execute({s5.st with ccr = h8_test_ccr(0b0, 0b0, 0b0, 0b0)}, 0x46FE, 0x0000);
+  let s7 = h8_decode_execute(s6.st, 0x4601, 0x0000);
+  let s8 = h8_decode_execute(s6.st, 0x0100, 0x0000);
+  let bad_branch_decode : option(H8Inst) = h8_decode(0x4601, 0x0000);
+  let bad_opcode_decode : option(H8Inst) = h8_decode(0x0100, 0x0000);
+  let bad_branch = is_none(bad_branch_decode);
+  let bad_opcode = is_none(bad_opcode_decode);
+  s0.st.pc == 0x0002
+    & read_r8(s1.st, r0h) == 0x12
+    & read_r8(s2.st, r0l) == 0x34
+    & read_r8(s3.st, r0h) == 0x00
+    & s3.st.ccr.z == 0b1
+    & s4.st.ccr.z == 0b1
+    & read_r16(s5.st, 2) == 0xABCD
+    & s5.st.pc == 0x000E
+    & s6.st.pc == s5.st.pc
+    & bad_branch
+    & bad_opcode
+    & s7.trap
+    & s8.trap
+}
+
 function h8_selftest() -> bool =
-  h8_reg_arith_selftest() & h8_branch_selftest()
+  h8_reg_arith_selftest() & h8_branch_selftest() & h8_decode_selftest()

@@ -113,7 +113,7 @@ def main() -> int:
     ]
     selftest_log = (OUT_DIR / "selftest.log").read_text(encoding="utf-8")
     if "Result = true" not in selftest_log:
-        steps[-1]["status"] = "fail"
+        steps[2]["status"] = "fail"
     status = "pass" if all(step["status"] == "pass" for step in steps) else "fail"
     report = {
         "model": "h8300",

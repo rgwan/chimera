@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -16,6 +17,7 @@ import check_isa_cases
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CASE_PATH = REPO_ROOT / "isa" / "h8300_base_cases.yaml"
 OUT_DIR = REPO_ROOT / "result" / "gnu-oracle"
+SAIL_RESULT_RE = re.compile(r"Result = (true|false)")
 
 
 def run(
@@ -222,6 +224,68 @@ def write_sail_case_project(case: dict[str, object], work: Path) -> None:
     )
 
 
+def sail_function_name(case: dict[str, object]) -> str:
+    return f"gnu_oracle_case_{case['id']}"
+
+
+def write_sail_cases_project(cases: list[dict[str, object]], work: Path) -> None:
+    shutil.rmtree(work, ignore_errors=True)
+    work.mkdir(parents=True)
+    (work / "prelude.sail").symlink_to(REPO_ROOT / "sail" / "prelude.sail")
+    (work / "h8300.sail").symlink_to(REPO_ROOT / "sail" / "h8300.sail")
+    bodies = []
+    for case in cases:
+        bodies.append(f"function {sail_function_name(case)}() -> bool = {sail_case_body(case)}\n")
+    (work / "oracle_cases.sail").write_text("\n".join(bodies), encoding="utf-8")
+    (work / "oracle_cases.sail_project").write_text(
+        "prelude {\n"
+        "  files\n"
+        "    prelude.sail\n"
+        "}\n"
+        "\n"
+        "h8300 {\n"
+        "  requires prelude\n"
+        "  files\n"
+        "    h8300.sail\n"
+        "}\n"
+        "\n"
+        "oracle {\n"
+        "  requires prelude\n"
+        "  requires h8300\n"
+        "  files\n"
+        "    oracle_cases.sail\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+
+def run_sail_cases(cases: list[dict[str, object]], log_path: Path) -> dict[str, dict[str, object]]:
+    work = log_path.parent
+    write_sail_cases_project(cases, work)
+    cmd = [
+        "sail",
+        "--no-color",
+        "--project",
+        "oracle_cases.sail_project",
+        "--all-modules",
+        "-i",
+    ]
+    stdin = "".join(f"{sail_function_name(case)}()\n:run\n" for case in cases)
+    result = run(cmd, log_path, work, stdin)
+    log_text = log_path.read_text(encoding="utf-8")
+    values = SAIL_RESULT_RE.findall(log_text)
+    output: dict[str, dict[str, object]] = {}
+    for index, case in enumerate(cases):
+        status = "fail"
+        if result["status"] == "pass" and index < len(values) and values[index] == "true":
+            status = "pass"
+        output[str(case["id"])] = {
+            "log": result["log"],
+            "status": status,
+        }
+    return output
+
+
 def run_sail_case(case: dict[str, object], log_path: Path) -> dict[str, object]:
     work = log_path.parent
     write_sail_case_project(case, work)
@@ -257,9 +321,10 @@ def main() -> int:
     cases = table["cases"]
 
     results = []
+    sail_results = run_sail_cases(cases, work_root / "sail-all" / "sail.log")
     for case in cases:
         gnu = assemble_case(case, work_root)
-        sail = run_sail_case(case, work_root / str(case["id"]) / "sail.log")
+        sail = sail_results[str(case["id"])]
         status = "pass" if gnu["status"] == "pass" and sail["status"] == "pass" else "fail"
         results.append({
             "actual_hex": gnu["actual_hex"],

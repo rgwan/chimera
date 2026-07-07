@@ -36,7 +36,7 @@ instructions:
     effects: [pc]
 
   - id: h8_mov8_imm_r8
-    assembler_template: mov.b #{imm8},{rd8}
+    assembler_template: "mov.b #{imm8}, {rd8}"
     length_bytes: 2
     encoding:
       mask: "0xf000"
@@ -50,7 +50,7 @@ instructions:
     effects: [pc, rd8, ccr_nzv]
 
   - id: h8_mov16_imm_r16
-    assembler_template: mov.w #{imm16},{rd16}
+    assembler_template: "mov.w #{imm16}, {rd16}"
     length_bytes: 4
     encoding:
       mask: "0xfff8"
@@ -64,7 +64,7 @@ instructions:
     effects: [pc, rd16, ccr_nzv]
 
   - id: h8_add8_imm_r8
-    assembler_template: add.b #{imm8},{rd8}
+    assembler_template: "add.b #{imm8}, {rd8}"
     length_bytes: 2
     encoding:
       mask: "0xf000"
@@ -78,7 +78,7 @@ instructions:
     effects: [pc, rd8, ccr_hnzvc]
 
   - id: h8_cmp8_imm_r8
-    assembler_template: cmp.b #{imm8},{rd8}
+    assembler_template: "cmp.b #{imm8}, {rd8}"
     length_bytes: 2
     encoding:
       mask: "0xf000"
@@ -132,7 +132,7 @@ cases:
     status: supported
     check_area: execute
     assembler:
-      - mov.b #0x12,r0h
+      - "mov.b #0x12, r0h"
     words:
       - "0xf012"
     decode_keys: ["f", "0"]
@@ -155,7 +155,7 @@ cases:
     status: supported
     check_area: execute
     assembler:
-      - mov.b #0x34,r0l
+      - "mov.b #0x34, r0l"
     words:
       - "0xf834"
     decode_keys: ["f", "8"]
@@ -178,7 +178,7 @@ cases:
     status: supported
     check_area: flags
     assembler:
-      - add.b #0xee,r0h
+      - "add.b #0xee, r0h"
     words:
       - "0x80ee"
     decode_keys: ["8", "0"]
@@ -202,7 +202,7 @@ cases:
     status: supported
     check_area: flags
     assembler:
-      - cmp.b #0x00,r0h
+      - "cmp.b #0x00, r0h"
     words:
       - "0xa000"
     decode_keys: ["a", "0"]
@@ -226,7 +226,7 @@ cases:
     status: supported
     check_area: execute
     assembler:
-      - mov.w #0xabcd,r2
+      - "mov.w #0xabcd, r2"
     words:
       - "0x7902"
       - "0xabcd"

@@ -107,36 +107,15 @@ EOF
         gnuOracleCheck = pkgs.runCommand "chimera-gnu-oracle-smoke" {
           nativeBuildInputs = [
             h8300Binutils
-            pkgs.coreutils
-            pkgs.gnugrep
+            pkgs.ocamlPackages.sail
+            pythonEnv
+            pkgs.z3
           ];
         } ''
-          cat > oracle.s <<'EOF'
-          .text
-          .global _start
-          _start:
-            nop
-            mov.b #0x12, r0h
-            mov.b #0x34, r0l
-            add.b #0xee, r0h
-            cmp.b #0x00, r0h
-            mov.w #0xabcd, r2
-          loop:
-            bne loop
-          EOF
-
-          h8300-elf-as -o oracle.o oracle.s
-          h8300-elf-ld -Ttext=0 -e _start -o oracle.elf oracle.o
-          h8300-elf-objdump -f oracle.elf | grep -q 'file format elf32-h8300'
-          h8300-elf-objdump -d oracle.elf > oracle.dump
-          grep -qi 'mov.b' oracle.dump
-          grep -qi 'add.b' oracle.dump
-          grep -qi 'cmp.b' oracle.dump
-          grep -qi 'bne' oracle.dump
-          h8300-elf-objcopy -O binary -j .text oracle.elf oracle.bin
-          actual="$(od -An -tx1 -v oracle.bin | tr -d ' \n')"
-          expected="0000f012f83480eea0007902abcd46fe"
-          test "$actual" = "$expected"
+          cp -R ${self} src
+          chmod -R u+w src
+          cd src
+          python3 scripts/check_gnu_oracle.py
           touch $out
         '';
 
@@ -184,6 +163,7 @@ EOF
           buildScript
           pkgs.git
           pkgs.gnumake
+          h8300Binutils
           pkgs.ocamlPackages.sail
           pkgs.reuse
           pkgs.scala-cli
@@ -193,7 +173,6 @@ EOF
 
         fullBuildInputs = smokeBuildInputs ++ [
           pkgs.circt-install
-          h8300Binutils
           pkgs.mlir-install
         ];
       in

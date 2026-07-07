@@ -140,6 +140,16 @@ EOF
           touch $out
         '';
 
+        isaCasesCheck = pkgs.runCommand "chimera-isa-cases" {
+          nativeBuildInputs = [ pythonEnv ];
+        } ''
+          cp -R ${self} src
+          chmod -R u+w src
+          cd src
+          python3 scripts/check_isa_cases.py
+          touch $out
+        '';
+
         sailModelCheck = pkgs.runCommand "chimera-sail-model" {
           nativeBuildInputs = [
             pkgs.gcc
@@ -190,6 +200,7 @@ EOF
       {
         packages.default = smokeCheck;
         packages.h8300-binutils = h8300Binutils;
+        packages.isa-cases = isaCasesCheck;
         packages.sail-model = sailModelCheck;
 
         apps.default = {
@@ -207,6 +218,7 @@ EOF
         checks = {
           build-smoke = smokeCheck;
           gnu-oracle-smoke = gnuOracleCheck;
+          isa-cases = isaCasesCheck;
           reuse = reuseCheck;
           sail-model = sailModelCheck;
         };

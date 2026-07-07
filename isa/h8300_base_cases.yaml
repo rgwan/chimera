@@ -1,0 +1,292 @@
+# SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
+# SPDX-License-Identifier: MIT
+
+schema: 1
+profile: h8300_base
+fetch_word_bits: 16
+storage_word_bits: 18
+byte_order: big
+ccr_order: HNZVC
+decode_key_bits_max: 4
+retire_compare:
+  - pc
+  - regs
+  - ccr_hnzvc
+  - trap
+audits:
+  chip:
+    - decode keys are one nibble each
+    - expected state is architectural
+    - fetch storage width is a multiple of 9
+  psychology:
+    - each case has one canonical id
+    - assembler spelling is not the case owner
+    - failures map to one check area
+instructions:
+  - id: h8_nop
+    assembler_template: nop
+    length_bytes: 2
+    encoding:
+      mask: "0xffff"
+      match: "0x0000"
+      fields: {}
+    sail:
+      decode: H8_NOP
+      execute: h8_exec_nop
+    effects: [pc]
+
+  - id: h8_mov8_imm_r8
+    assembler_template: mov.b #{imm8},{rd8}
+    length_bytes: 2
+    encoding:
+      mask: "0xf000"
+      match: "0xf000"
+      fields:
+        rd8: "word[11:8]"
+        imm8: "word[7:0]"
+    sail:
+      decode: H8_MOV8_IMM
+      execute: h8_exec_mov8_imm
+    effects: [pc, rd8, ccr_nzv]
+
+  - id: h8_mov16_imm_r16
+    assembler_template: mov.w #{imm16},{rd16}
+    length_bytes: 4
+    encoding:
+      mask: "0xfff8"
+      match: "0x7900"
+      fields:
+        rd16: "word[2:0]"
+        imm16: "ext[15:0]"
+    sail:
+      decode: H8_MOV16_IMM
+      execute: h8_exec_mov16_imm
+    effects: [pc, rd16, ccr_nzv]
+
+  - id: h8_add8_imm_r8
+    assembler_template: add.b #{imm8},{rd8}
+    length_bytes: 2
+    encoding:
+      mask: "0xf000"
+      match: "0x8000"
+      fields:
+        rd8: "word[11:8]"
+        imm8: "word[7:0]"
+    sail:
+      decode: H8_ADD8_IMM
+      execute: h8_exec_add8
+    effects: [pc, rd8, ccr_hnzvc]
+
+  - id: h8_cmp8_imm_r8
+    assembler_template: cmp.b #{imm8},{rd8}
+    length_bytes: 2
+    encoding:
+      mask: "0xf000"
+      match: "0xa000"
+      fields:
+        rd8: "word[11:8]"
+        imm8: "word[7:0]"
+    sail:
+      decode: H8_CMP8_IMM
+      execute: h8_exec_cmp8
+    effects: [pc, ccr_hnzvc]
+
+  - id: h8_bne_rel8
+    assembler_template: bne {rel8}
+    length_bytes: 2
+    encoding:
+      mask: "0xff01"
+      match: "0x4600"
+      guard: disp8_bit0_zero
+      fields:
+        rel8: "word[7:0]"
+    sail:
+      decode: H8_BRANCH
+      execute: h8_exec_branch
+    effects: [pc, branch]
+cases:
+  - id: h8_nop
+    instruction: h8_nop
+    status: supported
+    check_area: execute
+    assembler:
+      - nop
+    words:
+      - "0x0000"
+    decode_keys: ["0", "0", "0", "0"]
+    sail:
+      decode: H8_NOP
+      execute: h8_exec_nop
+    initial:
+      pc: "0x0000"
+      regs: {}
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_mov8_imm_r0h
+    instruction: h8_mov8_imm_r8
+    status: supported
+    check_area: execute
+    assembler:
+      - mov.b #0x12,r0h
+    words:
+      - "0xf012"
+    decode_keys: ["f", "0"]
+    sail:
+      decode: H8_MOV8_IMM
+      execute: h8_exec_mov8_imm
+    initial:
+      pc: "0x0000"
+      regs: {}
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0h: "0x12"
+      ccr_hnzvc: "00000"
+      trap: false
+
+  - id: h8_mov8_imm_r0l
+    instruction: h8_mov8_imm_r8
+    status: supported
+    check_area: execute
+    assembler:
+      - mov.b #0x34,r0l
+    words:
+      - "0xf834"
+    decode_keys: ["f", "8"]
+    sail:
+      decode: H8_MOV8_IMM
+      execute: h8_exec_mov8_imm
+    initial:
+      pc: "0x0000"
+      regs: {}
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0x34"
+      ccr_hnzvc: "00000"
+      trap: false
+
+  - id: h8_add8_imm_r0h
+    instruction: h8_add8_imm_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - add.b #0xee,r0h
+    words:
+      - "0x80ee"
+    decode_keys: ["8", "0"]
+    sail:
+      decode: H8_ADD8_IMM
+      execute: h8_exec_add8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0h: "0x12"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0h: "0x00"
+      ccr_hnzvc: "10101"
+      trap: false
+
+  - id: h8_cmp8_imm_r0h
+    instruction: h8_cmp8_imm_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - cmp.b #0x00,r0h
+    words:
+      - "0xa000"
+    decode_keys: ["a", "0"]
+    sail:
+      decode: H8_CMP8_IMM
+      execute: h8_exec_cmp8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0h: "0x00"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0h: "0x00"
+      ccr_hnzvc: "00100"
+      trap: false
+
+  - id: h8_mov16_imm_r2
+    instruction: h8_mov16_imm_r16
+    status: supported
+    check_area: execute
+    assembler:
+      - mov.w #0xabcd,r2
+    words:
+      - "0x7902"
+      - "0xabcd"
+    decode_keys: ["7", "9", "0", "2"]
+    sail:
+      decode: H8_MOV16_IMM
+      execute: h8_exec_mov16_imm
+    initial:
+      pc: "0x0000"
+      regs: {}
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0004"
+      regs:
+        r2: "0xabcd"
+      ccr_hnzvc: "01000"
+      trap: false
+
+  - id: h8_bne_rel8_taken
+    instruction: h8_bne_rel8
+    status: supported
+    check_area: branch
+    assembler:
+      - "loop:"
+      - "  bne loop"
+    words:
+      - "0x46fe"
+    decode_keys: ["4", "6"]
+    sail:
+      decode: H8_BRANCH
+      execute: h8_exec_branch
+    initial:
+      pc: "0x000e"
+      regs: {}
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x000e"
+      regs: {}
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_bne_rel8_not_taken
+    instruction: h8_bne_rel8
+    status: supported
+    check_area: branch
+    assembler:
+      - "loop:"
+      - "  bne loop"
+    words:
+      - "0x46fe"
+    decode_keys: ["4", "6"]
+    sail:
+      decode: H8_BRANCH
+      execute: h8_exec_branch
+    initial:
+      pc: "0x000e"
+      regs: {}
+      ccr_hnzvc: "00100"
+    expected:
+      pc: "0x0010"
+      regs: {}
+      ccr_hnzvc: preserve
+      trap: false

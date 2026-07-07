@@ -182,6 +182,34 @@ instructions:
       execute: h8_exec_cmp8
     effects: [pc, ccr_hnzvc]
 
+  - id: h8_addx8_imm_r8
+    assembler_template: "addx.b #{imm8}, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xf000"
+      match: "0x9000"
+      fields:
+        rd8: "word[11:8]"
+        imm8: "word[7:0]"
+    sail:
+      decode: H8_ADDX8_IMM
+      execute: h8_exec_addx8
+    effects: [pc, rd8, ccr_hnzvc]
+
+  - id: h8_subx8_imm_r8
+    assembler_template: "subx.b #{imm8}, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xf000"
+      match: "0xb000"
+      fields:
+        rd8: "word[11:8]"
+        imm8: "word[7:0]"
+    sail:
+      decode: H8_SUBX8_IMM
+      execute: h8_exec_subx8
+    effects: [pc, rd8, ccr_hnzvc]
+
   - id: h8_add8_r8_r8
     assembler_template: "add.b {rs8}, {rd8}"
     length_bytes: 2
@@ -695,6 +723,20 @@ instructions:
       execute: h8_exec_and8
     effects: [pc, rd8, ccr_nzv]
 
+  - id: h8_addx8_r8_r8
+    assembler_template: "addx.b {rs8}, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff00"
+      match: "0x0e00"
+      fields:
+        rs8: "word[7:4]"
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_ADDX8_R8_R8
+      execute: h8_exec_addx8
+    effects: [pc, rd8, ccr_hnzvc]
+
   - id: h8_not8_r8
     assembler_template: "not.b {rd8}"
     length_bytes: 2
@@ -746,6 +788,20 @@ instructions:
     sail:
       decode: H8_SUB8_R8_R8
       execute: h8_exec_sub8
+    effects: [pc, rd8, ccr_hnzvc]
+
+  - id: h8_subx8_r8_r8
+    assembler_template: "subx.b {rs8}, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff00"
+      match: "0x1e00"
+      fields:
+        rs8: "word[7:4]"
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_SUBX8_R8_R8
+      execute: h8_exec_subx8
     effects: [pc, rd8, ccr_hnzvc]
 
   - id: h8_sub16_r16_r16
@@ -1893,6 +1949,55 @@ cases:
       ccr_hnzvc: "00000"
       trap: false
 
+  - id: h8_addx8_imm_r0l_zero
+    instruction: h8_addx8_imm_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "addx.b #0x00, r0l"
+    words:
+      - "0x9800"
+    decode_keys: ["9", "8"]
+    sail:
+      decode: H8_ADDX8_IMM
+      execute: h8_exec_addx8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0xff"
+      ccr_hnzvc: "00001"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0x00"
+      ccr_hnzvc: "10101"
+      trap: false
+
+  - id: h8_addx8_r1h_r0l_overflow
+    instruction: h8_addx8_r8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "addx.b r1h, r0l"
+    words:
+      - "0x0e18"
+    decode_keys: ["0", "e"]
+    sail:
+      decode: H8_ADDX8_R8_R8
+      execute: h8_exec_addx8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x7f"
+        r1h: "0x00"
+      ccr_hnzvc: "00101"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0x80"
+      ccr_hnzvc: "11010"
+      trap: false
+
   - id: h8_mov8_r1h_r0l
     instruction: h8_mov8_r8_r8
     status: supported
@@ -2521,6 +2626,55 @@ cases:
       regs:
         r0h: "0xff"
       ccr_hnzvc: "01000"
+      trap: false
+
+  - id: h8_subx8_imm_r0l_borrow
+    instruction: h8_subx8_imm_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "subx.b #0x00, r0l"
+    words:
+      - "0xb800"
+    decode_keys: ["b", "8"]
+    sail:
+      decode: H8_SUBX8_IMM
+      execute: h8_exec_subx8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x00"
+      ccr_hnzvc: "00001"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0xff"
+      ccr_hnzvc: "11001"
+      trap: false
+
+  - id: h8_subx8_r1h_r0l_zero_sticky
+    instruction: h8_subx8_r8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "subx.b r1h, r0l"
+    words:
+      - "0x1e18"
+    decode_keys: ["1", "e"]
+    sail:
+      decode: H8_SUBX8_R8_R8
+      execute: h8_exec_subx8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x80"
+        r1h: "0x7f"
+      ccr_hnzvc: "00001"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0x00"
+      ccr_hnzvc: "10010"
       trap: false
 
   - id: h8_sub8_r1h_r0l

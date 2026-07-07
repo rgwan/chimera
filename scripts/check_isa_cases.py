@@ -16,11 +16,32 @@ SAIL_PATH = REPO_ROOT / "sail" / "h8300.sail"
 OUT_DIR = REPO_ROOT / "result" / "isa-cases"
 
 ID_RE = re.compile(r"^h8_[a-z0-9_]+$")
+FIELD_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 NIBBLE_RE = re.compile(r"^[0-9a-f]$")
 WORD_RE = re.compile(r"^0x[0-9a-f]{4}$")
 BYTE_REG_RE = re.compile(r"^r[0-7][hl]$")
 WORD_REG_RE = re.compile(r"^[re][0-7]$")
 HNZVC_RE = re.compile(r"^[01]{5}$")
+TRACE_KINDS = {"bits", "bool", "enum", "uint"}
+TRACE_REQUIRED_FIELDS = {
+    "valid",
+    "start_pc",
+    "pc",
+    "instruction_id",
+    "trap",
+    "ccr_hnzvc",
+    "gpr_write_count",
+    "mem_access_count",
+}
+TRACE_REG_FIELDS = {"gpr_write_count", "gpr_write0_name", "gpr_write0_value"}
+TRACE_MEM_FIELDS = {
+    "mem_access_count",
+    "mem0_kind",
+    "mem0_addr",
+    "mem0_wmask",
+    "mem0_wdata",
+    "mem0_rdata",
+}
 
 
 def fail(errors: list[str], path: str, message: str) -> None:
@@ -68,6 +89,112 @@ def validate_sail_symbols(sail: dict[str, object], path: str, sail_text: str, er
         symbol = sail.get(field)
         if not isinstance(symbol, str) or symbol not in sail_text:
             fail(errors, f"{path}.{field}", "symbol not found in Sail model")
+
+
+def validate_retire_trace_shape(trace: object, root: dict[str, object], errors: list[str]) -> set[str]:
+    path = "retire_trace"
+    item = expect_dict(errors, trace, path)
+    if item.get("schema") != 1:
+        fail(errors, f"{path}.schema", "expected schema 1")
+    if item.get("record") != "h8_retire":
+        fail(errors, f"{path}.record", "expected h8_retire")
+
+    compare_fields = expect_list(errors, item.get("compare_fields"), f"{path}.compare_fields")
+    if compare_fields != root.get("retire_compare"):
+        fail(errors, f"{path}.compare_fields", "does not match retire_compare")
+
+    field_names: set[str] = set()
+    fields = expect_list(errors, item.get("fields"), f"{path}.fields")
+    for index, field in enumerate(fields):
+        field_path = f"{path}.fields[{index}]"
+        field_item = expect_dict(errors, field, field_path)
+        name = field_item.get("name")
+        if not isinstance(name, str) or FIELD_RE.fullmatch(name) is None:
+            fail(errors, f"{field_path}.name", "bad field name")
+        elif name in field_names:
+            fail(errors, f"{field_path}.name", "duplicate field name")
+        else:
+            field_names.add(name)
+
+        kind = field_item.get("kind")
+        if kind not in TRACE_KINDS:
+            fail(errors, f"{field_path}.kind", "bad field kind")
+        if kind in {"bits", "uint"} and not isinstance(field_item.get("bits"), int):
+            fail(errors, f"{field_path}.bits", "expected integer width")
+        if not isinstance(field_item.get("source"), str) or not field_item.get("source"):
+            fail(errors, f"{field_path}.source", "expected source string")
+        if not isinstance(field_item.get("required"), bool):
+            fail(errors, f"{field_path}.required", "expected bool")
+
+    missing = TRACE_REQUIRED_FIELDS - field_names
+    if missing:
+        fail(errors, f"{path}.fields", f"missing required fields: {', '.join(sorted(missing))}")
+    return field_names
+
+
+def validate_retire_trace_effects(
+    instructions: dict[str, dict[str, object]],
+    trace_fields: set[str],
+    errors: list[str],
+) -> None:
+    if not TRACE_REG_FIELDS <= trace_fields:
+        fail(errors, "retire_trace.fields", "missing register write fields")
+    if not TRACE_MEM_FIELDS <= trace_fields:
+        fail(errors, "retire_trace.fields", "missing memory access fields")
+
+    for instr_id, instruction in instructions.items():
+        effects = instruction.get("effects")
+        if not isinstance(effects, list):
+            continue
+        if "pc" in effects and "pc" not in trace_fields:
+            fail(errors, f"instructions.{instr_id}.effects", "pc effect lacks trace pc")
+        if "branch" in effects and "pc" not in trace_fields:
+            fail(errors, f"instructions.{instr_id}.effects", "branch effect lacks trace pc")
+        if "ccr_hnzvc" in effects and "ccr_hnzvc" not in trace_fields:
+            fail(errors, f"instructions.{instr_id}.effects", "flag effect lacks trace ccr_hnzvc")
+        if "ccr_nzv" in effects and "ccr_hnzvc" not in trace_fields:
+            fail(errors, f"instructions.{instr_id}.effects", "flag effect lacks trace ccr_hnzvc")
+        if any(effect in {"rd8", "rd16"} for effect in effects) and not TRACE_REG_FIELDS <= trace_fields:
+            fail(errors, f"instructions.{instr_id}.effects", "register effect lacks trace writeback")
+
+
+def build_trace_expectation(
+    case: dict[str, object],
+    instruction: dict[str, object] | None,
+    path: str,
+    errors: list[str],
+) -> dict[str, object]:
+    initial = expect_dict(errors, case.get("initial"), f"{path}.initial")
+    expected = expect_dict(errors, case.get("expected"), f"{path}.expected")
+    expected_hnzvc = expected.get("ccr_hnzvc")
+    if expected_hnzvc == "preserve":
+        expected_hnzvc = initial.get("ccr_hnzvc")
+
+    trace = {
+        "case_id": case.get("id"),
+        "valid": True,
+        "start_pc": initial.get("pc"),
+        "pc": expected.get("pc"),
+        "instruction_id": case.get("instruction"),
+        "trap": expected.get("trap"),
+        "ccr_hnzvc": expected_hnzvc,
+        "gpr_write_count": 0,
+        "mem_access_count": 0,
+    }
+
+    effects = instruction.get("effects") if isinstance(instruction, dict) else []
+    expected_regs = expect_dict(errors, expected.get("regs", {}), f"{path}.expected.regs")
+    if isinstance(effects, list) and any(effect in {"rd8", "rd16"} for effect in effects):
+        if len(expected_regs) != 1:
+            fail(errors, f"{path}.expected.regs", "register write case must name one writeback")
+        else:
+            name, value = next(iter(expected_regs.items()))
+            trace.update({
+                "gpr_write_count": 1,
+                "gpr_write0_name": name,
+                "gpr_write0_value": value,
+            })
+    return trace
 
 
 def validate_instruction(
@@ -119,7 +246,7 @@ def validate_case(
     ids: set[str],
     instructions: dict[str, dict[str, object]],
     errors: list[str],
-) -> None:
+) -> dict[str, object]:
     path = f"cases[{index}]"
     item = expect_dict(errors, case, path)
     case_id = item.get("id")
@@ -185,6 +312,9 @@ def validate_case(
     if not isinstance(expected.get("trap"), bool):
         fail(errors, f"{path}.expected.trap", "expected bool")
 
+    instruction = instructions.get(instruction_id) if isinstance(instruction_id, str) else None
+    return build_trace_expectation(item, instruction, path, errors)
+
 
 def validate_table(table: object, sail_text: str) -> tuple[list[str], dict[str, object]]:
     errors: list[str] = []
@@ -204,6 +334,10 @@ def validate_table(table: object, sail_text: str) -> tuple[list[str], dict[str, 
         fail(errors, "byte_order", "expected big")
     if root.get("ccr_order") != "HNZVC":
         fail(errors, "ccr_order", "expected HNZVC")
+    retire_compare = expect_list(errors, root.get("retire_compare"), "retire_compare")
+    if retire_compare != ["pc", "regs", "ccr_hnzvc", "trap"]:
+        fail(errors, "retire_compare", "unexpected compare fields")
+    trace_fields = validate_retire_trace_shape(root.get("retire_trace"), root, errors)
 
     for audit_name in ("chip", "psychology"):
         audit = expect_list(errors, expect_dict(errors, root.get("audits"), "audits").get(audit_name), f"audits.{audit_name}")
@@ -218,11 +352,13 @@ def validate_table(table: object, sail_text: str) -> tuple[list[str], dict[str, 
         validate_instruction(instruction, index, sail_text, instruction_ids, encodings, errors)
         if isinstance(instruction, dict) and isinstance(instruction.get("id"), str):
             instructions[instruction["id"]] = instruction
+    validate_retire_trace_effects(instructions, trace_fields, errors)
 
     case_ids: set[str] = set()
+    trace_expectations: list[dict[str, object]] = []
     cases = expect_list(errors, root.get("cases"), "cases")
     for index, case in enumerate(cases):
-        validate_case(case, index, sail_text, case_ids, instructions, errors)
+        trace_expectations.append(validate_case(case, index, sail_text, case_ids, instructions, errors))
 
     summary = {
         "case_count": len(cases),
@@ -230,6 +366,8 @@ def validate_table(table: object, sail_text: str) -> tuple[list[str], dict[str, 
         "fetch_word_bits": root.get("fetch_word_bits"),
         "instruction_count": len(instruction_rows),
         "profile": root.get("profile"),
+        "retire_trace_case_count": len(trace_expectations),
+        "retire_trace_field_count": len(trace_fields),
         "schema": root.get("schema"),
         "storage_word_bits": root.get("storage_word_bits"),
     }

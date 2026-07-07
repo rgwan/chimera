@@ -13,6 +13,85 @@ retire_compare:
   - regs
   - ccr_hnzvc
   - trap
+retire_trace:
+  schema: 1
+  record: h8_retire
+  compare_fields:
+    - pc
+    - regs
+    - ccr_hnzvc
+    - trap
+  fields:
+    - name: valid
+      kind: bool
+      source: retire.valid
+      required: true
+    - name: start_pc
+      kind: bits
+      bits: 16
+      source: state.pc.before
+      required: true
+    - name: pc
+      kind: bits
+      bits: 16
+      source: state.pc.after
+      required: true
+    - name: instruction_id
+      kind: enum
+      source: case.instruction
+      required: true
+    - name: trap
+      kind: bool
+      source: execute.trap
+      required: true
+    - name: ccr_hnzvc
+      kind: bits
+      bits: 5
+      source: state.ccr.after
+      required: true
+    - name: gpr_write_count
+      kind: uint
+      bits: 2
+      source: writeback.count
+      required: true
+    - name: gpr_write0_name
+      kind: enum
+      source: writeback.reg0.name
+      required: false
+    - name: gpr_write0_value
+      kind: bits
+      bits: 16
+      source: writeback.reg0.value
+      required: false
+    - name: mem_access_count
+      kind: uint
+      bits: 2
+      source: memory.count
+      required: true
+    - name: mem0_kind
+      kind: enum
+      source: memory.access0.kind
+      required: false
+    - name: mem0_addr
+      kind: bits
+      bits: 16
+      source: memory.access0.addr
+      required: false
+    - name: mem0_wmask
+      kind: bits
+      bits: 2
+      source: memory.access0.wmask
+      required: false
+    - name: mem0_wdata
+      kind: bits
+      bits: 16
+      source: memory.access0.wdata
+      required: false
+    - name: mem0_rdata
+      kind: bits
+      bits: 16
+      source: memory.access0.rdata
+      required: false
 audits:
   chip:
     - decode keys are one nibble each

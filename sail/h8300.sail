@@ -316,6 +316,9 @@ function h8_reset() -> H8State =
 function h8_test_ccr(n : bit, z : bit, v : bit, c : bit) -> H8CCR =
   struct {i = 0b1, u6 = 0b0, h = 0b0, u4 = 0b0, n = n, z = z, v = v, c = c}
 
+function h8_ccr_hnzvc(ccr : H8CCR) -> bits(5) =
+  ccr.h @ ccr.n @ ccr.z @ ccr.v @ ccr.c
+
 function h8_reg_arith_selftest() -> bool = {
   let r0h : H8R8 = struct {reg = 0, high = true};
   let r0l : H8R8 = struct {reg = 0, high = false};
@@ -348,6 +351,47 @@ function h8_reg_arith_selftest() -> bool = {
   let ok_sub8 = read_r8(st11, r1l) == 0xFF & st11.ccr.n == 0b1 & st11.ccr.c == 0b1;
   let ok_logic = read_r8(st15, r1l) == 0x8F & st15.ccr.n == 0b1 & st15.ccr.v == 0b0;
   ok_alias & ok_add8 & ok_cmp8 & ok_add16 & ok_sub16 & ok_cmp16 & ok_mov16 & ok_sub8 & ok_logic & st16.pc == st15.pc
+}
+
+function h8_flag_selftest() -> bool = {
+  let r0l : H8R8 = struct {reg = 0, high = false};
+  let st0 = h8_reset();
+  let add8_base = h8_exec_mov8_imm(st0, r0l, 0x7F);
+  let add8 = h8_exec_add8(add8_base, r0l, 0x01);
+  let add16_low_base = h8_exec_mov16_imm(st0, 1, 0x000F);
+  let add16_low = h8_exec_add16(add16_low_base, 1, 0x0001);
+  let add16_h_base = h8_exec_mov16_imm(st0, 1, 0x0FFF);
+  let add16_h = h8_exec_add16(add16_h_base, 1, 0x0001);
+  let sub8_base = h8_exec_mov8_imm(st0, r0l, 0x80);
+  let sub8 = h8_exec_sub8(sub8_base, r0l, 0x01);
+  let sub16_low_base = h8_exec_mov16_imm(st0, 1, 0x0010);
+  let sub16_low = h8_exec_sub16(sub16_low_base, 1, 0x0001);
+  let sub16_h_base = h8_exec_mov16_imm(st0, 1, 0x1000);
+  let sub16_h = h8_exec_sub16(sub16_h_base, 1, 0x0001);
+  let cmp8_borrow_base = h8_exec_mov8_imm(st0, r0l, 0x00);
+  let cmp8_borrow = h8_exec_cmp8(cmp8_borrow_base, r0l, 0x01);
+  let cmp8_overflow_base = h8_exec_mov8_imm(st0, r0l, 0x80);
+  let cmp8_overflow = h8_exec_cmp8(cmp8_overflow_base, r0l, 0x01);
+  let cmp16_borrow_base = h8_exec_mov16_imm(st0, 1, 0x0000);
+  let cmp16_borrow = h8_exec_cmp16(cmp16_borrow_base, 1, 0x0001);
+  let ok_add8 = read_r8(add8, r0l) == 0x80 & h8_ccr_hnzvc(add8.ccr) == 0b11010;
+  let ok_add16_low = read_r16(add16_low, 1) == 0x0010 & h8_ccr_hnzvc(add16_low.ccr) == 0b00000;
+  let ok_add16_h = read_r16(add16_h, 1) == 0x1000 & h8_ccr_hnzvc(add16_h.ccr) == 0b10000;
+  let ok_sub8 = read_r8(sub8, r0l) == 0x7F & h8_ccr_hnzvc(sub8.ccr) == 0b10010;
+  let ok_sub16_low = read_r16(sub16_low, 1) == 0x000F & h8_ccr_hnzvc(sub16_low.ccr) == 0b00000;
+  let ok_sub16_h = read_r16(sub16_h, 1) == 0x0FFF & h8_ccr_hnzvc(sub16_h.ccr) == 0b10000;
+  let ok_cmp8_borrow = read_r8(cmp8_borrow, r0l) == 0x00 & h8_ccr_hnzvc(cmp8_borrow.ccr) == 0b11001;
+  let ok_cmp8_overflow = read_r8(cmp8_overflow, r0l) == 0x80 & h8_ccr_hnzvc(cmp8_overflow.ccr) == 0b10010;
+  let ok_cmp16_borrow = read_r16(cmp16_borrow, 1) == 0x0000 & h8_ccr_hnzvc(cmp16_borrow.ccr) == 0b11001;
+  ok_add8
+    & ok_add16_low
+    & ok_add16_h
+    & ok_sub8
+    & ok_sub16_low
+    & ok_sub16_h
+    & ok_cmp8_borrow
+    & ok_cmp8_overflow
+    & ok_cmp16_borrow
 }
 
 function h8_branch_selftest() -> bool = {
@@ -404,4 +448,7 @@ function h8_decode_selftest() -> bool = {
 }
 
 function h8_selftest() -> bool =
-  h8_reg_arith_selftest() & h8_branch_selftest() & h8_decode_selftest()
+  h8_reg_arith_selftest()
+    & h8_flag_selftest()
+    & h8_branch_selftest()
+    & h8_decode_selftest()

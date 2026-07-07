@@ -1,0 +1,31 @@
+# Generated hardware
+/result/
+/*.mlirbc
+/*.fir
+/*.sv
+/*.v
+
+# Simulation output
+/test/**/sim_build/
+/test/**/*.xml
+/test/**/*.log
+/test/**/*.fst
+/test/**/*.fsdb
+/test/**/__pycache__/
+/test/**/.pytest_cache/
+/test/**/ucli.key
+/test/**/novas.*
+/test/**/verdiLog/
+/test/**/xrun.*
+
+# Python
+__pycache__/
+.pytest_cache/
+
+# Nix
+/result-*
+.direnv/
+
+# Scala CLI / BSP metadata
+.bsp/
+.scala-build/

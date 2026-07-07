@@ -39,6 +39,7 @@ TRACE_REQUIRED_FIELDS = {
     "mem_access_count",
 }
 TRACE_REG_FIELDS = {"gpr_write_count", "gpr_write0_name", "gpr_write0_value"}
+TRACE_REG_MULTI_FIELDS = TRACE_REG_FIELDS | {"gpr_write1_name", "gpr_write1_value"}
 TRACE_MEM_FIELDS = {
     "mem_access_count",
     "mem0_kind",
@@ -363,8 +364,11 @@ def validate_retire_trace_effects(
             fail(errors, f"instructions.{instr_id}.effects", "flag effect lacks trace ccr_hnzvc")
         if "ccr_nzv" in effects and "ccr_hnzvc" not in trace_fields:
             fail(errors, f"instructions.{instr_id}.effects", "flag effect lacks trace ccr_hnzvc")
-        if any(effect in {"rd8", "rd16"} for effect in effects) and not TRACE_REG_FIELDS <= trace_fields:
+        if any(effect in {"rd8", "rd16", "addr_update"} for effect in effects) and not TRACE_REG_FIELDS <= trace_fields:
             fail(errors, f"instructions.{instr_id}.effects", "register effect lacks trace writeback")
+        if "addr_update" in effects and any(effect in {"rd8", "rd16"} for effect in effects):
+            if not TRACE_REG_MULTI_FIELDS <= trace_fields:
+                fail(errors, f"instructions.{instr_id}.effects", "multi-register effect lacks trace writeback")
         if any(effect in {"mem_read", "mem_write"} for effect in effects) and not TRACE_MEM_FIELDS <= trace_fields:
             fail(errors, f"instructions.{instr_id}.effects", "memory effect lacks trace access")
 
@@ -395,16 +399,14 @@ def build_trace_expectation(
 
     effects = instruction.get("effects") if isinstance(instruction, dict) else []
     expected_regs = expect_dict(errors, expected.get("regs", {}), f"{path}.expected.regs")
-    if isinstance(effects, list) and any(effect in {"rd8", "rd16"} for effect in effects):
-        if len(expected_regs) != 1:
-            fail(errors, f"{path}.expected.regs", "register write case must name one writeback")
+    if isinstance(effects, list) and any(effect in {"rd8", "rd16", "addr_update"} for effect in effects):
+        if not 1 <= len(expected_regs) <= 2:
+            fail(errors, f"{path}.expected.regs", "register write case must name one or two writebacks")
         else:
-            name, value = next(iter(expected_regs.items()))
-            trace.update({
-                "gpr_write_count": 1,
-                "gpr_write0_name": name,
-                "gpr_write0_value": value,
-            })
+            trace["gpr_write_count"] = len(expected_regs)
+            for reg_index, (name, value) in enumerate(expected_regs.items()):
+                trace[f"gpr_write{reg_index}_name"] = name
+                trace[f"gpr_write{reg_index}_value"] = value
     if isinstance(effects, list) and any(effect in {"mem_read", "mem_write"} for effect in effects):
         memory = expect_dict(errors, case.get("memory"), f"{path}.memory")
         access = expect_dict(errors, memory.get("access"), f"{path}.memory.access")

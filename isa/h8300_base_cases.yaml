@@ -65,6 +65,15 @@ retire_trace:
       bits: 16
       source: writeback.reg0.value
       required: false
+    - name: gpr_write1_name
+      kind: enum
+      source: writeback.reg1.name
+      required: false
+    - name: gpr_write1_value
+      kind: bits
+      bits: 16
+      source: writeback.reg1.value
+      required: false
     - name: mem_access_count
       kind: uint
       bits: 2
@@ -284,6 +293,62 @@ instructions:
       decode: H8_MOV16_R16_R16I
       execute: h8_exec_mov16_reg_to_mem
     effects: [pc, ccr_nzv, mem_write]
+
+  - id: h8_mov8_r16p_r8
+    assembler_template: "mov.b @{rs16}+, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff80"
+      match: "0x6c00"
+      fields:
+        rs16: "word[6:4]"
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_MOV8_R16P_R8
+      execute: h8_exec_mov8_postinc_to_reg
+    effects: [pc, addr_update, rd8, ccr_nzv, mem_read]
+
+  - id: h8_mov8_r8_pr16
+    assembler_template: "mov.b {rs8}, @-{rd16}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff80"
+      match: "0x6c80"
+      fields:
+        rd16: "word[6:4]"
+        rs8: "word[3:0]"
+    sail:
+      decode: H8_MOV8_R8_PR16
+      execute: h8_exec_mov8_reg_to_predec
+    effects: [pc, addr_update, ccr_nzv, mem_write]
+
+  - id: h8_mov16_r16p_r16
+    assembler_template: "mov.w @{rs16}+, {rd16}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff88"
+      match: "0x6d00"
+      fields:
+        rs16: "word[6:4]"
+        rd16: "word[2:0]"
+    sail:
+      decode: H8_MOV16_R16P_R16
+      execute: h8_exec_mov16_postinc_to_reg
+    effects: [pc, addr_update, rd16, ccr_nzv, mem_read]
+
+  - id: h8_mov16_r16_pr16
+    assembler_template: "mov.w {rs16}, @-{rd16}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff88"
+      match: "0x6d80"
+      fields:
+        rd16: "word[6:4]"
+        rs16: "word[2:0]"
+    sail:
+      decode: H8_MOV16_R16_PR16
+      execute: h8_exec_mov16_reg_to_predec
+    effects: [pc, addr_update, ccr_nzv, mem_write]
 
   - id: h8_or8_imm_r8
     assembler_template: "or.b #{imm8}, {rd8}"
@@ -657,6 +722,236 @@ cases:
         addr: "0x0140"
         wmask: "11"
         wdata: "0x1234"
+
+  - id: h8_mov8_r1p_r0l
+    instruction: h8_mov8_r16p_r8
+    status: supported
+    check_area: memory
+    assembler:
+      - "mov.b @r1+, r0l"
+    words:
+      - "0x6c18"
+    decode_keys: ["6", "c"]
+    sail:
+      decode: H8_MOV8_R16P_R8
+      execute: h8_exec_mov8_postinc_to_reg
+    initial:
+      pc: "0x0000"
+      regs:
+        r1: "0x0140"
+        r0l: "0x00"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1: "0x0141"
+        r0l: "0x80"
+      ccr_hnzvc: "11001"
+      trap: false
+    memory:
+      initial:
+        "0x0140": "0x80"
+      expected:
+        "0x0140": "0x80"
+      access:
+        kind: read
+        width: byte
+        addr: "0x0140"
+        wmask: "00"
+        rdata: "0x0080"
+
+  - id: h8_mov8_r0l_pr1
+    instruction: h8_mov8_r8_pr16
+    status: supported
+    check_area: memory
+    assembler:
+      - "mov.b r0l, @-r1"
+    words:
+      - "0x6c98"
+    decode_keys: ["6", "c"]
+    sail:
+      decode: H8_MOV8_R8_PR16
+      execute: h8_exec_mov8_reg_to_predec
+    initial:
+      pc: "0x0000"
+      regs:
+        r1: "0x0141"
+        r0l: "0x00"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1: "0x0140"
+      ccr_hnzvc: "10101"
+      trap: false
+    memory:
+      initial:
+        "0x0140": "0xaa"
+        "0x0141": "0x55"
+      expected:
+        "0x0140": "0x00"
+        "0x0141": "0x55"
+      access:
+        kind: write
+        width: byte
+        addr: "0x0140"
+        wmask: "01"
+        wdata: "0x0000"
+
+  - id: h8_mov8_r1l_pr1
+    instruction: h8_mov8_r8_pr16
+    status: supported
+    check_area: memory
+    assembler:
+      - "mov.b r1l, @-r1"
+    words:
+      - "0x6c99"
+    decode_keys: ["6", "c"]
+    sail:
+      decode: H8_MOV8_R8_PR16
+      execute: h8_exec_mov8_reg_to_predec
+    initial:
+      pc: "0x0000"
+      regs:
+        r1: "0x0141"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1: "0x0140"
+      ccr_hnzvc: "10001"
+      trap: false
+    memory:
+      initial:
+        "0x0140": "0xaa"
+        "0x0141": "0x55"
+      expected:
+        "0x0140": "0x41"
+        "0x0141": "0x55"
+      access:
+        kind: write
+        width: byte
+        addr: "0x0140"
+        wmask: "01"
+        wdata: "0x0041"
+
+  - id: h8_mov16_r1p_r0
+    instruction: h8_mov16_r16p_r16
+    status: supported
+    check_area: memory
+    assembler:
+      - "mov.w @r1+, r0"
+    words:
+      - "0x6d10"
+    decode_keys: ["6", "d"]
+    sail:
+      decode: H8_MOV16_R16P_R16
+      execute: h8_exec_mov16_postinc_to_reg
+    initial:
+      pc: "0x0000"
+      regs:
+        r1: "0x0140"
+        r0: "0x0000"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1: "0x0142"
+        r0: "0x8000"
+      ccr_hnzvc: "11001"
+      trap: false
+    memory:
+      initial:
+        "0x0140": "0x80"
+        "0x0141": "0x00"
+      expected:
+        "0x0140": "0x80"
+        "0x0141": "0x00"
+      access:
+        kind: read
+        width: word
+        addr: "0x0140"
+        wmask: "00"
+        rdata: "0x8000"
+
+  - id: h8_mov16_r0_pr1
+    instruction: h8_mov16_r16_pr16
+    status: supported
+    check_area: memory
+    assembler:
+      - "mov.w r0, @-r1"
+    words:
+      - "0x6d90"
+    decode_keys: ["6", "d"]
+    sail:
+      decode: H8_MOV16_R16_PR16
+      execute: h8_exec_mov16_reg_to_predec
+    initial:
+      pc: "0x0000"
+      regs:
+        r1: "0x0142"
+        r0: "0x1234"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1: "0x0140"
+      ccr_hnzvc: "10001"
+      trap: false
+    memory:
+      initial:
+        "0x0140": "0xaa"
+        "0x0141": "0x55"
+        "0x0142": "0x66"
+      expected:
+        "0x0140": "0x12"
+        "0x0141": "0x34"
+        "0x0142": "0x66"
+      access:
+        kind: write
+        width: word
+        addr: "0x0140"
+        wmask: "11"
+        wdata: "0x1234"
+
+  - id: h8_mov16_r1_pr1
+    instruction: h8_mov16_r16_pr16
+    status: supported
+    check_area: memory
+    assembler:
+      - "mov.w r1, @-r1"
+    words:
+      - "0x6d91"
+    decode_keys: ["6", "d"]
+    sail:
+      decode: H8_MOV16_R16_PR16
+      execute: h8_exec_mov16_reg_to_predec
+    initial:
+      pc: "0x0000"
+      regs:
+        r1: "0x0142"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1: "0x0140"
+      ccr_hnzvc: "10001"
+      trap: false
+    memory:
+      initial:
+        "0x0140": "0xaa"
+        "0x0141": "0x55"
+        "0x0142": "0x66"
+      expected:
+        "0x0140": "0x01"
+        "0x0141": "0x42"
+        "0x0142": "0x66"
+      access:
+        kind: write
+        width: word
+        addr: "0x0140"
+        wmask: "11"
+        wdata: "0x0142"
 
   - id: h8_add8_imm_r0h
     instruction: h8_add8_imm_r8

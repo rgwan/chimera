@@ -87,6 +87,59 @@ EOF
           build-chimera --smoke
         '';
 
+        h8300Binutils = (pkgs.binutils-unwrapped.override {
+          enableGold = false;
+          enableShared = false;
+        }).overrideAttrs (old: {
+          pname = "h8300-elf-binutils";
+          configurePlatforms = [ "build" "host" ];
+          configureFlags =
+            (builtins.filter
+              (flag: !(pkgs.lib.hasPrefix "--program-prefix=" flag))
+              old.configureFlags)
+            ++ [
+              "--target=h8300-elf"
+              "--program-prefix=h8300-elf-"
+            ];
+          doInstallCheck = false;
+        });
+
+        gnuOracleCheck = pkgs.runCommand "chimera-gnu-oracle-smoke" {
+          nativeBuildInputs = [
+            h8300Binutils
+            pkgs.coreutils
+            pkgs.gnugrep
+          ];
+        } ''
+          cat > oracle.s <<'EOF'
+          .text
+          .global _start
+          _start:
+            nop
+            mov.b #0x12, r0h
+            mov.b #0x34, r0l
+            add.b #0xee, r0h
+            cmp.b #0x00, r0h
+            mov.w #0xabcd, r2
+          loop:
+            bne loop
+          EOF
+
+          h8300-elf-as -o oracle.o oracle.s
+          h8300-elf-ld -Ttext=0 -e _start -o oracle.elf oracle.o
+          h8300-elf-objdump -f oracle.elf | grep -q 'file format elf32-h8300'
+          h8300-elf-objdump -d oracle.elf > oracle.dump
+          grep -qi 'mov.b' oracle.dump
+          grep -qi 'add.b' oracle.dump
+          grep -qi 'cmp.b' oracle.dump
+          grep -qi 'bne' oracle.dump
+          h8300-elf-objcopy -O binary -j .text oracle.elf oracle.bin
+          actual="$(od -An -tx1 -v oracle.bin | tr -d ' \n')"
+          expected="0000f012f83480eea0007902abcd46fe"
+          test "$actual" = "$expected"
+          touch $out
+        '';
+
         sailModelCheck = pkgs.runCommand "chimera-sail-model" {
           nativeBuildInputs = [
             pkgs.gcc
@@ -130,11 +183,13 @@ EOF
 
         fullBuildInputs = smokeBuildInputs ++ [
           pkgs.circt-install
+          h8300Binutils
           pkgs.mlir-install
         ];
       in
       {
         packages.default = smokeCheck;
+        packages.h8300-binutils = h8300Binutils;
         packages.sail-model = sailModelCheck;
 
         apps.default = {
@@ -151,6 +206,7 @@ EOF
 
         checks = {
           build-smoke = smokeCheck;
+          gnu-oracle-smoke = gnuOracleCheck;
           reuse = reuseCheck;
           sail-model = sailModelCheck;
         };

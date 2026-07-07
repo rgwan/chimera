@@ -353,6 +353,32 @@ instructions:
       execute: h8_exec_inc8
     effects: [pc, rd8, ccr_nzv]
 
+  - id: h8_adds16_one_r16
+    assembler_template: "adds #1, {rd16}"
+    length_bytes: 2
+    encoding:
+      mask: "0xfff8"
+      match: "0x0b00"
+      fields:
+        rd16: "word[2:0]"
+    sail:
+      decode: H8_ADDS16_R16
+      execute: h8_exec_adds16
+    effects: [pc, rd16]
+
+  - id: h8_adds16_two_r16
+    assembler_template: "adds #2, {rd16}"
+    length_bytes: 2
+    encoding:
+      mask: "0xfff8"
+      match: "0x0b80"
+      fields:
+        rd16: "word[2:0]"
+    sail:
+      decode: H8_ADDS16_R16
+      execute: h8_exec_adds16
+    effects: [pc, rd16]
+
   - id: h8_mov8_r8_r8
     assembler_template: "mov.b {rs8}, {rd8}"
     length_bytes: 2
@@ -877,6 +903,32 @@ instructions:
       decode: H8_DEC8_R8
       execute: h8_exec_dec8
     effects: [pc, rd8, ccr_nzv]
+
+  - id: h8_subs16_one_r16
+    assembler_template: "subs #1, {rd16}"
+    length_bytes: 2
+    encoding:
+      mask: "0xfff8"
+      match: "0x1b00"
+      fields:
+        rd16: "word[2:0]"
+    sail:
+      decode: H8_SUBS16_R16
+      execute: h8_exec_subs16
+    effects: [pc, rd16]
+
+  - id: h8_subs16_two_r16
+    assembler_template: "subs #2, {rd16}"
+    length_bytes: 2
+    encoding:
+      mask: "0xfff8"
+      match: "0x1b80"
+      fields:
+        rd16: "word[2:0]"
+    sail:
+      decode: H8_SUBS16_R16
+      execute: h8_exec_subs16
+    effects: [pc, rd16]
 
   - id: h8_sub8_r8_r8
     assembler_template: "sub.b {rs8}, {rd8}"
@@ -2521,6 +2573,54 @@ cases:
       ccr_hnzvc: "00000"
       trap: false
 
+  - id: h8_adds16_one_r4
+    instruction: h8_adds16_one_r16
+    status: supported
+    check_area: execute
+    assembler:
+      - "adds #1, r4"
+    words:
+      - "0x0b04"
+    decode_keys: ["0", "b"]
+    sail:
+      decode: H8_ADDS16_R16
+      execute: h8_exec_adds16
+    initial:
+      pc: "0x0000"
+      regs:
+        r4: "0x00ff"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r4: "0x0100"
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_adds16_two_r7_wrap
+    instruction: h8_adds16_two_r16
+    status: supported
+    check_area: execute
+    assembler:
+      - "adds #2, r7"
+    words:
+      - "0x0b87"
+    decode_keys: ["0", "b"]
+    sail:
+      decode: H8_ADDS16_R16
+      execute: h8_exec_adds16
+    initial:
+      pc: "0x0000"
+      regs:
+        r7: "0xffff"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r7: "0x0001"
+      ccr_hnzvc: preserve
+      trap: false
+
   - id: h8_addx8_imm_r0l_zero
     instruction: h8_addx8_imm_r8
     status: supported
@@ -3198,6 +3298,54 @@ cases:
       regs:
         r0h: "0xff"
       ccr_hnzvc: "01000"
+      trap: false
+
+  - id: h8_subs16_one_r3_wrap
+    instruction: h8_subs16_one_r16
+    status: supported
+    check_area: execute
+    assembler:
+      - "subs #1, r3"
+    words:
+      - "0x1b03"
+    decode_keys: ["1", "b"]
+    sail:
+      decode: H8_SUBS16_R16
+      execute: h8_exec_subs16
+    initial:
+      pc: "0x0000"
+      regs:
+        r3: "0x0000"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r3: "0xffff"
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_subs16_two_sp_wrap
+    instruction: h8_subs16_two_r16
+    status: supported
+    check_area: execute
+    assembler:
+      - "subs #2, sp"
+    words:
+      - "0x1b87"
+    decode_keys: ["1", "b"]
+    sail:
+      decode: H8_SUBS16_R16
+      execute: h8_exec_subs16
+    initial:
+      pc: "0x0000"
+      regs:
+        r7: "0x0000"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r7: "0xfffe"
+      ccr_hnzvc: preserve
       trap: false
 
   - id: h8_subx8_imm_r0l_borrow

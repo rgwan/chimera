@@ -85,6 +85,7 @@ union H8Inst = {
   H8_AND8_IMM : (H8R8, byte),
   H8_ADD8_R8_R8 : (H8R8, H8R8),
   H8_INC8_R8 : H8R8,
+  H8_ADDS16_R16 : (h8_r16, word),
   H8_MOV8_R8_R8 : (H8R8, H8R8),
   H8_OR8_R8_R8 : (H8R8, H8R8),
   H8_XOR8_R8_R8 : (H8R8, H8R8),
@@ -100,6 +101,7 @@ union H8Inst = {
   H8_NOT8_R8 : H8R8,
   H8_NEG8_R8 : H8R8,
   H8_DEC8_R8 : H8R8,
+  H8_SUBS16_R16 : (h8_r16, word),
   H8_SUB8_R8_R8 : (H8R8, H8R8),
   H8_ADDX8_R8_R8 : (H8R8, H8R8),
   H8_SUBX8_R8_R8 : (H8R8, H8R8),
@@ -511,12 +513,24 @@ function h8_exec_inc8(st : H8State, rd : H8R8) -> H8State = {
             pc = st.pc + 0x0002}
 }
 
+function h8_exec_adds16(st : H8State, rd : h8_r16, value : word) -> H8State = {
+  let result : word = read_r16(st, rd) + value;
+  let st1 = write_r16(st, rd, result);
+  {st1 with pc = st.pc + 0x0002}
+}
+
 function h8_exec_dec8(st : H8State, rd : H8R8) -> H8State = {
   let value : byte = read_r8(st, rd);
   let result : byte = value - 0x01;
   let st1 = write_r8(st, rd, result);
   {st1 with ccr = h8_nzv_flags8(result, bool_to_bit(value == 0x80), st.ccr),
             pc = st.pc + 0x0002}
+}
+
+function h8_exec_subs16(st : H8State, rd : h8_r16, value : word) -> H8State = {
+  let result : word = read_r16(st, rd) - value;
+  let st1 = write_r16(st, rd, result);
+  {st1 with pc = st.pc + 0x0002}
 }
 
 function h8_exec_and8(st : H8State, rd : H8R8, value : byte) -> H8State = {
@@ -724,6 +738,9 @@ function h8_decode_profile(profile : H8Profile, first : word, ext : word) -> opt
              Some(H8_ADD16_R16_R16(rr16_rd, rr16_rs))
            else if op0 == 0x0A & op1[7 .. 4] == 0b0000 then
              Some(H8_INC8_R8(rr8_rd))
+           else if op0 == 0x0B & op1[6 .. 3] == 0b0000 then
+             Some(H8_ADDS16_R16(h8_r16_from_code(op1[2 .. 0]),
+                                if op1[7] == 0b1 then 0x0002 else 0x0001))
            else if op0 == 0x0C then
              Some(H8_MOV8_R8_R8(rr8_rd, rr8_rs))
            else if op0 == 0x0D & h8_word_rr_allowed(profile, op1) then
@@ -760,6 +777,9 @@ function h8_decode_profile(profile : H8Profile, first : word, ext : word) -> opt
              Some(H8_NEG8_R8(rr8_rd))
            else if op0 == 0x1A & op1[7 .. 4] == 0b0000 then
              Some(H8_DEC8_R8(rr8_rd))
+           else if op0 == 0x1B & op1[6 .. 3] == 0b0000 then
+             Some(H8_SUBS16_R16(h8_r16_from_code(op1[2 .. 0]),
+                                if op1[7] == 0b1 then 0x0002 else 0x0001))
            else if op0 == 0x18 then
              Some(H8_SUB8_R8_R8(rr8_rd, rr8_rs))
            else if op0 == 0x19 & h8_word_rr_allowed(profile, op1) then
@@ -896,6 +916,7 @@ function h8_execute(st : H8State, inst : H8Inst) -> H8ExecResult =
     H8_AND8_IMM(rd, imm) => struct {st = h8_exec_and8(st, rd, imm), trap = false},
     H8_ADD8_R8_R8(rd, rs) => struct {st = h8_exec_add8(st, rd, read_r8(st, rs)), trap = false},
     H8_INC8_R8(rd) => struct {st = h8_exec_inc8(st, rd), trap = false},
+    H8_ADDS16_R16(rd, value) => struct {st = h8_exec_adds16(st, rd, value), trap = false},
     H8_MOV8_R8_R8(rd, rs) => struct {st = h8_exec_mov8(st, rd, rs), trap = false},
     H8_OR8_R8_R8(rd, rs) => struct {st = h8_exec_or8(st, rd, read_r8(st, rs)), trap = false},
     H8_XOR8_R8_R8(rd, rs) => struct {st = h8_exec_xor8(st, rd, read_r8(st, rs)), trap = false},
@@ -911,6 +932,7 @@ function h8_execute(st : H8State, inst : H8Inst) -> H8ExecResult =
     H8_NOT8_R8(rd) => struct {st = h8_exec_not8(st, rd), trap = false},
     H8_NEG8_R8(rd) => struct {st = h8_exec_neg8(st, rd), trap = false},
     H8_DEC8_R8(rd) => struct {st = h8_exec_dec8(st, rd), trap = false},
+    H8_SUBS16_R16(rd, value) => struct {st = h8_exec_subs16(st, rd, value), trap = false},
     H8_SUB8_R8_R8(rd, rs) => struct {st = h8_exec_sub8(st, rd, read_r8(st, rs)), trap = false},
     H8_ADDX8_R8_R8(rd, rs) => struct {st = h8_exec_addx8(st, rd, read_r8(st, rs)), trap = false},
     H8_SUBX8_R8_R8(rd, rs) => struct {st = h8_exec_subx8(st, rd, read_r8(st, rs)), trap = false},

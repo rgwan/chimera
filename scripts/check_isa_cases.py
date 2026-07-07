@@ -17,6 +17,9 @@ OUT_DIR = REPO_ROOT / "result" / "isa-cases"
 
 ID_RE = re.compile(r"^h8_[a-z0-9_]+$")
 FIELD_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+BRANCH_CASE_RE = re.compile(
+    r"^h8_(bra|brn|bhi|bls|bcc|bcs|bne|beq|bvc|bvs|bpl|bmi|bge|blt|bgt|ble)_rel8_(taken|not_taken)$"
+)
 NIBBLE_RE = re.compile(r"^[0-9a-f]$")
 WORD_RE = re.compile(r"^0x[0-9a-f]{4}$")
 BYTE_REG_RE = re.compile(r"^r[0-7][hl]$")
@@ -41,6 +44,28 @@ TRACE_MEM_FIELDS = {
     "mem0_wmask",
     "mem0_wdata",
     "mem0_rdata",
+}
+BRANCH_CODES = {
+    "bra": 0x0,
+    "brn": 0x1,
+    "bhi": 0x2,
+    "bls": 0x3,
+    "bcc": 0x4,
+    "bcs": 0x5,
+    "bne": 0x6,
+    "beq": 0x7,
+    "bvc": 0x8,
+    "bvs": 0x9,
+    "bpl": 0xA,
+    "bmi": 0xB,
+    "bge": 0xC,
+    "blt": 0xD,
+    "bgt": 0xE,
+    "ble": 0xF,
+}
+BRANCH_REQUIRED_OUTCOMES = {
+    name: ({"taken"} if name == "bra" else {"not_taken"} if name == "brn" else {"taken", "not_taken"})
+    for name in BRANCH_CODES
 }
 
 
@@ -89,6 +114,89 @@ def validate_sail_symbols(sail: dict[str, object], path: str, sail_text: str, er
         symbol = sail.get(field)
         if not isinstance(symbol, str) or symbol not in sail_text:
             fail(errors, f"{path}.{field}", "symbol not found in Sail model")
+
+
+def branch_taken(name: str, hnzvc: str) -> bool:
+    n = hnzvc[1] == "1"
+    z = hnzvc[2] == "1"
+    v = hnzvc[3] == "1"
+    c = hnzvc[4] == "1"
+    return {
+        "bra": True,
+        "brn": False,
+        "bhi": not c and not z,
+        "bls": c or z,
+        "bcc": not c,
+        "bcs": c,
+        "bne": not z,
+        "beq": z,
+        "bvc": not v,
+        "bvs": v,
+        "bpl": not n,
+        "bmi": n,
+        "bge": n == v,
+        "blt": n != v,
+        "bgt": not z and n == v,
+        "ble": z or n != v,
+    }[name]
+
+
+def branch_target(pc: int, disp8: int, taken: bool) -> int:
+    next_pc = (pc + 2) & 0xFFFF
+    if not taken:
+        return next_pc
+    signed_disp = disp8 - 0x100 if disp8 & 0x80 else disp8
+    return (next_pc + signed_disp) & 0xFFFF
+
+
+def validate_branch_case(
+    case: dict[str, object],
+    path: str,
+    coverage: dict[str, set[str]],
+    errors: list[str],
+) -> None:
+    case_id = case.get("id")
+    if not isinstance(case_id, str):
+        return
+    match = BRANCH_CASE_RE.fullmatch(case_id)
+    if match is None:
+        return
+    name, outcome = match.groups()
+    coverage.setdefault(name, set()).add(outcome)
+    if case.get("instruction") != "h8_branch_rel8":
+        fail(errors, f"{path}.instruction", "branch case must use h8_branch_rel8")
+
+    words = expect_list(errors, case.get("words"), f"{path}.words")
+    if len(words) != 1:
+        fail(errors, f"{path}.words", "branch case must use one word")
+        return
+    word = parse_word(words[0], f"{path}.words[0]", errors)
+    expected_word = 0x4000 | (BRANCH_CODES[name] << 8) | (word & 0xFF)
+    if word != expected_word:
+        fail(errors, f"{path}.words[0]", "branch condition does not match case id")
+    if word & 0x1:
+        fail(errors, f"{path}.words[0]", "branch displacement must be even")
+
+    initial = expect_dict(errors, case.get("initial"), f"{path}.initial")
+    expected = expect_dict(errors, case.get("expected"), f"{path}.expected")
+    hnzvc = initial.get("ccr_hnzvc")
+    if not isinstance(hnzvc, str) or HNZVC_RE.fullmatch(hnzvc) is None:
+        return
+    actual_taken = branch_taken(name, hnzvc)
+    if (outcome == "taken") != actual_taken:
+        fail(errors, f"{path}.initial.ccr_hnzvc", "does not match branch outcome")
+    pc = parse_word(initial.get("pc"), f"{path}.initial.pc", errors)
+    expected_pc = branch_target(pc, word & 0xFF, actual_taken)
+    case_pc = parse_word(expected.get("pc"), f"{path}.expected.pc", errors)
+    if case_pc != expected_pc:
+        fail(errors, f"{path}.expected.pc", f"expected 0x{expected_pc:04x}")
+
+
+def validate_branch_coverage(coverage: dict[str, set[str]], errors: list[str]) -> None:
+    for name, required in BRANCH_REQUIRED_OUTCOMES.items():
+        missing = required - coverage.get(name, set())
+        if missing:
+            fail(errors, "cases", f"missing {name} branch cases: {', '.join(sorted(missing))}")
 
 
 def validate_retire_trace_shape(trace: object, root: dict[str, object], errors: list[str]) -> set[str]:
@@ -355,10 +463,14 @@ def validate_table(table: object, sail_text: str) -> tuple[list[str], dict[str, 
     validate_retire_trace_effects(instructions, trace_fields, errors)
 
     case_ids: set[str] = set()
+    branch_coverage: dict[str, set[str]] = {}
     trace_expectations: list[dict[str, object]] = []
     cases = expect_list(errors, root.get("cases"), "cases")
     for index, case in enumerate(cases):
+        if isinstance(case, dict):
+            validate_branch_case(case, f"cases[{index}]", branch_coverage, errors)
         trace_expectations.append(validate_case(case, index, sail_text, case_ids, instructions, errors))
+    validate_branch_coverage(branch_coverage, errors)
 
     summary = {
         "case_count": len(cases),

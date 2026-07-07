@@ -1237,6 +1237,305 @@ cases:
       ccr_hnzvc: preserve
       trap: false
 
+  - id: h8_bhi_rel8_not_taken
+    instruction: h8_branch_rel8
+    status: supported
+    check_area: branch
+    assembler:
+      - "loop:"
+      - "  bhi loop"
+    words:
+      - "0x42fe"
+    decode_keys: ["4", "2"]
+    sail:
+      decode: H8_BRANCH
+      execute: h8_exec_branch
+    initial:
+      pc: "0x000e"
+      regs: {}
+      ccr_hnzvc: "00001"
+    expected:
+      pc: "0x0010"
+      regs: {}
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_bls_rel8_not_taken
+    instruction: h8_branch_rel8
+    status: supported
+    check_area: branch
+    assembler:
+      - "loop:"
+      - "  bls loop"
+    words:
+      - "0x43fe"
+    decode_keys: ["4", "3"]
+    sail:
+      decode: H8_BRANCH
+      execute: h8_exec_branch
+    initial:
+      pc: "0x000e"
+      regs: {}
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0010"
+      regs: {}
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_bcc_rel8_not_taken
+    instruction: h8_branch_rel8
+    status: supported
+    check_area: branch
+    assembler:
+      - "loop:"
+      - "  bcc loop"
+    words:
+      - "0x44fe"
+    decode_keys: ["4", "4"]
+    sail:
+      decode: H8_BRANCH
+      execute: h8_exec_branch
+    initial:
+      pc: "0x000e"
+      regs: {}
+      ccr_hnzvc: "00001"
+    expected:
+      pc: "0x0010"
+      regs: {}
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_bcs_rel8_not_taken
+    instruction: h8_branch_rel8
+    status: supported
+    check_area: branch
+    assembler:
+      - "loop:"
+      - "  bcs loop"
+    words:
+      - "0x45fe"
+    decode_keys: ["4", "5"]
+    sail:
+      decode: H8_BRANCH
+      execute: h8_exec_branch
+    initial:
+      pc: "0x000e"
+      regs: {}
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0010"
+      regs: {}
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_beq_rel8_not_taken
+    instruction: h8_branch_rel8
+    status: supported
+    check_area: branch
+    assembler:
+      - "loop:"
+      - "  beq loop"
+    words:
+      - "0x47fe"
+    decode_keys: ["4", "7"]
+    sail:
+      decode: H8_BRANCH
+      execute: h8_exec_branch
+    initial:
+      pc: "0x000e"
+      regs: {}
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0010"
+      regs: {}
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_bvc_rel8_not_taken
+    instruction: h8_branch_rel8
+    status: supported
+    check_area: branch
+    assembler:
+      - "loop:"
+      - "  bvc loop"
+    words:
+      - "0x48fe"
+    decode_keys: ["4", "8"]
+    sail:
+      decode: H8_BRANCH
+      execute: h8_exec_branch
+    initial:
+      pc: "0x000e"
+      regs: {}
+      ccr_hnzvc: "00010"
+    expected:
+      pc: "0x0010"
+      regs: {}
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_bvs_rel8_not_taken
+    instruction: h8_branch_rel8
+    status: supported
+    check_area: branch
+    assembler:
+      - "loop:"
+      - "  bvs loop"
+    words:
+      - "0x49fe"
+    decode_keys: ["4", "9"]
+    sail:
+      decode: H8_BRANCH
+      execute: h8_exec_branch
+    initial:
+      pc: "0x000e"
+      regs: {}
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0010"
+      regs: {}
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_bpl_rel8_not_taken
+    instruction: h8_branch_rel8
+    status: supported
+    check_area: branch
+    assembler:
+      - "loop:"
+      - "  bpl loop"
+    words:
+      - "0x4afe"
+    decode_keys: ["4", "a"]
+    sail:
+      decode: H8_BRANCH
+      execute: h8_exec_branch
+    initial:
+      pc: "0x000e"
+      regs: {}
+      ccr_hnzvc: "01000"
+    expected:
+      pc: "0x0010"
+      regs: {}
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_bmi_rel8_not_taken
+    instruction: h8_branch_rel8
+    status: supported
+    check_area: branch
+    assembler:
+      - "loop:"
+      - "  bmi loop"
+    words:
+      - "0x4bfe"
+    decode_keys: ["4", "b"]
+    sail:
+      decode: H8_BRANCH
+      execute: h8_exec_branch
+    initial:
+      pc: "0x000e"
+      regs: {}
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0010"
+      regs: {}
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_bge_rel8_not_taken
+    instruction: h8_branch_rel8
+    status: supported
+    check_area: branch
+    assembler:
+      - "loop:"
+      - "  bge loop"
+    words:
+      - "0x4cfe"
+    decode_keys: ["4", "c"]
+    sail:
+      decode: H8_BRANCH
+      execute: h8_exec_branch
+    initial:
+      pc: "0x000e"
+      regs: {}
+      ccr_hnzvc: "01000"
+    expected:
+      pc: "0x0010"
+      regs: {}
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_blt_rel8_not_taken
+    instruction: h8_branch_rel8
+    status: supported
+    check_area: branch
+    assembler:
+      - "loop:"
+      - "  blt loop"
+    words:
+      - "0x4dfe"
+    decode_keys: ["4", "d"]
+    sail:
+      decode: H8_BRANCH
+      execute: h8_exec_branch
+    initial:
+      pc: "0x000e"
+      regs: {}
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0010"
+      regs: {}
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_bgt_rel8_not_taken
+    instruction: h8_branch_rel8
+    status: supported
+    check_area: branch
+    assembler:
+      - "loop:"
+      - "  bgt loop"
+    words:
+      - "0x4efe"
+    decode_keys: ["4", "e"]
+    sail:
+      decode: H8_BRANCH
+      execute: h8_exec_branch
+    initial:
+      pc: "0x000e"
+      regs: {}
+      ccr_hnzvc: "00100"
+    expected:
+      pc: "0x0010"
+      regs: {}
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_ble_rel8_not_taken
+    instruction: h8_branch_rel8
+    status: supported
+    check_area: branch
+    assembler:
+      - "loop:"
+      - "  ble loop"
+    words:
+      - "0x4ffe"
+    decode_keys: ["4", "f"]
+    sail:
+      decode: H8_BRANCH
+      execute: h8_exec_branch
+    initial:
+      pc: "0x000e"
+      regs: {}
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0010"
+      regs: {}
+      ccr_hnzvc: preserve
+      trap: false
+
   - id: h8_bne_rel8_not_taken
     instruction: h8_branch_rel8
     status: supported

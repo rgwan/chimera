@@ -43,7 +43,10 @@ union H8Inst = {
   H8_MOV8_IMM : (H8R8, byte),
   H8_MOV16_IMM : (h8_r16, word),
   H8_ADD8_IMM : (H8R8, byte),
-  H8_CMP8_IMM : (H8R8, byte)
+  H8_CMP8_IMM : (H8R8, byte),
+  H8_OR8_IMM : (H8R8, byte),
+  H8_XOR8_IMM : (H8R8, byte),
+  H8_AND8_IMM : (H8R8, byte)
 }
 
 struct H8ExecResult = {
@@ -316,6 +319,9 @@ function h8_decode(first : word, ext : word) -> option(H8Inst) = {
              None(),
     0x8 => Some(H8_ADD8_IMM(h8_r8_from_code(op0[3 .. 0]), op1)),
     0xA => Some(H8_CMP8_IMM(h8_r8_from_code(op0[3 .. 0]), op1)),
+    0xC => Some(H8_OR8_IMM(h8_r8_from_code(op0[3 .. 0]), op1)),
+    0xD => Some(H8_XOR8_IMM(h8_r8_from_code(op0[3 .. 0]), op1)),
+    0xE => Some(H8_AND8_IMM(h8_r8_from_code(op0[3 .. 0]), op1)),
     0xF => Some(H8_MOV8_IMM(h8_r8_from_code(op0[3 .. 0]), op1)),
     _ => None()
   }
@@ -328,7 +334,10 @@ function h8_execute(st : H8State, inst : H8Inst) -> H8ExecResult =
     H8_MOV8_IMM(rd, imm) => struct {st = h8_exec_mov8_imm(st, rd, imm), trap = false},
     H8_MOV16_IMM(rd, imm) => struct {st = h8_exec_mov16_imm(st, rd, imm), trap = false},
     H8_ADD8_IMM(rd, imm) => struct {st = h8_exec_add8(st, rd, imm), trap = false},
-    H8_CMP8_IMM(rd, imm) => struct {st = h8_exec_cmp8(st, rd, imm), trap = false}
+    H8_CMP8_IMM(rd, imm) => struct {st = h8_exec_cmp8(st, rd, imm), trap = false},
+    H8_OR8_IMM(rd, imm) => struct {st = h8_exec_or8(st, rd, imm), trap = false},
+    H8_XOR8_IMM(rd, imm) => struct {st = h8_exec_xor8(st, rd, imm), trap = false},
+    H8_AND8_IMM(rd, imm) => struct {st = h8_exec_and8(st, rd, imm), trap = false}
   }
 
 function h8_decode_execute(st : H8State, first : word, ext : word) -> H8ExecResult =
@@ -370,6 +379,9 @@ function h8_load_program(m, base, bytes) =
 
 function h8_test_ccr(n : bit, z : bit, v : bit, c : bit) -> H8CCR =
   struct {i = 0b1, u6 = 0b0, h = 0b0, u4 = 0b0, n = n, z = z, v = v, c = c}
+
+function h8_test_hnzvc(h : bit, n : bit, z : bit, v : bit, c : bit) -> H8CCR =
+  struct {i = 0b1, u6 = 0b0, h = h, u4 = 0b0, n = n, z = z, v = v, c = c}
 
 function h8_ccr_hnzvc(ccr : H8CCR) -> bits(5) =
   ccr.h @ ccr.n @ ccr.z @ ccr.v @ ccr.c
@@ -502,6 +514,26 @@ function h8_decode_selftest() -> bool = {
     & s8.trap
 }
 
+function h8_logic_imm_decode_selftest() -> bool = {
+  let r1l : H8R8 = struct {reg = 1, high = false};
+  let ccr0 = h8_test_hnzvc(0b1, 0b0, 0b0, 0b1, 0b1);
+  let or_base = write_r8({h8_reset() with ccr = ccr0}, r1l, 0x01);
+  let xor_base = write_r8({h8_reset() with ccr = ccr0}, r1l, 0xFF);
+  let and_base = write_r8({h8_reset() with ccr = ccr0}, r1l, 0xF0);
+  let or_res = h8_decode_execute(or_base, 0xC980, 0x0000);
+  let xor_res = h8_decode_execute(xor_base, 0xD9FF, 0x0000);
+  let and_res = h8_decode_execute(and_base, 0xE90F, 0x0000);
+  read_r8(or_res.st, r1l) == 0x81
+    & h8_ccr_hnzvc(or_res.st.ccr) == 0b11001
+    & read_r8(xor_res.st, r1l) == 0x00
+    & h8_ccr_hnzvc(xor_res.st.ccr) == 0b10101
+    & read_r8(and_res.st, r1l) == 0x00
+    & h8_ccr_hnzvc(and_res.st.ccr) == 0b10101
+    & not_bool(or_res.trap)
+    & not_bool(xor_res.trap)
+    & not_bool(and_res.trap)
+}
+
 function h8_memory_selftest() -> bool = {
   let r0h : H8R8 = struct {reg = 0, high = true};
   let mem0 = h8_empty_mem();
@@ -538,4 +570,5 @@ function h8_selftest() -> bool =
     & h8_flag_selftest()
     & h8_branch_selftest()
     & h8_decode_selftest()
+    & h8_logic_imm_decode_selftest()
     & h8_memory_selftest()

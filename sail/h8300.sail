@@ -87,6 +87,17 @@ function h8_mem_read8(mem : H8Memory, addr : word) -> byte =
 function h8_mem_write8(mem : H8Memory, addr : word, value : byte) -> H8Memory =
   vector_update(mem, unsigned(addr), value)
 
+function h8_mem_read16(mem : H8Memory, addr : word) -> word = {
+  let word_addr = align_word_addr(addr);
+  h8_mem_read8(mem, word_addr) @ h8_mem_read8(mem, word_addr + 0x0001)
+}
+
+function h8_mem_write16(mem : H8Memory, addr : word, value : word) -> H8Memory = {
+  let word_addr = align_word_addr(addr);
+  let mem1 = h8_mem_write8(mem, word_addr, value[15 .. 8]);
+  h8_mem_write8(mem1, word_addr + 0x0001, value[7 .. 0])
+}
+
 val h8_load_bytes : forall 'n, 0 < 'n <= 65536. (H8Memory, word, vector('n, byte)) -> H8Memory
 function h8_load_bytes(mem, base, bytes) = {
   var out = mem;
@@ -707,6 +718,7 @@ function h8_memory_selftest() -> bool = {
   let mem_fetch = h8_load_bytes(mem0, 0x0000, [0xF0, 0x12]);
   let mem_wrap0 = h8_mem_write8(mem0, 0xFFFF, 0x12);
   let mem_wrap1 = h8_mem_write8(mem_wrap0, 0x0000, 0x34);
+  let word_mem0 = h8_mem_write16(mem0, 0x0101, 0xABCD);
   let mov16_mach = h8_load_program(h8_reset_machine(), 0x0000, [0x79, 0x02, 0xAB, 0xCD]);
   let mov16_done = h8_step(mov16_mach);
   let seq_prog = h8_load_program(h8_reset_machine(), 0x0000,
@@ -719,6 +731,11 @@ function h8_memory_selftest() -> bool = {
   let bad_done = h8_step(bad_prog);
   h8_fetch16(mem_fetch, 0x0000) == 0xF012
     & h8_fetch16(mem_wrap1, 0xFFFF) == 0x1234
+    & h8_mem_read16(word_mem0, 0x0100) == 0xABCD
+    & h8_mem_read16(word_mem0, 0x0101) == 0xABCD
+    & h8_mem_read8(word_mem0, 0x0100) == 0xAB
+    & h8_mem_read8(word_mem0, 0x0101) == 0xCD
+    & h8_mem_read8(word_mem0, 0x0102) == 0x00
     & read_r16(mov16_done.st, 2) == 0xABCD
     & mov16_done.st.pc == 0x0004
     & not_bool(mov16_done.trap)

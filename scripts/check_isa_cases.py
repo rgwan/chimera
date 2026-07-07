@@ -48,6 +48,13 @@ TRACE_MEM_FIELDS = {
     "mem0_wdata",
     "mem0_rdata",
 }
+TRACE_MEM_MULTI_FIELDS = TRACE_MEM_FIELDS | {
+    "mem1_kind",
+    "mem1_addr",
+    "mem1_wmask",
+    "mem1_wdata",
+    "mem1_rdata",
+}
 BRANCH_CODES = {
     "bra": 0x0,
     "brn": 0x1,
@@ -206,6 +213,16 @@ def validate_case_memory(memory: object, path: str, errors: list[str]) -> dict[s
     expected = expect_dict(errors, item.get("expected", {}), f"{path}.expected")
     validate_memory_map(initial, f"{path}.initial", errors)
     validate_memory_map(expected, f"{path}.expected", errors)
+
+    if "accesses" in item:
+        accesses = expect_list(errors, item.get("accesses"), f"{path}.accesses")
+        if not 1 <= len(accesses) <= 2:
+            fail(errors, f"{path}.accesses", "expected one or two accesses")
+        for index, access_item in enumerate(accesses):
+            access = validate_memory_access(access_item, f"{path}.accesses[{index}]", errors)
+            validate_word_memory_access(initial, expected, access, f"{path}.accesses[{index}]", errors)
+        return item
+
     access = validate_memory_access(item.get("access"), f"{path}.access", errors)
     validate_word_memory_access(initial, expected, access, path, errors)
     return item
@@ -371,6 +388,8 @@ def validate_retire_trace_effects(
                 fail(errors, f"instructions.{instr_id}.effects", "multi-register effect lacks trace writeback")
         if any(effect in {"mem_read", "mem_write"} for effect in effects) and not TRACE_MEM_FIELDS <= trace_fields:
             fail(errors, f"instructions.{instr_id}.effects", "memory effect lacks trace access")
+        if all(effect in effects for effect in ("mem_read", "mem_write")) and not TRACE_MEM_MULTI_FIELDS <= trace_fields:
+            fail(errors, f"instructions.{instr_id}.effects", "multi-memory effect lacks trace access")
 
 
 def build_trace_expectation(
@@ -409,15 +428,21 @@ def build_trace_expectation(
                 trace[f"gpr_write{reg_index}_value"] = value
     if isinstance(effects, list) and any(effect in {"mem_read", "mem_write"} for effect in effects):
         memory = expect_dict(errors, case.get("memory"), f"{path}.memory")
-        access = expect_dict(errors, memory.get("access"), f"{path}.memory.access")
-        trace.update({
-            "mem_access_count": 1,
-            "mem0_kind": access.get("kind"),
-            "mem0_addr": access.get("addr"),
-            "mem0_wmask": access.get("wmask", "00"),
-            "mem0_wdata": access.get("wdata", "0x0000"),
-            "mem0_rdata": access.get("rdata", "0x0000"),
-        })
+        raw_accesses = memory.get("accesses")
+        if isinstance(raw_accesses, list):
+            accesses = [access for access in raw_accesses if isinstance(access, dict)]
+        else:
+            access = expect_dict(errors, memory.get("access"), f"{path}.memory.access")
+            accesses = [access]
+        trace["mem_access_count"] = len(accesses)
+        for access_index, access in enumerate(accesses):
+            trace.update({
+                f"mem{access_index}_kind": access.get("kind"),
+                f"mem{access_index}_addr": access.get("addr"),
+                f"mem{access_index}_wmask": access.get("wmask", "00"),
+                f"mem{access_index}_wdata": access.get("wdata", "0x0000"),
+                f"mem{access_index}_rdata": access.get("rdata", "0x0000"),
+            })
     return trace
 
 

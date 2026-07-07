@@ -103,6 +103,30 @@ retire_trace:
       bits: 16
       source: memory.access0.rdata
       required: false
+    - name: mem1_kind
+      kind: enum
+      source: memory.access1.kind
+      required: false
+    - name: mem1_addr
+      kind: bits
+      bits: 16
+      source: memory.access1.addr
+      required: false
+    - name: mem1_wmask
+      kind: bits
+      bits: 2
+      source: memory.access1.wmask
+      required: false
+    - name: mem1_wdata
+      kind: bits
+      bits: 16
+      source: memory.access1.wdata
+      required: false
+    - name: mem1_rdata
+      kind: bits
+      bits: 16
+      source: memory.access1.rdata
+      required: false
 audits:
   chip:
     - decode keys are one nibble each
@@ -977,6 +1001,71 @@ instructions:
       decode: H8_JMP_ABS8I
       execute: h8_exec_jmp_abs8_ind
     effects: [pc, mem_read]
+
+  - id: h8_rts
+    assembler_template: rts
+    length_bytes: 2
+    encoding:
+      mask: "0xffff"
+      match: "0x5470"
+      fields: {}
+    sail:
+      decode: H8_RTS
+      execute: h8_exec_rts
+    effects: [pc, addr_update, mem_read]
+
+  - id: h8_bsr_rel8
+    assembler_template: "bsr {rel8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff01"
+      match: "0x5500"
+      guard: disp8_bit0_zero
+      fields:
+        rel8: "word[7:0]"
+    sail:
+      decode: H8_BSR_REL8
+      execute: h8_exec_bsr_rel8
+    effects: [pc, addr_update, mem_write]
+
+  - id: h8_jsr_r16i
+    assembler_template: "jsr @{rs16}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff8f"
+      match: "0x5d00"
+      fields:
+        rs16: "word[6:4]"
+    sail:
+      decode: H8_JSR_R16I
+      execute: h8_exec_jsr_r16_ind
+    effects: [pc, addr_update, mem_write]
+
+  - id: h8_jsr_abs16
+    assembler_template: "jsr @{target16}:16"
+    length_bytes: 4
+    encoding:
+      mask: "0xffff"
+      match: "0x5e00"
+      fields:
+        target16: "ext[15:0]"
+    sail:
+      decode: H8_JSR_ABS16
+      execute: h8_exec_jsr_abs16
+    effects: [pc, addr_update, mem_write]
+
+  - id: h8_jsr_abs8i
+    assembler_template: "jsr @@{vector8}:8"
+    length_bytes: 2
+    encoding:
+      mask: "0xff00"
+      match: "0x5f00"
+      fields:
+        vector8: "word[7:0]"
+    sail:
+      decode: H8_JSR_ABS8I
+      execute: h8_exec_jsr_abs8_ind
+    effects: [pc, addr_update, mem_read, mem_write]
 cases:
   - id: h8_nop
     instruction: h8_nop
@@ -1795,6 +1884,276 @@ cases:
         addr: "0x0040"
         wmask: "00"
         rdata: "0x1234"
+
+  - id: h8_rts_1234
+    instruction: h8_rts
+    status: supported
+    check_area: memory
+    assembler:
+      - rts
+    words:
+      - "0x5470"
+    decode_keys: ["5", "4", "7", "0"]
+    sail:
+      decode: H8_RTS
+      execute: h8_exec_rts
+    initial:
+      pc: "0x0100"
+      regs:
+        r7: "0x01fe"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x1234"
+      regs:
+        r7: "0x0200"
+      ccr_hnzvc: preserve
+      trap: false
+    memory:
+      initial:
+        "0x01fe": "0x12"
+        "0x01ff": "0x34"
+      expected:
+        "0x01fe": "0x12"
+        "0x01ff": "0x34"
+      access:
+        kind: read
+        width: word
+        addr: "0x01fe"
+        wmask: "00"
+        rdata: "0x1234"
+
+  - id: h8_bsr_rel8_forward
+    instruction: h8_bsr_rel8
+    status: supported
+    check_area: memory
+    assembler:
+      - "bsr .+6"
+    words:
+      - "0x5504"
+    decode_keys: ["5", "5"]
+    sail:
+      decode: H8_BSR_REL8
+      execute: h8_exec_bsr_rel8
+    initial:
+      pc: "0x0100"
+      regs:
+        r7: "0x0200"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0106"
+      regs:
+        r7: "0x01fe"
+      ccr_hnzvc: preserve
+      trap: false
+    memory:
+      initial:
+        "0x01fe": "0xaa"
+        "0x01ff": "0x55"
+      expected:
+        "0x01fe": "0x01"
+        "0x01ff": "0x02"
+      access:
+        kind: write
+        width: word
+        addr: "0x01fe"
+        wmask: "11"
+        wdata: "0x0102"
+
+  - id: h8_bsr_rel8_backward
+    instruction: h8_bsr_rel8
+    status: supported
+    check_area: memory
+    assembler:
+      - "bsr ."
+    words:
+      - "0x55fe"
+    decode_keys: ["5", "5"]
+    sail:
+      decode: H8_BSR_REL8
+      execute: h8_exec_bsr_rel8
+    initial:
+      pc: "0x0100"
+      regs:
+        r7: "0x0200"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0100"
+      regs:
+        r7: "0x01fe"
+      ccr_hnzvc: preserve
+      trap: false
+    memory:
+      initial:
+        "0x01fe": "0xaa"
+        "0x01ff": "0x55"
+      expected:
+        "0x01fe": "0x01"
+        "0x01ff": "0x02"
+      access:
+        kind: write
+        width: word
+        addr: "0x01fe"
+        wmask: "11"
+        wdata: "0x0102"
+
+  - id: h8_jsr_r1i
+    instruction: h8_jsr_r16i
+    status: supported
+    check_area: memory
+    assembler:
+      - "jsr @r1"
+    words:
+      - "0x5d10"
+    decode_keys: ["5", "d"]
+    sail:
+      decode: H8_JSR_R16I
+      execute: h8_exec_jsr_r16_ind
+    initial:
+      pc: "0x0100"
+      regs:
+        r1: "0x1234"
+        r7: "0x0200"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x1234"
+      regs:
+        r7: "0x01fe"
+      ccr_hnzvc: preserve
+      trap: false
+    memory:
+      initial:
+        "0x01fe": "0xaa"
+        "0x01ff": "0x55"
+      expected:
+        "0x01fe": "0x01"
+        "0x01ff": "0x02"
+      access:
+        kind: write
+        width: word
+        addr: "0x01fe"
+        wmask: "11"
+        wdata: "0x0102"
+
+  - id: h8_jsr_r7i_alias
+    instruction: h8_jsr_r16i
+    status: supported
+    check_area: memory
+    assembler:
+      - "jsr @r7"
+    words:
+      - "0x5d70"
+    decode_keys: ["5", "d"]
+    sail:
+      decode: H8_JSR_R16I
+      execute: h8_exec_jsr_r16_ind
+    initial:
+      pc: "0x0100"
+      regs:
+        r7: "0x0200"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0200"
+      regs:
+        r7: "0x01fe"
+      ccr_hnzvc: preserve
+      trap: false
+    memory:
+      initial:
+        "0x01fe": "0xaa"
+        "0x01ff": "0x55"
+      expected:
+        "0x01fe": "0x01"
+        "0x01ff": "0x02"
+      access:
+        kind: write
+        width: word
+        addr: "0x01fe"
+        wmask: "11"
+        wdata: "0x0102"
+
+  - id: h8_jsr_abs16_1234
+    instruction: h8_jsr_abs16
+    status: supported
+    check_area: memory
+    assembler:
+      - "jsr @0x1234:16"
+    words:
+      - "0x5e00"
+      - "0x1234"
+    decode_keys: ["5", "e", "0", "0"]
+    sail:
+      decode: H8_JSR_ABS16
+      execute: h8_exec_jsr_abs16
+    initial:
+      pc: "0x0100"
+      regs:
+        r7: "0x0200"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x1234"
+      regs:
+        r7: "0x01fe"
+      ccr_hnzvc: preserve
+      trap: false
+    memory:
+      initial:
+        "0x01fe": "0xaa"
+        "0x01ff": "0x55"
+      expected:
+        "0x01fe": "0x01"
+        "0x01ff": "0x04"
+      access:
+        kind: write
+        width: word
+        addr: "0x01fe"
+        wmask: "11"
+        wdata: "0x0104"
+
+  - id: h8_jsr_abs8i_40
+    instruction: h8_jsr_abs8i
+    status: supported
+    check_area: memory
+    assembler:
+      - "jsr @@0x40:8"
+    words:
+      - "0x5f40"
+    decode_keys: ["5", "f"]
+    sail:
+      decode: H8_JSR_ABS8I
+      execute: h8_exec_jsr_abs8_ind
+    initial:
+      pc: "0x0100"
+      regs:
+        r7: "0x0200"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x1234"
+      regs:
+        r7: "0x01fe"
+      ccr_hnzvc: preserve
+      trap: false
+    memory:
+      initial:
+        "0x0040": "0x12"
+        "0x0041": "0x34"
+        "0x01fe": "0xaa"
+        "0x01ff": "0x55"
+      expected:
+        "0x0040": "0x12"
+        "0x0041": "0x34"
+        "0x01fe": "0x01"
+        "0x01ff": "0x02"
+      accesses:
+        - kind: read
+          width: word
+          addr: "0x0040"
+          wmask: "00"
+          rdata: "0x1234"
+        - kind: write
+          width: word
+          addr: "0x01fe"
+          wmask: "11"
+          wdata: "0x0102"
 
   - id: h8_mov8_abs8_r0l
     instruction: h8_mov8_abs8_r8

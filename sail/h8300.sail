@@ -45,6 +45,11 @@ union H8Inst = {
   H8_JMP_R16I : h8_r16,
   H8_JMP_ABS16 : word,
   H8_JMP_ABS8I : byte,
+  H8_RTS : unit,
+  H8_BSR_REL8 : byte,
+  H8_JSR_R16I : h8_r16,
+  H8_JSR_ABS16 : word,
+  H8_JSR_ABS8I : byte,
   H8_STC_CCR_R8 : H8R8,
   H8_LDC_R8_CCR : H8R8,
   H8_ORC_IMM_CCR : byte,
@@ -635,6 +640,36 @@ function h8_exec_jmp_abs8_ind(m : H8Machine, addr : byte) -> H8Machine = {
   {m with st = st1, trap = false}
 }
 
+function h8_exec_call16(m : H8Machine, target : word, return_pc : word) -> H8Machine = {
+  let sp : word = read_r16(m.st, 7) - 0x0002;
+  let st1 = write_r16(m.st, 7, sp);
+  let mem1 = h8_mem_write16(m.mem, sp, return_pc);
+  {m with st = {st1 with pc = target}, mem = mem1, trap = false}
+}
+
+function h8_exec_rts(m : H8Machine) -> H8Machine = {
+  let sp : word = read_r16(m.st, 7);
+  let target : word = h8_mem_read16(m.mem, sp);
+  let st1 = write_r16(m.st, 7, sp + 0x0002);
+  {m with st = {st1 with pc = target}, trap = false}
+}
+
+function h8_exec_bsr_rel8(m : H8Machine, disp : byte) -> H8Machine = {
+  let return_pc : word = m.st.pc + 0x0002;
+  h8_exec_call16(m, return_pc + sign_extend8_to16(disp), return_pc)
+}
+
+function h8_exec_jsr_r16_ind(m : H8Machine, rs_addr : h8_r16) -> H8Machine =
+  h8_exec_call16(m, read_r16(m.st, rs_addr), m.st.pc + 0x0002)
+
+function h8_exec_jsr_abs16(m : H8Machine, target : word) -> H8Machine =
+  h8_exec_call16(m, target, m.st.pc + 0x0004)
+
+function h8_exec_jsr_abs8_ind(m : H8Machine, addr : byte) -> H8Machine = {
+  let target : word = h8_mem_read16(m.mem, 0x00 @ addr);
+  h8_exec_call16(m, target, m.st.pc + 0x0002)
+}
+
 function h8_branch_cond_from_code(code : bits(4)) -> H8BranchCond =
   match code {
     0x0 => H8_BRA,
@@ -743,12 +778,22 @@ function h8_decode_profile(profile : H8Profile, first : word, ext : word) -> opt
              Some(H8_BRANCH(h8_branch_cond_from_code(op0[3 .. 0]), op1))
            else
              None(),
-    0x5 => if op0 == 0x59 & op1[7] == 0b0 & op1[3 .. 0] == 0x0 then
+    0x5 => if op0 == 0x54 & op1 == 0x70 then
+             Some(H8_RTS())
+           else if op0 == 0x55 & op1[0] == 0b0 then
+             Some(H8_BSR_REL8(op1))
+           else if op0 == 0x59 & op1[7] == 0b0 & op1[3 .. 0] == 0x0 then
              Some(H8_JMP_R16I(h8_r16_from_code(op1[6 .. 4])))
            else if op0 == 0x5A & op1 == 0x00 then
              Some(H8_JMP_ABS16(ext))
            else if op0 == 0x5B then
              Some(H8_JMP_ABS8I(op1))
+           else if op0 == 0x5D & op1[7] == 0b0 & op1[3 .. 0] == 0x0 then
+             Some(H8_JSR_R16I(h8_r16_from_code(op1[6 .. 4])))
+           else if op0 == 0x5E & op1 == 0x00 then
+             Some(H8_JSR_ABS16(ext))
+           else if op0 == 0x5F then
+             Some(H8_JSR_ABS8I(op1))
            else
              None(),
     0x6 => if op0 == 0x68 & op1[7] == 0b0 then
@@ -811,6 +856,11 @@ function h8_execute(st : H8State, inst : H8Inst) -> H8ExecResult =
     H8_JMP_R16I(rs_addr) => struct {st = h8_exec_jmp_r16_ind(st, rs_addr), trap = false},
     H8_JMP_ABS16(target) => struct {st = h8_exec_jmp_abs16(st, target), trap = false},
     H8_JMP_ABS8I(_) => struct {st = st, trap = true},
+    H8_RTS() => struct {st = st, trap = true},
+    H8_BSR_REL8(_) => struct {st = st, trap = true},
+    H8_JSR_R16I(_) => struct {st = st, trap = true},
+    H8_JSR_ABS16(_) => struct {st = st, trap = true},
+    H8_JSR_ABS8I(_) => struct {st = st, trap = true},
     H8_STC_CCR_R8(rd) => struct {st = h8_exec_stc_ccr(st, rd), trap = false},
     H8_LDC_R8_CCR(rs) => struct {st = h8_exec_ldc_ccr(st, read_r8(st, rs)), trap = false},
     H8_ORC_IMM_CCR(value) => struct {st = h8_exec_orc_ccr(st, value), trap = false},
@@ -883,6 +933,11 @@ function h8_decode_execute(st : H8State, first : word, ext : word) -> H8ExecResu
 function h8_execute_machine(m : H8Machine, inst : H8Inst) -> H8Machine =
   match inst {
     H8_JMP_ABS8I(addr) => h8_exec_jmp_abs8_ind(m, addr),
+    H8_RTS() => h8_exec_rts(m),
+    H8_BSR_REL8(disp) => h8_exec_bsr_rel8(m, disp),
+    H8_JSR_R16I(rs_addr) => h8_exec_jsr_r16_ind(m, rs_addr),
+    H8_JSR_ABS16(target) => h8_exec_jsr_abs16(m, target),
+    H8_JSR_ABS8I(addr) => h8_exec_jsr_abs8_ind(m, addr),
     H8_MOV8_R16I_R8(rd, rs_addr) => h8_exec_mov8_mem_to_reg(m, rd, rs_addr),
     H8_MOV8_R8_R16I(rd_addr, rs) => h8_exec_mov8_reg_to_mem(m, rd_addr, rs),
     H8_MOV16_R16I_R16(rd, rs_addr) => h8_exec_mov16_mem_to_reg(m, rd, rs_addr),

@@ -22,6 +22,8 @@ BRANCH_CASE_RE = re.compile(
 )
 NIBBLE_RE = re.compile(r"^[0-9a-f]$")
 WORD_RE = re.compile(r"^0x[0-9a-f]{4}$")
+BYTE_RE = re.compile(r"^0x[0-9a-f]{2}$")
+WMASK_RE = re.compile(r"^[01]{2}$")
 BYTE_REG_RE = re.compile(r"^r[0-7][hl]$")
 WORD_REG_RE = re.compile(r"^[re][0-7]$")
 HNZVC_RE = re.compile(r"^[01]{5}$")
@@ -107,6 +109,43 @@ def validate_regs(regs: object, path: str, errors: list[str]) -> None:
             continue
         pattern = WORD_RE if WORD_REG_RE.fullmatch(name) is not None else re.compile(r"^0x[0-9a-f]{2}$")
         validate_hex(value, pattern, f"{path}.{name}", errors)
+
+
+def validate_memory_map(mem: object, path: str, errors: list[str]) -> None:
+    mem_map = expect_dict(errors, mem, path)
+    for addr, value in mem_map.items():
+        validate_hex(addr, WORD_RE, f"{path}.{addr}", errors)
+        validate_hex(value, BYTE_RE, f"{path}.{addr}", errors)
+
+
+def validate_memory_access(access: object, path: str, errors: list[str]) -> None:
+    item = expect_dict(errors, access, path)
+    kind = item.get("kind")
+    if kind not in {"read", "write"}:
+        fail(errors, f"{path}.kind", "expected read or write")
+    if item.get("width") != "byte":
+        fail(errors, f"{path}.width", "expected byte")
+    validate_hex(item.get("addr"), WORD_RE, f"{path}.addr", errors)
+
+    if kind == "read":
+        validate_hex(item.get("rdata"), WORD_RE, f"{path}.rdata", errors)
+        if "wmask" in item:
+            validate_hex(item.get("wmask"), WMASK_RE, f"{path}.wmask", errors)
+        if "wdata" in item:
+            validate_hex(item.get("wdata"), WORD_RE, f"{path}.wdata", errors)
+    elif kind == "write":
+        validate_hex(item.get("wmask"), WMASK_RE, f"{path}.wmask", errors)
+        validate_hex(item.get("wdata"), WORD_RE, f"{path}.wdata", errors)
+        if "rdata" in item:
+            validate_hex(item.get("rdata"), WORD_RE, f"{path}.rdata", errors)
+
+
+def validate_case_memory(memory: object, path: str, errors: list[str]) -> dict[str, object]:
+    item = expect_dict(errors, memory, path)
+    validate_memory_map(item.get("initial", {}), f"{path}.initial", errors)
+    validate_memory_map(item.get("expected", {}), f"{path}.expected", errors)
+    validate_memory_access(item.get("access"), f"{path}.access", errors)
+    return item
 
 
 def validate_sail_symbols(sail: dict[str, object], path: str, sail_text: str, errors: list[str]) -> None:
@@ -264,6 +303,8 @@ def validate_retire_trace_effects(
             fail(errors, f"instructions.{instr_id}.effects", "flag effect lacks trace ccr_hnzvc")
         if any(effect in {"rd8", "rd16"} for effect in effects) and not TRACE_REG_FIELDS <= trace_fields:
             fail(errors, f"instructions.{instr_id}.effects", "register effect lacks trace writeback")
+        if any(effect in {"mem_read", "mem_write"} for effect in effects) and not TRACE_MEM_FIELDS <= trace_fields:
+            fail(errors, f"instructions.{instr_id}.effects", "memory effect lacks trace access")
 
 
 def build_trace_expectation(
@@ -302,6 +343,17 @@ def build_trace_expectation(
                 "gpr_write0_name": name,
                 "gpr_write0_value": value,
             })
+    if isinstance(effects, list) and any(effect in {"mem_read", "mem_write"} for effect in effects):
+        memory = expect_dict(errors, case.get("memory"), f"{path}.memory")
+        access = expect_dict(errors, memory.get("access"), f"{path}.memory.access")
+        trace.update({
+            "mem_access_count": 1,
+            "mem0_kind": access.get("kind"),
+            "mem0_addr": access.get("addr"),
+            "mem0_wmask": access.get("wmask", "00"),
+            "mem0_wdata": access.get("wdata", "0x0000"),
+            "mem0_rdata": access.get("rdata", "0x0000"),
+        })
     return trace
 
 
@@ -374,7 +426,7 @@ def validate_case(
 
     if item.get("status") != "supported":
         fail(errors, f"{path}.status", "expected supported")
-    if item.get("check_area") not in {"decode", "execute", "flags", "branch", "trap"}:
+    if item.get("check_area") not in {"decode", "execute", "flags", "branch", "trap", "memory"}:
         fail(errors, f"{path}.check_area", "bad check area")
 
     assembler = expect_list(errors, item.get("assembler"), f"{path}.assembler")
@@ -421,6 +473,11 @@ def validate_case(
         fail(errors, f"{path}.expected.trap", "expected bool")
 
     instruction = instructions.get(instruction_id) if isinstance(instruction_id, str) else None
+    effects = instruction.get("effects") if isinstance(instruction, dict) else []
+    if isinstance(effects, list) and any(effect in {"mem_read", "mem_write"} for effect in effects):
+        validate_case_memory(item.get("memory"), f"{path}.memory", errors)
+    elif "memory" in item:
+        validate_case_memory(item.get("memory"), f"{path}.memory", errors)
     return build_trace_expectation(item, instruction, path, errors)
 
 
@@ -443,7 +500,7 @@ def validate_table(table: object, sail_text: str) -> tuple[list[str], dict[str, 
     if root.get("ccr_order") != "HNZVC":
         fail(errors, "ccr_order", "expected HNZVC")
     retire_compare = expect_list(errors, root.get("retire_compare"), "retire_compare")
-    if retire_compare != ["pc", "regs", "ccr_hnzvc", "trap"]:
+    if retire_compare != ["pc", "regs", "ccr_hnzvc", "trap", "memory"]:
         fail(errors, "retire_compare", "unexpected compare fields")
     trace_fields = validate_retire_trace_shape(root.get("retire_trace"), root, errors)
 

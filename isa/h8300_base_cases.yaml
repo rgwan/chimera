@@ -13,6 +13,7 @@ retire_compare:
   - regs
   - ccr_hnzvc
   - trap
+  - memory
 retire_trace:
   schema: 1
   record: h8_retire
@@ -21,6 +22,7 @@ retire_trace:
     - regs
     - ccr_hnzvc
     - trap
+    - memory
   fields:
     - name: valid
       kind: bool
@@ -226,6 +228,34 @@ instructions:
       decode: H8_MOV16_R16_R16
       execute: h8_exec_mov16
     effects: [pc, rd16, ccr_nzv]
+
+  - id: h8_mov8_r16i_r8
+    assembler_template: "mov.b @{rs16}, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff80"
+      match: "0x6800"
+      fields:
+        rs16: "word[6:4]"
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_MOV8_R16I_R8
+      execute: h8_exec_mov8_mem_to_reg
+    effects: [pc, rd8, ccr_nzv, mem_read]
+
+  - id: h8_mov8_r8_r16i
+    assembler_template: "mov.b {rs8}, @{rd16}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff80"
+      match: "0x6880"
+      fields:
+        rd16: "word[6:4]"
+        rs8: "word[3:0]"
+    sail:
+      decode: H8_MOV8_R8_R16I
+      execute: h8_exec_mov8_reg_to_mem
+    effects: [pc, ccr_nzv, mem_write]
 
   - id: h8_or8_imm_r8
     assembler_template: "or.b #{imm8}, {rd8}"
@@ -449,6 +479,79 @@ cases:
         r0l: "0x34"
       ccr_hnzvc: "00000"
       trap: false
+
+  - id: h8_mov8_r1i_r0l
+    instruction: h8_mov8_r16i_r8
+    status: supported
+    check_area: memory
+    assembler:
+      - "mov.b @r1, r0l"
+    words:
+      - "0x6818"
+    decode_keys: ["6", "8"]
+    sail:
+      decode: H8_MOV8_R16I_R8
+      execute: h8_exec_mov8_mem_to_reg
+    initial:
+      pc: "0x0000"
+      regs:
+        r1: "0x0140"
+        r0l: "0x00"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0x80"
+      ccr_hnzvc: "11001"
+      trap: false
+    memory:
+      initial:
+        "0x0140": "0x80"
+      expected:
+        "0x0140": "0x80"
+      access:
+        kind: read
+        width: byte
+        addr: "0x0140"
+        wmask: "00"
+        rdata: "0x0080"
+
+  - id: h8_mov8_r0l_r1i
+    instruction: h8_mov8_r8_r16i
+    status: supported
+    check_area: memory
+    assembler:
+      - "mov.b r0l, @r1"
+    words:
+      - "0x6898"
+    decode_keys: ["6", "8"]
+    sail:
+      decode: H8_MOV8_R8_R16I
+      execute: h8_exec_mov8_reg_to_mem
+    initial:
+      pc: "0x0000"
+      regs:
+        r1: "0x0140"
+        r0l: "0x00"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10101"
+      trap: false
+    memory:
+      initial:
+        "0x0140": "0xaa"
+        "0x0141": "0x55"
+      expected:
+        "0x0140": "0x00"
+        "0x0141": "0x55"
+      access:
+        kind: write
+        width: byte
+        addr: "0x0140"
+        wmask: "01"
+        wdata: "0x0000"
 
   - id: h8_add8_imm_r0h
     instruction: h8_add8_imm_r8

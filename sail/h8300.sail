@@ -44,6 +44,8 @@ union H8Inst = {
   H8_BRANCH : (H8BranchCond, byte),
   H8_MOV8_IMM : (H8R8, byte),
   H8_MOV16_IMM : (h8_r16, word),
+  H8_MOV8_R16I_R8 : (H8R8, h8_r16),
+  H8_MOV8_R8_R16I : (h8_r16, H8R8),
   H8_ADD8_IMM : (H8R8, byte),
   H8_CMP8_IMM : (H8R8, byte),
   H8_OR8_IMM : (H8R8, byte),
@@ -215,6 +217,20 @@ function h8_exec_mov16(st : H8State, rd : h8_r16, rs : h8_r16) -> H8State = {
   {st1 with ccr = h8_nz_flags(H8_WORD, value, st.ccr), pc = st.pc + 0x0002}
 }
 
+function h8_exec_mov8_mem_to_reg(m : H8Machine, rd : H8R8, rs_addr : h8_r16) -> H8Machine = {
+  let value : byte = h8_mem_read8(m.mem, read_r16(m.st, rs_addr));
+  let st1 = write_r8(m.st, rd, value);
+  let st2 = {st1 with ccr = h8_nz_flags(H8_BYTE, 0x00 @ value, m.st.ccr), pc = m.st.pc + 0x0002};
+  {m with st = st2, trap = false}
+}
+
+function h8_exec_mov8_reg_to_mem(m : H8Machine, rd_addr : h8_r16, rs : H8R8) -> H8Machine = {
+  let value : byte = read_r8(m.st, rs);
+  let mem1 = h8_mem_write8(m.mem, read_r16(m.st, rd_addr), value);
+  let st1 = {m.st with ccr = h8_nz_flags(H8_BYTE, 0x00 @ value, m.st.ccr), pc = m.st.pc + 0x0002};
+  {m with st = st1, mem = mem1, trap = false}
+}
+
 function h8_exec_add8(st : H8State, rd : H8R8, value : byte) -> H8State = {
   let lhs : byte = read_r8(st, rd);
   let result : byte = lhs + value;
@@ -377,6 +393,12 @@ function h8_decode_profile(profile : H8Profile, first : word, ext : word) -> opt
              Some(H8_BRANCH(h8_branch_cond_from_code(op0[3 .. 0]), op1))
            else
              None(),
+    0x6 => if op0 == 0x68 & op1[7] == 0b0 then
+             Some(H8_MOV8_R16I_R8(rr8_rd, h8_r16_from_code(op1[6 .. 4])))
+           else if op0 == 0x68 & op1[7] == 0b1 then
+             Some(H8_MOV8_R8_R16I(h8_r16_from_code(op1[6 .. 4]), rr8_rd))
+           else
+             None(),
     0x7 => if op0 == 0x79 & op1[7 .. 3] == 0b00000 then
              Some(H8_MOV16_IMM(h8_r16_from_code(op1[2 .. 0]), ext))
            else
@@ -400,6 +422,8 @@ function h8_execute(st : H8State, inst : H8Inst) -> H8ExecResult =
     H8_BRANCH(cond, disp) => struct {st = h8_exec_branch(st, cond, disp), trap = false},
     H8_MOV8_IMM(rd, imm) => struct {st = h8_exec_mov8_imm(st, rd, imm), trap = false},
     H8_MOV16_IMM(rd, imm) => struct {st = h8_exec_mov16_imm(st, rd, imm), trap = false},
+    H8_MOV8_R16I_R8(_, _) => struct {st = st, trap = true},
+    H8_MOV8_R8_R16I(_, _) => struct {st = st, trap = true},
     H8_ADD8_IMM(rd, imm) => struct {st = h8_exec_add8(st, rd, imm), trap = false},
     H8_CMP8_IMM(rd, imm) => struct {st = h8_exec_cmp8(st, rd, imm), trap = false},
     H8_OR8_IMM(rd, imm) => struct {st = h8_exec_or8(st, rd, imm), trap = false},
@@ -427,14 +451,32 @@ function h8_decode_execute_profile(st : H8State, profile : H8Profile, first : wo
 function h8_decode_execute(st : H8State, first : word, ext : word) -> H8ExecResult =
   h8_decode_execute_profile(st, H8_BASE, first, ext)
 
+function h8_execute_machine(m : H8Machine, inst : H8Inst) -> H8Machine =
+  match inst {
+    H8_MOV8_R16I_R8(rd, rs_addr) => h8_exec_mov8_mem_to_reg(m, rd, rs_addr),
+    H8_MOV8_R8_R16I(rd_addr, rs) => h8_exec_mov8_reg_to_mem(m, rd_addr, rs),
+    _ => {
+      let result = h8_execute(m.st, inst);
+      {m with st = result.st, trap = result.trap}
+    }
+  }
+
+function h8_decode_execute_machine_profile(m : H8Machine, profile : H8Profile, first : word, ext : word) -> H8Machine =
+  match h8_decode_profile(profile, first, ext) {
+    Some(inst) => h8_execute_machine(m, inst),
+    None() => {m with trap = true}
+  }
+
+function h8_decode_execute_machine(m : H8Machine, first : word, ext : word) -> H8Machine =
+  h8_decode_execute_machine_profile(m, H8_BASE, first, ext)
+
 function h8_step(m : H8Machine) -> H8Machine =
   if m.trap then
     m
   else {
     let first : word = h8_fetch16(m.mem, m.st.pc);
     let ext : word = h8_fetch16(m.mem, m.st.pc + 0x0002);
-    let result = h8_decode_execute(m.st, first, ext);
-    {m with st = result.st, trap = result.trap}
+    h8_decode_execute_machine(m, first, ext)
   }
 
 type h8_step_count = {'n, 0 < 'n. int('n)}
@@ -454,6 +496,9 @@ function h8_reset() -> H8State =
 
 function h8_reset_machine() -> H8Machine =
   struct {st = h8_reset(), mem = h8_empty_mem(), trap = false}
+
+function h8_make_machine(st : H8State, mem : H8Memory) -> H8Machine =
+  struct {st = st, mem = mem, trap = false}
 
 val h8_load_program : forall 'n, 0 < 'n <= 65536. (H8Machine, word, vector('n, byte)) -> H8Machine
 function h8_load_program(m, base, bytes) =

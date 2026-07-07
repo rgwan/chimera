@@ -148,6 +148,18 @@ def expected_regs(case: dict[str, object]) -> list[int]:
     return regs
 
 
+def memory_map(case: dict[str, object], field: str) -> dict[str, str]:
+    memory = case.get("memory", {})
+    if not isinstance(memory, dict):
+        return {}
+    values = memory.get(field, {})
+    return dict(values) if isinstance(values, dict) else {}
+
+
+def sorted_memory_items(values: dict[str, str]) -> list[tuple[str, str]]:
+    return sorted(values.items(), key=lambda item: int(item[0], 16))
+
+
 def set_reg_expr(state_name: str, name: str, value: str) -> str:
     if len(name) == 2:
         return f"write_r16({state_name}, {sail_reg_ref(name)}, {value})"
@@ -180,8 +192,13 @@ def sail_case_body(case: dict[str, object]) -> str:
         next_name = f"st{index}"
         lines.append(f"  let {next_name} = {set_reg_expr(state_name, name, value)};")
         state_name = next_name
-    lines.append(f"  let mach0 = {{h8_reset_machine() with st = {state_name}}};")
-    lines.append(f"  let mach1 = h8_load_program(mach0, {initial['pc']}, [{byte_literal}]);")
+    lines.append(f"  let mem0 = h8_load_bytes(h8_empty_mem(), {initial['pc']}, [{byte_literal}]);")
+    mem_name = "mem0"
+    for index, (addr, value) in enumerate(sorted_memory_items(memory_map(case, "initial")), start=1):
+        next_name = f"mem{index}"
+        lines.append(f"  let {next_name} = h8_mem_write8({mem_name}, {addr}, {value});")
+        mem_name = next_name
+    lines.append(f"  let mach1 = h8_make_machine({state_name}, {mem_name});")
     lines.append("  let res = h8_run(mach1, 1);")
     checks = [
         f"(res.st.pc == {expected['pc']})",
@@ -190,6 +207,8 @@ def sail_case_body(case: dict[str, object]) -> str:
     ]
     for index, value in enumerate(expected_regs(case)):
         checks.append(f"(read_r16(res.st, {index}) == 0x{value:04X})")
+    for addr, value in sorted_memory_items(memory_map(case, "expected")):
+        checks.append(f"(h8_mem_read8(res.mem, {addr}) == {value})")
     lines.append(f"  {combine_bool_expr(checks)}")
     lines.append("}")
     return "\n".join(lines)

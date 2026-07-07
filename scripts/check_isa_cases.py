@@ -118,13 +118,14 @@ def validate_memory_map(mem: object, path: str, errors: list[str]) -> None:
         validate_hex(value, BYTE_RE, f"{path}.{addr}", errors)
 
 
-def validate_memory_access(access: object, path: str, errors: list[str]) -> None:
+def validate_memory_access(access: object, path: str, errors: list[str]) -> dict[str, object]:
     item = expect_dict(errors, access, path)
     kind = item.get("kind")
     if kind not in {"read", "write"}:
         fail(errors, f"{path}.kind", "expected read or write")
-    if item.get("width") != "byte":
-        fail(errors, f"{path}.width", "expected byte")
+    width = item.get("width")
+    if width not in {"byte", "word"}:
+        fail(errors, f"{path}.width", "expected byte or word")
     validate_hex(item.get("addr"), WORD_RE, f"{path}.addr", errors)
 
     if kind == "read":
@@ -139,12 +140,73 @@ def validate_memory_access(access: object, path: str, errors: list[str]) -> None
         if "rdata" in item:
             validate_hex(item.get("rdata"), WORD_RE, f"{path}.rdata", errors)
 
+    if width == "word" and kind == "write" and item.get("wmask") != "11":
+        fail(errors, f"{path}.wmask", "word write must enable both bytes")
+    return item
+
+
+def word_from_memory_map(
+    mem_map: dict[str, object],
+    addr: object,
+    path: str,
+    errors: list[str],
+) -> str | None:
+    if not isinstance(addr, str) or WORD_RE.fullmatch(addr) is None:
+        return None
+    base = int(addr, 16)
+    if base & 1:
+        fail(errors, path, "word access address must be even")
+        return None
+
+    hi_addr = f"0x{base:04x}"
+    lo_addr = f"0x{(base + 1) & 0xffff:04x}"
+    missing = [name for name in (hi_addr, lo_addr) if name not in mem_map]
+    if missing:
+        fail(errors, path, f"word access missing bytes: {', '.join(missing)}")
+        return None
+
+    hi = mem_map.get(hi_addr)
+    lo = mem_map.get(lo_addr)
+    if not isinstance(hi, str) or BYTE_RE.fullmatch(hi) is None:
+        return None
+    if not isinstance(lo, str) or BYTE_RE.fullmatch(lo) is None:
+        return None
+    return f"0x{((int(hi, 16) << 8) | int(lo, 16)):04x}"
+
+
+def validate_word_memory_access(
+    initial: dict[str, object],
+    expected: dict[str, object],
+    access: dict[str, object],
+    path: str,
+    errors: list[str],
+) -> None:
+    if access.get("width") != "word":
+        return
+
+    kind = access.get("kind")
+    if kind == "read":
+        if access.get("wmask", "00") != "00":
+            fail(errors, f"{path}.access.wmask", "word read must not enable writes")
+        if access.get("wdata", "0x0000") != "0x0000":
+            fail(errors, f"{path}.access.wdata", "word read must not carry write data")
+        word = word_from_memory_map(initial, access.get("addr"), f"{path}.initial", errors)
+        if word is not None and access.get("rdata") != word:
+            fail(errors, f"{path}.access.rdata", f"expected {word}")
+    elif kind == "write":
+        word = word_from_memory_map(expected, access.get("addr"), f"{path}.expected", errors)
+        if word is not None and access.get("wdata") != word:
+            fail(errors, f"{path}.access.wdata", f"expected {word}")
+
 
 def validate_case_memory(memory: object, path: str, errors: list[str]) -> dict[str, object]:
     item = expect_dict(errors, memory, path)
-    validate_memory_map(item.get("initial", {}), f"{path}.initial", errors)
-    validate_memory_map(item.get("expected", {}), f"{path}.expected", errors)
-    validate_memory_access(item.get("access"), f"{path}.access", errors)
+    initial = expect_dict(errors, item.get("initial", {}), f"{path}.initial")
+    expected = expect_dict(errors, item.get("expected", {}), f"{path}.expected")
+    validate_memory_map(initial, f"{path}.initial", errors)
+    validate_memory_map(expected, f"{path}.expected", errors)
+    access = validate_memory_access(item.get("access"), f"{path}.access", errors)
+    validate_word_memory_access(initial, expected, access, path, errors)
     return item
 
 

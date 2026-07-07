@@ -494,6 +494,110 @@ instructions:
       execute: h8_exec_mov16_reg_to_abs
     effects: [pc, ccr_nzv, mem_write]
 
+  - id: h8_shll8_r8
+    assembler_template: "shll.b {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xfff0"
+      match: "0x1000"
+      fields:
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_SHLL8_R8
+      execute: h8_exec_shll8
+    effects: [pc, rd8, ccr_hnzvc]
+
+  - id: h8_shal8_r8
+    assembler_template: "shal.b {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xfff0"
+      match: "0x1080"
+      fields:
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_SHAL8_R8
+      execute: h8_exec_shal8
+    effects: [pc, rd8, ccr_hnzvc]
+
+  - id: h8_shlr8_r8
+    assembler_template: "shlr.b {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xfff0"
+      match: "0x1100"
+      fields:
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_SHLR8_R8
+      execute: h8_exec_shlr8
+    effects: [pc, rd8, ccr_hnzvc]
+
+  - id: h8_shar8_r8
+    assembler_template: "shar.b {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xfff0"
+      match: "0x1180"
+      fields:
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_SHAR8_R8
+      execute: h8_exec_shar8
+    effects: [pc, rd8, ccr_hnzvc]
+
+  - id: h8_rotxl8_r8
+    assembler_template: "rotxl.b {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xfff0"
+      match: "0x1200"
+      fields:
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_ROTXL8_R8
+      execute: h8_exec_rotxl8
+    effects: [pc, rd8, ccr_hnzvc]
+
+  - id: h8_rotl8_r8
+    assembler_template: "rotl.b {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xfff0"
+      match: "0x1280"
+      fields:
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_ROTL8_R8
+      execute: h8_exec_rotl8
+    effects: [pc, rd8, ccr_hnzvc]
+
+  - id: h8_rotxr8_r8
+    assembler_template: "rotxr.b {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xfff0"
+      match: "0x1300"
+      fields:
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_ROTXR8_R8
+      execute: h8_exec_rotxr8
+    effects: [pc, rd8, ccr_hnzvc]
+
+  - id: h8_rotr8_r8
+    assembler_template: "rotr.b {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xfff0"
+      match: "0x1380"
+      fields:
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_ROTR8_R8
+      execute: h8_exec_rotr8
+    effects: [pc, rd8, ccr_hnzvc]
+
   - id: h8_or8_imm_r8
     assembler_template: "or.b #{imm8}, {rd8}"
     length_bytes: 2
@@ -1788,6 +1892,198 @@ cases:
       regs:
         r2: "0xabcd"
       ccr_hnzvc: "01000"
+      trap: false
+
+  - id: h8_shll8_r0l_carry
+    instruction: h8_shll8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "shll.b r0l"
+    words:
+      - "0x1008"
+    decode_keys: ["1", "0"]
+    sail:
+      decode: H8_SHLL8_R8
+      execute: h8_exec_shll8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x80"
+      ccr_hnzvc: "11111"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0x00"
+      ccr_hnzvc: "10101"
+      trap: false
+
+  - id: h8_shal8_r0l_overflow
+    instruction: h8_shal8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "shal.b r0l"
+    words:
+      - "0x1088"
+    decode_keys: ["1", "0"]
+    sail:
+      decode: H8_SHAL8_R8
+      execute: h8_exec_shal8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x40"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0x80"
+      ccr_hnzvc: "11010"
+      trap: false
+
+  - id: h8_shlr8_r0l_carry
+    instruction: h8_shlr8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "shlr.b r0l"
+    words:
+      - "0x1108"
+    decode_keys: ["1", "1"]
+    sail:
+      decode: H8_SHLR8_R8
+      execute: h8_exec_shlr8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x01"
+      ccr_hnzvc: "11111"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0x00"
+      ccr_hnzvc: "10101"
+      trap: false
+
+  - id: h8_shar8_r0l_sign
+    instruction: h8_shar8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "shar.b r0l"
+    words:
+      - "0x1188"
+    decode_keys: ["1", "1"]
+    sail:
+      decode: H8_SHAR8_R8
+      execute: h8_exec_shar8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x81"
+      ccr_hnzvc: "10000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0xc0"
+      ccr_hnzvc: "11001"
+      trap: false
+
+  - id: h8_rotxl8_r0l_carry_in
+    instruction: h8_rotxl8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "rotxl.b r0l"
+    words:
+      - "0x1208"
+    decode_keys: ["1", "2"]
+    sail:
+      decode: H8_ROTXL8_R8
+      execute: h8_exec_rotxl8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x80"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0x01"
+      ccr_hnzvc: "10001"
+      trap: false
+
+  - id: h8_rotl8_r0l_wrap
+    instruction: h8_rotl8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "rotl.b r0l"
+    words:
+      - "0x1288"
+    decode_keys: ["1", "2"]
+    sail:
+      decode: H8_ROTL8_R8
+      execute: h8_exec_rotl8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x80"
+      ccr_hnzvc: "10000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0x01"
+      ccr_hnzvc: "10001"
+      trap: false
+
+  - id: h8_rotxr8_r0l_carry_in
+    instruction: h8_rotxr8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "rotxr.b r0l"
+    words:
+      - "0x1308"
+    decode_keys: ["1", "3"]
+    sail:
+      decode: H8_ROTXR8_R8
+      execute: h8_exec_rotxr8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x01"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0x80"
+      ccr_hnzvc: "11001"
+      trap: false
+
+  - id: h8_rotr8_r0l_wrap
+    instruction: h8_rotr8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "rotr.b r0l"
+    words:
+      - "0x1388"
+    decode_keys: ["1", "3"]
+    sail:
+      decode: H8_ROTR8_R8
+      execute: h8_exec_rotr8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x01"
+      ccr_hnzvc: "10000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0x80"
+      ccr_hnzvc: "11001"
       trap: false
 
   - id: h8_or8_imm_r1l

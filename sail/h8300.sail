@@ -201,8 +201,10 @@ function h8_load_bytes(mem, base, bytes) = {
   out
 }
 
-function h8_fetch16(mem : H8Memory, addr : word) -> word =
-  h8_mem_read8(mem, addr) @ h8_mem_read8(mem, addr + 0x0001)
+function h8_fetch16(mem : H8Memory, addr : word) -> word = {
+  let word_addr = align_word_addr(addr);
+  h8_mem_read8(mem, word_addr) @ h8_mem_read8(mem, word_addr + 0x0001)
+}
 
 function h8_r8_from_code(code : bits(4)) -> H8R8 =
   struct {reg = unsigned(code[2 .. 0]), high = code[3] == 0b0}
@@ -1550,9 +1552,11 @@ function h8_step(m : H8Machine) -> H8Machine =
   if m.trap then
     m
   else {
-    let first : word = h8_fetch16(m.mem, m.st.pc);
-    let ext : word = h8_fetch16(m.mem, m.st.pc + 0x0002);
-    h8_decode_execute_machine(m, first, ext)
+    let fetch_pc : word = align_word_addr(m.st.pc);
+    let aligned = {m with st = {m.st with pc = fetch_pc}};
+    let first : word = h8_fetch16(m.mem, fetch_pc);
+    let ext : word = h8_fetch16(m.mem, fetch_pc + 0x0002);
+    h8_decode_execute_machine(aligned, first, ext)
   }
 
 type h8_step_count = {'n, 0 < 'n. int('n)}
@@ -1878,8 +1882,7 @@ function h8_memory_selftest() -> bool = {
   let r0h : H8R8 = struct {reg = 0, high = true};
   let mem0 = h8_empty_mem();
   let mem_fetch = h8_load_bytes(mem0, 0x0000, [0xF0, 0x12]);
-  let mem_wrap0 = h8_mem_write8(mem0, 0xFFFF, 0x12);
-  let mem_wrap1 = h8_mem_write8(mem_wrap0, 0x0000, 0x34);
+  let mem_odd_fetch = h8_load_bytes(mem0, 0x0100, [0xF0, 0x12]);
   let word_mem0 = h8_mem_write16(mem0, 0x0101, 0xABCD);
   let mov16_mach = h8_load_program(h8_reset_machine(), 0x0000, [0x79, 0x02, 0xAB, 0xCD]);
   let mov16_done = h8_step(mov16_mach);
@@ -1895,7 +1898,7 @@ function h8_memory_selftest() -> bool = {
   let bad_prog = h8_load_program(h8_reset_machine(), 0x0000, [0x01, 0x00]);
   let bad_done = h8_step(bad_prog);
   h8_fetch16(mem_fetch, 0x0000) == 0xF012
-    & h8_fetch16(mem_wrap1, 0xFFFF) == 0x1234
+    & h8_fetch16(mem_odd_fetch, 0x0101) == 0xF012
     & h8_mem_read16(word_mem0, 0x0100) == 0xABCD
     & h8_mem_read16(word_mem0, 0x0101) == 0xABCD
     & h8_mem_read8(word_mem0, 0x0100) == 0xAB
@@ -1916,6 +1919,29 @@ function h8_memory_selftest() -> bool = {
     & sleep_still.trap
     & bad_done.trap
     & bad_done.st.pc == 0x0000
+}
+
+function h8_big_endian_selftest() -> bool = {
+  let mem0 = h8_empty_mem();
+  let word_mem = h8_mem_write16(mem0, 0x0101, 0x1234);
+  let fetch_mem = h8_load_bytes(mem0, 0x0200, [0x79, 0x02, 0x12, 0x34]);
+  let mov16_mach = h8_load_program(h8_reset_machine(), 0x0000, [0x79, 0x02, 0x12, 0x34]);
+  let mov16_done = h8_step(mov16_mach);
+  let odd_pc_mach = {mov16_mach with st = {h8_reset() with pc = 0x0001}};
+  let odd_pc_done = h8_step(odd_pc_mach);
+  h8_mem_read8(word_mem, 0x0100) == 0x12
+    & h8_mem_read8(word_mem, 0x0101) == 0x34
+    & h8_mem_read16(word_mem, 0x0100) == 0x1234
+    & h8_mem_read16(word_mem, 0x0101) == 0x1234
+    & h8_fetch16(fetch_mem, 0x0200) == 0x7902
+    & h8_fetch16(fetch_mem, 0x0201) == 0x7902
+    & h8_fetch16(fetch_mem, 0x0202) == 0x1234
+    & read_r16(mov16_done.st, 2) == 0x1234
+    & mov16_done.st.pc == 0x0004
+    & not_bool(mov16_done.trap)
+    & read_r16(odd_pc_done.st, 2) == 0x1234
+    & odd_pc_done.st.pc == 0x0004
+    & not_bool(odd_pc_done.trap)
 }
 
 function h8_pc_alignment_selftest() -> bool = {
@@ -1958,4 +1984,5 @@ function h8_selftest() -> bool =
     & h8_r8_r8_decode_selftest()
     & h8_r16_r16_decode_selftest()
     & h8_memory_selftest()
+    & h8_big_endian_selftest()
     & h8_pc_alignment_selftest()

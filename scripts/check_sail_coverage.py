@@ -16,6 +16,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SAIL_PATH = REPO_ROOT / "sail" / "h8300.sail"
 OUT_DIR = REPO_ROOT / "result" / "sail-coverage"
 CONSTRUCTOR_RE = re.compile(r"^\s*(H8_[A-Z0-9_]+)\s*:")
+MATCH_CONSTRUCTOR_RE = re.compile(r"^\s*(H8_[A-Z0-9_]+)\b", re.MULTILINE)
+MACHINE_EXECUTE_EFFECTS = {"addr_update", "mem_read", "mem_write"}
 BIT_MEMORY_REQUIRED_OPS = {
     "h8_bit_abs8_read": {
         "band",
@@ -92,6 +94,7 @@ def load_tables(sail_text: str) -> tuple[list[dict[str, object]], list[str]]:
         table_errors, _summary = check_isa_cases.validate_table(table, sail_text)
         errors.extend(f"{case_path.relative_to(REPO_ROOT)}: {error}" for error in table_errors)
         tables.append({
+            "byte_order": table.get("byte_order"),
             "case_table": str(case_path.relative_to(REPO_ROOT)),
             "cases": table["cases"],
             "instructions": table["instructions"],
@@ -180,6 +183,111 @@ def sail_function_body(sail_text: str, function_name: str) -> str:
 def sail_bit_ops_in_function(sail_text: str, function_name: str) -> set[str]:
     body = sail_function_body(sail_text, function_name)
     return {match.group(1).lower() for match in BIT_OP_ENUM_RE.finditer(body)}
+
+
+def sail_match_constructors(sail_text: str, function_name: str) -> set[str]:
+    body = sail_function_body(sail_text, function_name)
+    return set(MATCH_CONSTRUCTOR_RE.findall(body))
+
+
+def machine_execute_coverage(
+    sail_text: str,
+    effects_by_constructor: dict[str, set[str]],
+    instruction_mappings: dict[str, list[dict[str, object]]],
+) -> dict[str, object]:
+    handled = sail_match_constructors(sail_text, "h8_execute_machine")
+    required = {}
+    missing = []
+    for constructor, effects in sorted(effects_by_constructor.items()):
+        required_effects = sorted(effects & MACHINE_EXECUTE_EFFECTS)
+        if not required_effects:
+            continue
+        instructions = sorted(
+            {
+                str(row["instruction"])
+                for row in instruction_mappings.get(constructor, [])
+                if "instruction" in row
+            }
+        )
+        entry = {
+            "effects": required_effects,
+            "handled": constructor in handled,
+            "instructions": instructions,
+        }
+        required[constructor] = entry
+        if constructor not in handled:
+            missing.append({"constructor": constructor, **entry})
+    return {
+        "handled_constructors": sorted(handled),
+        "missing_constructors": missing,
+        "missing_count": len(missing),
+        "required_constructors": required,
+        "required_effects": sorted(MACHINE_EXECUTE_EFFECTS),
+        "status": "complete" if not missing else "incomplete",
+    }
+
+
+def big_endian_model_checks(
+    sail_text: str,
+    tables: list[dict[str, object]],
+) -> dict[str, object]:
+    read16_body = sail_function_body(sail_text, "h8_mem_read16")
+    write16_body = sail_function_body(sail_text, "h8_mem_write16")
+    fetch16_body = sail_function_body(sail_text, "h8_fetch16")
+    load_body = sail_function_body(sail_text, "h8_load_bytes")
+    step_body = sail_function_body(sail_text, "h8_step")
+    checks = [
+        {
+            "name": "read16_high_byte_at_even_address",
+            "status": "pass"
+            if "h8_mem_read8(mem, word_addr) @ h8_mem_read8(mem, word_addr + 0x0001)"
+            in read16_body
+            else "fail",
+        },
+        {
+            "name": "write16_high_byte_at_even_address",
+            "status": "pass"
+            if "h8_mem_write8(mem, word_addr, value[15 .. 8])" in write16_body
+            else "fail",
+        },
+        {
+            "name": "write16_low_byte_at_odd_address",
+            "status": "pass"
+            if "h8_mem_write8(mem1, word_addr + 0x0001, value[7 .. 0])" in write16_body
+            else "fail",
+        },
+        {
+            "name": "fetch16_high_byte_at_pc",
+            "status": "pass"
+            if "let word_addr = align_word_addr(addr);" in fetch16_body
+            and "h8_mem_read8(mem, word_addr) @ h8_mem_read8(mem, word_addr + 0x0001)"
+            in fetch16_body
+            else "fail",
+        },
+        {
+            "name": "load_bytes_preserves_list_order",
+            "status": "pass" if "bytes[('n - 1) - i]" in load_body else "fail",
+        },
+        {
+            "name": "step_aligns_pc_before_execute",
+            "status": "pass"
+            if "let fetch_pc : word = align_word_addr(m.st.pc);" in step_body
+            and "h8_decode_execute_machine(aligned, first, ext)" in step_body
+            else "fail",
+        },
+    ]
+    for table in tables:
+        checks.append({
+            "name": f"{table['case_table']}:byte_order_big",
+            "status": "pass" if table.get("byte_order") == "big" else "fail",
+        })
+    failed = [check for check in checks if check["status"] != "pass"]
+    return {
+        "checks": checks,
+        "gap_count": len(failed),
+        "gaps": failed,
+        "status": "pass" if not failed else "fail",
+    }
 
 
 def bit_memory_model_coverage(sail_text: str) -> dict[str, object]:
@@ -344,6 +452,18 @@ def main() -> int:
     bit_model_gap_count = bit_memory_model_gap_count(bit_model_coverage)
     if bit_model_gap_count:
         blocking_errors.append("incomplete Sail bit-memory model coverage")
+    machine_coverage = machine_execute_coverage(
+        sail_text,
+        effects_by_constructor,
+        instruction_mappings,
+    )
+    machine_gap_count = int(machine_coverage["missing_count"])
+    if machine_gap_count:
+        blocking_errors.append("incomplete Sail machine execute coverage")
+    endian_checks = big_endian_model_checks(sail_text, tables)
+    endian_gap_count = int(endian_checks["gap_count"])
+    if endian_gap_count:
+        blocking_errors.append("incomplete Sail big-endian model checks")
 
     instruction_mappings_by_constructor = {
         name: rows for name, rows in instruction_mappings.items() if rows
@@ -381,6 +501,7 @@ def main() -> int:
         "bit_memory_model_coverage": bit_model_coverage,
         "bit_memory_model_gap_count": bit_model_gap_count,
         "bit_memory_subop_coverage": bit_memory_coverage,
+        "big_endian_model_checks": endian_checks,
         "case_count_by_check_area": dict(sorted(area_counts.items())),
         "case_count_by_constructor": case_count_by_constructor,
         "case_evidence_by_constructor": case_evidence,
@@ -389,6 +510,8 @@ def main() -> int:
         "constructors_with_decode_only_cases": sorted(constructors_with_decode_only_cases),
         "constructors_without_case_evidence": sorted(constructors_without_case_evidence),
         "constructors_without_semantic_cases": constructors_without_semantic_cases,
+        "machine_execute_coverage": machine_coverage,
+        "machine_execute_gap_count": machine_gap_count,
         "oracle_gap_status": "non_blocking",
         "reject_case_count": base_reject_count,
         "semantic_case_count_by_constructor": semantic_case_count_by_constructor,
@@ -406,6 +529,8 @@ def main() -> int:
         "bit_memory_missing_subop_count": bit_memory_gap_count,
         "bit_memory_model_coverage": bit_model_coverage,
         "bit_memory_model_gap_count": bit_model_gap_count,
+        "big_endian_model_checks": endian_checks,
+        "big_endian_model_gap_count": endian_gap_count,
         "constructor_coverage": constructor_coverage,
         "constructor_count": len(constructors),
         "covered_constructor_count": constructor_coverage["mapped_constructor_count"],
@@ -416,8 +541,10 @@ def main() -> int:
             "semantic evidence is case-focused coverage, not operand-space closure",
             "third-party oracle gaps are advisory in this report",
         ],
+        "machine_execute_coverage": machine_coverage,
+        "machine_execute_gap_count": machine_gap_count,
         "profile_count": len(tables),
-        "report_schema": 2,
+        "report_schema": 3,
         "reject_case_count": base_reject_count,
         "semantic_case_evidence": semantic_case_evidence,
         "semantic_covered_constructor_count": semantic_evidence_constructor_count,
@@ -431,7 +558,9 @@ def main() -> int:
         f"sail coverage {report['status']}: {report_path.relative_to(REPO_ROOT)} "
         f"semantic={report['semantic_covered_constructor_count']}/{report['constructor_count']} "
         f"bit_subop_gaps={bit_memory_gap_count} "
-        f"bit_model_gaps={bit_model_gap_count}"
+        f"bit_model_gaps={bit_model_gap_count} "
+        f"machine_gaps={machine_gap_count} "
+        f"endian_gaps={endian_gap_count}"
     )
     if blocking_errors:
         for error in blocking_errors:

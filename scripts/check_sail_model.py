@@ -23,6 +23,7 @@ SAIL_SELFTESTS = [
     "h8_r8_r8_decode_selftest",
     "h8_r16_r16_decode_selftest",
     "h8_memory_selftest",
+    "h8_big_endian_selftest",
     "h8_pc_alignment_selftest",
     "h8_selftest",
 ]

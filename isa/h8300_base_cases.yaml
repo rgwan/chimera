@@ -3668,6 +3668,154 @@ cases:
       ccr_hnzvc: "01000"
       trap: false
 
+  - id: h8_mov8_imm_r2h_zero
+    instruction: h8_mov8_imm_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "mov.b #0x00, r2h"
+    words:
+      - "0xf200"
+    decode_keys: ["f", "2"]
+    sail:
+      decode: H8_MOV8_IMM
+      execute: h8_exec_mov8_imm
+    initial:
+      pc: "0x0000"
+      regs:
+        r2h: "0xff"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r2h: "0x00"
+      ccr_hnzvc: "10101"
+      trap: false
+
+  - id: h8_mov8_imm_r3h_negative
+    instruction: h8_mov8_imm_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "mov.b #0x80, r3h"
+    words:
+      - "0xf380"
+    decode_keys: ["f", "3"]
+    sail:
+      decode: H8_MOV8_IMM
+      execute: h8_exec_mov8_imm
+    initial:
+      pc: "0x0000"
+      regs:
+        r3h: "0x00"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r3h: "0x80"
+      ccr_hnzvc: "11001"
+      trap: false
+
+  - id: h8_mov8_r4h_r5h_negative
+    instruction: h8_mov8_r8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "mov.b r4h, r5h"
+    words:
+      - "0x0c45"
+    decode_keys: ["0", "c"]
+    sail:
+      decode: H8_MOV8_R8_R8
+      execute: h8_exec_mov8
+    initial:
+      pc: "0x0000"
+      regs:
+        r4h: "0x80"
+        r5h: "0x00"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r5h: "0x80"
+      ccr_hnzvc: "11001"
+      trap: false
+
+  - id: h8_mov16_imm_r3_zero
+    instruction: h8_mov16_imm_r16
+    status: supported
+    check_area: flags
+    assembler:
+      - "mov.w #0x0000, r3"
+    words:
+      - "0x7903"
+      - "0x0000"
+    decode_keys: ["7", "9", "0", "3"]
+    sail:
+      decode: H8_MOV16_IMM
+      execute: h8_exec_mov16_imm
+    initial:
+      pc: "0x0000"
+      regs:
+        r3: "0xffff"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0004"
+      regs:
+        r3: "0x0000"
+      ccr_hnzvc: "10101"
+      trap: false
+
+  - id: h8_mov16_imm_r4_negative
+    instruction: h8_mov16_imm_r16
+    status: supported
+    check_area: flags
+    assembler:
+      - "mov.w #0x8000, r4"
+    words:
+      - "0x7904"
+      - "0x8000"
+    decode_keys: ["7", "9", "0", "4"]
+    sail:
+      decode: H8_MOV16_IMM
+      execute: h8_exec_mov16_imm
+    initial:
+      pc: "0x0000"
+      regs:
+        r4: "0x0000"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0004"
+      regs:
+        r4: "0x8000"
+      ccr_hnzvc: "11001"
+      trap: false
+
+  - id: h8_mov16_r5_r6_negative
+    instruction: h8_mov16_r16_r16
+    status: supported
+    check_area: flags
+    assembler:
+      - "mov.w r5, r6"
+    words:
+      - "0x0d56"
+    decode_keys: ["0", "d"]
+    sail:
+      decode: H8_MOV16_R16_R16
+      execute: h8_exec_mov16
+    initial:
+      pc: "0x0000"
+      regs:
+        r5: "0x8000"
+        r6: "0x0000"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r6: "0x8000"
+      ccr_hnzvc: "11001"
+      trap: false
+
   - id: h8_shll8_r0l_carry
     instruction: h8_shll8_r8
     status: supported

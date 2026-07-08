@@ -17,7 +17,7 @@ import java.lang.foreign.Arena
 class BiuIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val addr   = Flipped(UInt(parameter.addrWidth))
   val wdata  = Flipped(UInt(parameter.dataWidth))
-  val busCtl = Flipped(UInt(3))
+  val busCtl = Flipped(UInt(2))
   val word   = Flipped(Bool()) // 1 = 16-bit access, 0 = byte
   val bus    = Aligned(new SramBus(parameter))
   val rdata  = Aligned(UInt(parameter.dataWidth))
@@ -30,8 +30,8 @@ object Biu extends Generator[ChimeraParameter, ChimeraLayers, BiuIO, ChimeraProb
   def architecture(parameter: ChimeraParameter) =
     val io = summon[Interface[BiuIO]]
 
-    val isReq   = io.busCtl =/= BusCtl.None.U(3)
-    val isWrite = (io.busCtl === BusCtl.Write.U(3)) | (io.busCtl === BusCtl.Rmw.U(3))
+    val isReq   = io.busCtl =/= BusCtl.None.U(2)
+    val isWrite = io.busCtl === BusCtl.Write.U(2)
     val byteMask = io.addr.asBits.bit(0).?(1.U(parameter.wmaskWidth), 2.U(parameter.wmaskWidth))
 
     io.bus.addr  := io.addr

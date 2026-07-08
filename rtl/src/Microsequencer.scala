@@ -17,7 +17,7 @@ class MicrosequencerIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val reset    = Flipped(Reset())
   val seqSrc   = Flipped(UInt(2))
   val cond     = Flipped(UInt(3))
-  val misc     = Flipped(UInt(3))
+  val call     = Flipped(Bool())
   val literal  = Flipped(UInt(parameter.upcBits))
   val dispatch = Flipped(UInt(parameter.dispatchBits))
   val condZ    = Flipped(Bool())
@@ -58,7 +58,7 @@ object Microsequencer
     when(io.seqSrc === SeqSrc.Return.U(2))(nxt := ret)
     upc := nxt
 
-    val doCall = (io.seqSrc === SeqSrc.Literal.U(2)) & io.misc.asBits.bit(Misc.Call) & pred
+    val doCall = (io.seqSrc === SeqSrc.Literal.U(2)) & io.call & pred
     when(doCall)(ret := seqNext)
 
     io.upc := upc

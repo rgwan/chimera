@@ -9,44 +9,50 @@ package com.vowstar.chimera
 object MicrocodeImage:
 
   case class MW(
-    lit:   Int     = 0,
-    seq:   Int     = SeqSrc.Next,
-    cond:  Int     = Cond.None,
-    alu:   Int     = AluOp.Add,
-    aSel:  Int     = 0,
-    bSel:  Int     = 0,
-    rdGrp: Int     = 0,
-    we:    Boolean = false,
-    flag:  Int     = FlagCtl.None,
-    bus:   Int     = BusCtl.None,
-    misc:  Int     = 0
+    lit:    Int     = 0,
+    seq:    Int     = SeqSrc.Next,
+    cond:   Int     = Cond.None,
+    alu:    Int     = AluOp.Add,
+    aSel:   Int     = ASel.H8,
+    bSel:   Int     = BSel.H8,
+    h8Idx:  Int     = H8Idx.RdReg,
+    intIdx: Int     = IntIdx.PC,
+    wsel:   Int     = WSel.H8,
+    we:     Boolean = false,
+    flag:   Int     = FlagCtl.None,
+    bus:    Int     = BusCtl.None,
+    size:   Int     = 0,
+    call:   Boolean = false
   ):
     def encode: BigInt =
       def f(v: Int, r: (Int, Int)): BigInt =
         (BigInt(v) & ((BigInt(1) << (r._1 - r._2 + 1)) - 1)) << r._2
       f(lit, MicroWord.LITERAL) | f(seq, MicroWord.SEQ_SRC) | f(cond, MicroWord.COND) |
         f(alu, MicroWord.ALU_OP) | f(aSel, MicroWord.A_SEL) | f(bSel, MicroWord.B_SEL) |
-        f(rdGrp, MicroWord.RD_GRP) | (if we then BigInt(1) << MicroWord.REG_WE._2
-                                      else BigInt(0)) |
-        f(flag, MicroWord.FLAG_CTL) | f(bus, MicroWord.BUS_CTL) | f(misc, MicroWord.MISC)
+        f(h8Idx, MicroWord.H8_IDX) | f(intIdx, MicroWord.INT_IDX) |
+        f(wsel, MicroWord.WSEL) | (if we then BigInt(1) << MicroWord.REG_WE._2
+                                   else BigInt(0)) |
+        f(flag, MicroWord.FLAG_CTL) | f(bus, MicroWord.BUS_CTL) | f(size, MicroWord.SIZE) |
+        (if call then BigInt(1) << MicroWord.CALL._2 else BigInt(0))
 
   private def field(w: BigInt, r: (Int, Int)): Int =
     ((w >> r._2) & ((BigInt(1) << (r._1 - r._2 + 1)) - 1)).toInt
 
-  // Round-trip self-check: every field with a distinct value survives encode,
-  // proving no overlap or misplacement. Runs when the image is elaborated.
-  private val probe = MW(lit = 0x1ab, seq = 3, cond = 5, alu = 9, aSel = 7, bSel = 6,
-    rdGrp = 2, we = true, flag = 4, bus = 4, misc = 3)
+  // Round-trip self-check: distinct value in every field survives encode with no
+  // overlap. Pinned to an independently computed value. Runs at elaboration.
+  private val probe = MW(lit = 0x1ab, seq = 3, cond = 5, alu = 9, aSel = 2, bSel = 3,
+    h8Idx = 2, intIdx = 1, wsel = 1, we = true, flag = 4, bus = 3, size = 1, call = true)
   private val pw = probe.encode
   require(pw < (BigInt(1) << 36), "microword exceeds 36 bits")
-  require(pw == BigInt("d5f67eb23", 16), "microword encoding value")
+  require(pw == BigInt("d5f66e79e", 16), "microword encoding value")
   require(
     field(pw, MicroWord.LITERAL) == 0x1ab && field(pw, MicroWord.SEQ_SRC) == 3 &&
       field(pw, MicroWord.COND) == 5 && field(pw, MicroWord.ALU_OP) == 9 &&
-      field(pw, MicroWord.A_SEL) == 7 && field(pw, MicroWord.B_SEL) == 6 &&
-      field(pw, MicroWord.RD_GRP) == 2 && field(pw, MicroWord.REG_WE) == 1 &&
-      field(pw, MicroWord.FLAG_CTL) == 4 && field(pw, MicroWord.BUS_CTL) == 4 &&
-      field(pw, MicroWord.MISC) == 3,
+      field(pw, MicroWord.A_SEL) == 2 && field(pw, MicroWord.B_SEL) == 3 &&
+      field(pw, MicroWord.H8_IDX) == 2 && field(pw, MicroWord.INT_IDX) == 1 &&
+      field(pw, MicroWord.WSEL) == 1 && field(pw, MicroWord.REG_WE) == 1 &&
+      field(pw, MicroWord.FLAG_CTL) == 4 && field(pw, MicroWord.BUS_CTL) == 3 &&
+      field(pw, MicroWord.SIZE) == 1 && field(pw, MicroWord.CALL) == 1,
     "microword field packing"
   )
 

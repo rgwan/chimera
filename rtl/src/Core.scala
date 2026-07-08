@@ -57,30 +57,34 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, ChimeraPr
     coarse.io.word := ir
     opx.io.word    := ir
 
-    val sizeWord = udec.io.misc.asBits.bit(Misc.SizeWord)
+    val sizeWord = udec.io.size
 
-    // operand fields -> register indices
-    val rdIdx = opx.io.rdReg.asBits.bits(parameter.regIndexBits - 1, 0).asUInt
-    val rsIdx = opx.io.rsReg.asBits.bits(parameter.regIndexBits - 1, 0).asUInt
-    val imm16 = (0.B(8) ## opx.io.imm8.asBits).asUInt
+    // single H8 read/write index: pick one OperandExtract field
+    val ri = parameter.regIndexBits - 1
+    val h8Idx = Wire(UInt(parameter.regIndexBits))
+    h8Idx := opx.io.rdReg.asBits.bits(ri, 0).asUInt
+    when(udec.io.h8Idx === H8Idx.RdImm.U(2))(h8Idx := opx.io.rdImm.asBits.bits(ri, 0).asUInt)
+    when(udec.io.h8Idx === H8Idx.RsReg.U(2))(h8Idx := opx.io.rsReg.asBits.bits(ri, 0).asUInt)
 
-    // register-file reads
-    h8rf.io.raddr := rsIdx
-    intrf.io.raddr := udec.io.aSel.asBits.bits(1, 0).asUInt
+    val imm8ext  = (0.B(8) ## opx.io.imm8.asBits).asUInt
+    val litConst = (0.B(8) ## udec.io.literal.asBits.bits(7, 0)).asUInt
 
-    // ALU operand A mux (aSel)
+    // register-file reads (single port each)
+    h8rf.io.raddr  := h8Idx
+    intrf.io.raddr := udec.io.intIdx
+
+    // ALU A mux
     val aMux = Wire(UInt(parameter.dataWidth))
     aMux := h8rf.io.rdata
-    when(udec.io.aSel === 1.U(3))(aMux := intrf.io.rdata)
-    when(udec.io.aSel === 2.U(3))(aMux := imm16)
-    when(udec.io.aSel === 3.U(3))(aMux := 0.U(parameter.dataWidth))
+    when(udec.io.aSel === ASel.Int.U(2))(aMux := intrf.io.rdata)
+    when(udec.io.aSel === ASel.Zero.U(2))(aMux := 0.U(parameter.dataWidth))
 
-    // ALU operand B mux (bSel)
+    // ALU B mux
     val bMux = Wire(UInt(parameter.dataWidth))
     bMux := h8rf.io.rdata
-    when(udec.io.bSel === 1.U(3))(bMux := imm16)
-    when(udec.io.bSel === 2.U(3))(bMux := intrf.io.rdata)
-    when(udec.io.bSel === 3.U(3))(bMux := 0.U(parameter.dataWidth))
+    when(udec.io.bSel === BSel.Imm8.U(2))(bMux := imm8ext)
+    when(udec.io.bSel === BSel.Int.U(2))(bMux := intrf.io.rdata)
+    when(udec.io.bSel === BSel.Lit.U(2))(bMux := litConst)
 
     alu.io.a    := aMux
     alu.io.b    := bMux
@@ -99,39 +103,38 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, ChimeraPr
     ccr.io.ldWe    := false.B
     ccr.io.ldVal   := 0.U(8)
 
-    // writeback routing (rdGrp bit0: 0 = H8 file, 1 = internal file)
-    val toInternal = udec.io.rdGrp.asBits.bit(0)
-    h8rf.io.waddr := rdIdx
-    h8rf.io.wdata := alu.io.y
-    h8rf.io.wmask := sizeWord.?(3.U(parameter.wmaskWidth), 2.U(parameter.wmaskWidth))
-    h8rf.io.we    := udec.io.regWe & (!toInternal)
-    intrf.io.waddr := udec.io.rdGrp.asBits.bits(1, 0).asUInt
+    // writeback: WSel picks the H8 or internal file (shared index/data)
+    val toInternal = udec.io.wsel
+    h8rf.io.waddr  := h8Idx
+    h8rf.io.wdata  := alu.io.y
+    h8rf.io.wmask  := sizeWord.?(3.U(parameter.wmaskWidth), 2.U(parameter.wmaskWidth))
+    h8rf.io.we     := udec.io.regWe & (!toInternal)
+    intrf.io.waddr := udec.io.intIdx
     intrf.io.wdata := alu.io.y
     intrf.io.we    := udec.io.regWe & toInternal
 
-    // BIU: address = PC/internal read; microcode selects via bus_ctl
+    // BIU: address from the internal read (PC for fetch, IREG for a data address)
     biu.io.addr   := intrf.io.rdata
     biu.io.wdata  := h8rf.io.rdata
     biu.io.busCtl := udec.io.busCtl
     biu.io.word   := sizeWord
 
-    // fetch capture into IR
-    // memory is big-endian; the decoder-visible IR is byteswapped (first byte in
-    // [7:0]). Data loads use biu.rdata directly (natural BE value).
-    val doFetch  = udec.io.busCtl === BusCtl.Fetch.U(3)
-    val fetchLe  = biu.io.rdata.asBits.bits(7, 0) ## biu.io.rdata.asBits.bits(15, 8)
+    // fetch capture into IR (byteswap BE memory -> LE decoder word). Data loads
+    // use biu.rdata directly (natural BE value).
+    val doFetch = udec.io.busCtl === BusCtl.Fetch.U(2)
+    val fetchLe = biu.io.rdata.asBits.bits(7, 0) ## biu.io.rdata.asBits.bits(15, 8)
     when(doFetch & biu.io.rdy)(ir := fetchLe.asUInt)
 
     // sequencer inputs
     useq.io.seqSrc   := udec.io.seqSrc
     useq.io.cond     := udec.io.cond
-    useq.io.misc     := udec.io.misc
+    useq.io.call     := udec.io.call
     useq.io.literal  := udec.io.literal
     useq.io.dispatch := coarse.io.dispatch
     useq.io.condZ    := ccr.io.zFlag
     useq.io.condC    := ccr.io.cFlag
     useq.io.busRdy   := biu.io.rdy
-    useq.io.ccTaken  := false.B // branch-condition eval: filled with microcode/flags
+    useq.io.ccTaken  := false.B // branch-condition eval: filled later
 
     // irq latch (polled by microcode)
     val irqLatch = RegInit(false.B)

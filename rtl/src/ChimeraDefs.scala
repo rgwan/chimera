@@ -2,22 +2,25 @@
 // SPDX-License-Identifier: MIT
 package com.vowstar.chimera
 
-/** Microword field layout (36 bit = 4 x 9) and control-field encodings.
+/** Microword field layout (36 bit) — the microcode/datapath control contract.
   * Elaboration-time constants shared by MicroDecode and the microcode image.
   */
 object MicroWord:
   // (hi, lo) inclusive bit ranges.
-  val LITERAL  = (35, 27) // absolute next-uPC target / immediate constant
+  val LITERAL  = (35, 27) // 9: next-uPC target (SeqSrc.Literal) / ALU const (BSel.Lit)
   val SEQ_SRC  = (26, 25)
   val COND     = (24, 22)
   val ALU_OP   = (21, 18)
-  val A_SEL    = (17, 15)
-  val B_SEL    = (14, 12)
-  val RD_GRP   = (11, 10)
-  val REG_WE   = (9, 9)
-  val FLAG_CTL = (8, 6)
-  val BUS_CTL  = (5, 3)
-  val MISC     = (2, 0)
+  val A_SEL    = (17, 16) // ALU A source (ASel)
+  val B_SEL    = (15, 14) // ALU B source (BSel)
+  val H8_IDX   = (13, 12) // which OperandExtract field indexes the H8 file (H8Idx)
+  val INT_IDX  = (11, 10) // internal-file index (IntIdx: PC/IREG/TEMP)
+  val WSEL     = (9, 9)   // writeback target (WSel: 0 = H8, 1 = internal)
+  val REG_WE   = (8, 8)
+  val FLAG_CTL = (7, 5)
+  val BUS_CTL  = (4, 3)   // BusCtl
+  val SIZE     = (2, 2)   // 0 = byte, 1 = word
+  val CALL     = (1, 1)   // with SeqSrc.Literal, push uPC+1 (subroutine call)
 
 /** next-uPC source select. */
 object SeqSrc:
@@ -66,20 +69,42 @@ object FlagCtl:
   val StickyZ = 4 // SUBX: keep Z when result is zero
   val Bit     = 5 // BTST/BLD/Bxx C or Z only
 
-/** Bus transaction. we=0 read, we=1 write with wmask byte enables. */
+/** Bus transaction (2-bit). RMW is a Read then Write in microcode. */
 object BusCtl:
   val None  = 0
   val Fetch = 1
   val Read  = 2
   val Write = 3
-  val Rmw   = 4
 
-/** misc field bits. PC increment is a normal ALU write to PC in the internal
-  * file, so misc only carries the operand size and the call flag.
-  */
-object Misc:
-  val SizeWord = 0 // bit0: 0 = byte, 1 = word
-  val Call     = 1 // bit1: with SeqSrc.Literal, push uPC+1 (subroutine call)
+/** ALU A source. */
+object ASel:
+  val H8   = 0 // H8 register read (index from H8_IDX)
+  val Int  = 1 // internal register read (index from INT_IDX)
+  val Zero = 2
+
+/** ALU B source. */
+object BSel:
+  val H8   = 0
+  val Imm8 = 1 // IR imm8, zero-extended
+  val Int  = 2
+  val Lit  = 3 // microword literal[7:0] as a constant (PC+=2, offsets)
+
+/** Which OperandExtract field indexes the single H8 read/write port. */
+object H8Idx:
+  val RdImm = 0 // instr[3:0]   imm-ALU / mov-imm rd
+  val RdReg = 1 // instr[11:8]  reg-reg / rd-only rd
+  val RsReg = 2 // instr[15:12] reg-reg rs
+
+/** Internal-file index. */
+object IntIdx:
+  val PC   = 0
+  val IReg = 1
+  val Temp = 2
+
+/** Writeback target. */
+object WSel:
+  val H8  = 0
+  val Int = 1
 
 /** Coarse-decode buckets, for reference in CoarseDecoder. */
 object Dispatch:

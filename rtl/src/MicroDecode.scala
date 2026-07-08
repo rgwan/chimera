@@ -9,20 +9,23 @@ import me.jiuyang.zaozi.valuetpe.*
 import org.llvm.mlir.scalalib.capi.ir.{Block, Context}
 import java.lang.foreign.Arena
 
-/** Split the 36-bit microword into its control fields. */
+/** Split the 36-bit microword into its control fields (see MicroWord). */
 class MicroDecodeIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val word    = Flipped(UInt(parameter.uromWidth))
   val literal = Aligned(UInt(parameter.upcBits))
   val seqSrc  = Aligned(UInt(2))
   val cond    = Aligned(UInt(3))
   val aluOp   = Aligned(UInt(4))
-  val aSel    = Aligned(UInt(3))
-  val bSel    = Aligned(UInt(3))
-  val rdGrp   = Aligned(UInt(2))
+  val aSel    = Aligned(UInt(2))
+  val bSel    = Aligned(UInt(2))
+  val h8Idx   = Aligned(UInt(2))
+  val intIdx  = Aligned(UInt(2))
+  val wsel    = Aligned(Bool())
   val regWe   = Aligned(Bool())
   val flagCtl = Aligned(UInt(3))
-  val busCtl  = Aligned(UInt(3))
-  val misc    = Aligned(UInt(3))
+  val busCtl  = Aligned(UInt(2))
+  val size    = Aligned(Bool())
+  val call    = Aligned(Bool())
 
 @generator
 object MicroDecode
@@ -40,8 +43,11 @@ object MicroDecode
     io.aluOp   := f(MicroWord.ALU_OP).asUInt
     io.aSel    := f(MicroWord.A_SEL).asUInt
     io.bSel    := f(MicroWord.B_SEL).asUInt
-    io.rdGrp   := f(MicroWord.RD_GRP).asUInt
+    io.h8Idx   := f(MicroWord.H8_IDX).asUInt
+    io.intIdx  := f(MicroWord.INT_IDX).asUInt
+    io.wsel    := w.bit(MicroWord.WSEL._1)
     io.regWe   := w.bit(MicroWord.REG_WE._1)
     io.flagCtl := f(MicroWord.FLAG_CTL).asUInt
     io.busCtl  := f(MicroWord.BUS_CTL).asUInt
-    io.misc    := f(MicroWord.MISC).asUInt
+    io.size    := w.bit(MicroWord.SIZE._1)
+    io.call    := w.bit(MicroWord.CALL._1)

@@ -83,13 +83,14 @@ next-PC path.
 
 ## Interrupts
 
-`irq`/`nmi` are latched into a pending bit exposed as a µbranch condition. The
-microcode main loop polls it at instruction-retire boundaries; when taken (and, for
-`irq`, allowed by `CCR.I`), a microcode entry routine performs the H8 exception
-sequence: push PC, push CCR, set `I`, load the vector. Priority selection and
-context save are microcode; the only interrupt hardware is the pending latch. No
-async injection mid-instruction, so per-instruction retire equivalence is
-unaffected.
+`irq`/`nmi` are latched into a status bit exposed as one µbranch predicate
+(alongside Z/C). The microcode main loop issues a conditional micro-call at
+instruction-retire boundaries (`if(irq) call irq_proc`); when taken (and, for
+`irq`, allowed by `CCR.I`), `irq_proc` performs the H8 exception sequence — push
+PC, push CCR, set `I`, load the vector. The only interrupt hardware is the latch;
+priority and context save are microcode, and `irq` reaches µPC only through that
+conditional call, never as an async hardware steer. Per-instruction retire
+equivalence is therefore unaffected.
 
 ## Memory-bit prefix family
 

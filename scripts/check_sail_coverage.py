@@ -16,6 +16,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SAIL_PATH = REPO_ROOT / "sail" / "h8300.sail"
 OUT_DIR = REPO_ROOT / "result" / "sail-coverage"
 CONSTRUCTOR_RE = re.compile(r"^\s*(H8_[A-Z0-9_]+)\s*:")
+BIT_MEMORY_REQUIRED_OPS = {
+    "h8_bit_abs8_read": {"band", "biand", "bild", "bior", "bixor", "bld", "bor", "btst", "bxor"},
+    "h8_bit_abs8_write": {"bclr", "bist", "bnot", "bset", "bst"},
+    "h8_bit_r16i_read": {"band", "biand", "bild", "bior", "bixor", "bld", "bor", "btst", "bxor"},
+    "h8_bit_r16i_write": {"bclr", "bist", "bnot", "bset", "bst"},
+}
 
 
 def h8_constructors(sail_text: str) -> list[str]:
@@ -52,6 +58,52 @@ def load_tables(sail_text: str) -> tuple[list[dict[str, object]], list[str]]:
 
 def increment(counter: dict[str, int], key: str) -> None:
     counter[key] = counter.get(key, 0) + 1
+
+
+def bit_case_op(case: dict[str, object]) -> str | None:
+    assembler = case.get("assembler")
+    if not isinstance(assembler, list) or not assembler:
+        return None
+    first = assembler[0]
+    if not isinstance(first, str):
+        return None
+    return first.strip().split(maxsplit=1)[0].lower()
+
+
+def bit_memory_subop_coverage(tables: list[dict[str, object]]) -> dict[str, object]:
+    coverage = {
+        name: {
+            "case_ids_by_op": {},
+            "covered_ops": [],
+            "missing_ops": sorted(required),
+            "required_ops": sorted(required),
+            "status": "incomplete",
+        }
+        for name, required in BIT_MEMORY_REQUIRED_OPS.items()
+    }
+    for table in tables:
+        for case in table["cases"]:
+            if not isinstance(case, dict):
+                continue
+            instruction = case.get("instruction")
+            if instruction not in BIT_MEMORY_REQUIRED_OPS:
+                continue
+            op = bit_case_op(case)
+            if op is None:
+                continue
+            entry = coverage[str(instruction)]
+            ids_by_op = entry["case_ids_by_op"]
+            ids_by_op.setdefault(op, []).append(str(case["id"]))
+
+    for instruction, required in BIT_MEMORY_REQUIRED_OPS.items():
+        entry = coverage[instruction]
+        covered = set(entry["case_ids_by_op"])
+        missing = sorted(required - covered)
+        entry["case_ids_by_op"] = dict(sorted(entry["case_ids_by_op"].items()))
+        entry["covered_ops"] = sorted(covered)
+        entry["missing_ops"] = missing
+        entry["status"] = "complete" if not missing else "incomplete"
+    return coverage
 
 
 def main() -> int:
@@ -171,6 +223,8 @@ def main() -> int:
         "instructions_without_case_evidence": instructions_without_case_evidence,
     }
     advisory_gap_count = sum(len(items) for items in advisory_gaps.values())
+    bit_memory_coverage = bit_memory_subop_coverage(tables)
+    bit_memory_gap_count = sum(len(entry["missing_ops"]) for entry in bit_memory_coverage.values())
 
     instruction_mappings_by_constructor = {
         name: rows for name, rows in instruction_mappings.items() if rows
@@ -203,6 +257,8 @@ def main() -> int:
     semantic_case_evidence = {
         "advisory_gap_count": advisory_gap_count,
         "advisory_gaps": advisory_gaps,
+        "bit_memory_missing_subop_count": bit_memory_gap_count,
+        "bit_memory_subop_coverage": bit_memory_coverage,
         "case_count_by_check_area": dict(sorted(area_counts.items())),
         "case_count_by_constructor": case_count_by_constructor,
         "case_evidence_by_constructor": case_evidence,
@@ -219,6 +275,7 @@ def main() -> int:
     report = {
         "blocking_errors": blocking_errors,
         "case_check_area_counts": dict(sorted(area_counts.items())),
+        "bit_memory_missing_subop_count": bit_memory_gap_count,
         "constructor_coverage": constructor_coverage,
         "constructor_count": len(constructors),
         "covered_constructor_count": constructor_coverage["mapped_constructor_count"],
@@ -242,7 +299,8 @@ def main() -> int:
     report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(
         f"sail coverage {report['status']}: {report_path.relative_to(REPO_ROOT)} "
-        f"semantic={report['semantic_covered_constructor_count']}/{report['constructor_count']}"
+        f"semantic={report['semantic_covered_constructor_count']}/{report['constructor_count']} "
+        f"bit_subop_gaps={bit_memory_gap_count}"
     )
     if blocking_errors:
         for error in blocking_errors:

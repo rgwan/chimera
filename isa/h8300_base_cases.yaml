@@ -1845,6 +1845,44 @@ cases:
         wmask: "00"
         rdata: "0x8000"
 
+  - id: h8_mov16_r2i_r3_odd_addr
+    instruction: h8_mov16_r16i_r16
+    status: supported
+    check_area: memory
+    assembler:
+      - "mov.w @r2, r3"
+    words:
+      - "0x6923"
+    decode_keys: ["6", "9"]
+    sail:
+      decode: H8_MOV16_R16I_R16
+      execute: h8_exec_mov16_mem_to_reg
+    initial:
+      pc: "0x0000"
+      regs:
+        r2: "0x0141"
+        r3: "0x0000"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r3: "0x1234"
+      ccr_hnzvc: "10001"
+      trap: false
+    memory:
+      initial:
+        "0x0140": "0x12"
+        "0x0141": "0x34"
+      expected:
+        "0x0140": "0x12"
+        "0x0141": "0x34"
+      access:
+        kind: read
+        width: word
+        addr: "0x0140"
+        wmask: "00"
+        rdata: "0x1234"
+
   - id: h8_mov16_r0_r1i
     instruction: h8_mov16_r16_r16i
     status: supported

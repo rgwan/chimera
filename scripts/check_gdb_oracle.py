@@ -41,7 +41,7 @@ DIVERGENT_FLAGS = {
 DIVERGENT_FLAG_REASON = "gdb_sim_divergent_flag"
 EXPECTED_TRAP_REASON = "expected_trap_no_sim_semantics"
 REJECTED_ENCODING_REASON = "rejected_encoding_no_sim_semantics"
-MIN_COMPARED_CASES = 231
+MIN_COMPARED_CASES = 234
 
 # The sim resolves @aa:8 to 0x00aa instead of the datasheet 0xFFaa page;
 # for these ops the case memory address is remapped down so the data-path
@@ -58,12 +58,12 @@ ABS8_INSTRUCTIONS = frozenset({
 SIM_DIVERGENT = {
     "h8_daa8_r8": "decimal adjust carry and result differ from datasheet",
     "h8_das8_r8": "decimal adjust carry and result differ from datasheet",
-    "h8_divxu_r8_r16": "divide-by-zero result differs from datasheet",
     "h8_subx8_r8_r8": "subx does not model sticky zero",
     "h8_rte": "rte restores ccr differently from datasheet",
 }
 SIM_DIVERGENT_REASON = "gdb_sim_divergent_instruction"
 SIM_DIVERGENT_CASES = {
+    "h8_divxu_r0h_r1_zero_divisor": "divide-by-zero result differs",
     "h8_mov16_r1_pr1": "self-referential pre-decrement store differs",
     "h8_mov8_r1l_pr1": "self-referential pre-decrement store differs",
 }
@@ -74,7 +74,7 @@ UNALIGNED_WORD_REASON = "gdb_sim_unaligned_word_access"
 ABSTAIN_REASON_LIMITS = {
     EXPECTED_TRAP_REASON: 1,
     REJECTED_ENCODING_REASON: 4,
-    SIM_DIVERGENT_REASON: 18,
+    SIM_DIVERGENT_REASON: 15,
     UNALIGNED_WORD_REASON: 1,
 }
 

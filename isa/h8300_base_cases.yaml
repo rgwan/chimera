@@ -7013,3 +7013,58 @@ cases:
       regs: {}
       ccr_hnzvc: preserve
       trap: false
+
+reject_cases:
+  - id: h8_reject_movfpe_abs16_r0l_base
+    status: rejected
+    check_area: trap
+    assembler:
+      - "movfpe @0x0140:16, r0l"
+    words:
+      - "0x6a48"
+      - "0x0140"
+    decode_keys: ["6", "a"]
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x00"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0000"
+      regs:
+        r0l: "0x00"
+      ccr_hnzvc: preserve
+      trap: true
+    memory:
+      initial:
+        "0x0140": "0x80"
+      expected:
+        "0x0140": "0x80"
+
+  - id: h8_reject_movtpe_r1h_abs16_base
+    status: rejected
+    check_area: trap
+    assembler:
+      - "movtpe r1h, @0x0142:16"
+    words:
+      - "0x6ac1"
+      - "0x0142"
+    decode_keys: ["6", "a"]
+    initial:
+      pc: "0x0000"
+      regs:
+        r1h: "0x00"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0000"
+      regs:
+        r1h: "0x00"
+      ccr_hnzvc: preserve
+      trap: true
+    memory:
+      initial:
+        "0x0142": "0xaa"
+        "0x0143": "0x55"
+      expected:
+        "0x0142": "0xaa"
+        "0x0143": "0x55"

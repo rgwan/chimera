@@ -350,6 +350,7 @@ def load_tables() -> list[dict[str, object]]:
         tables.append({
             "case_path": case_path,
             "cases": table["cases"],
+            "reject_cases": table.get("reject_cases", []),
             "profile": profile,
             "sail_profile": check_isa_cases.PROFILE_SAIL_ENUM[profile],
         })
@@ -364,7 +365,7 @@ def main() -> int:
 
     results = []
     for table in tables:
-        cases = table["cases"]
+        cases = list(table["cases"]) + list(table["reject_cases"])
         profile = str(table["profile"])
         table_work = work_root / profile
         sail_results = run_sail_cases(
@@ -379,10 +380,11 @@ def main() -> int:
             results.append({
                 "actual_hex": gnu["actual_hex"],
                 "case_id": case["id"],
+                "case_type": "reject" if case.get("status") == "rejected" else "execute",
                 "case_table": str(table["case_path"].relative_to(REPO_ROOT)),
                 "expected_hex": gnu["expected_hex"],
                 "gnu_status": gnu["status"],
-                "instruction": case["instruction"],
+                "instruction": case.get("instruction", "reserved"),
                 "profile": profile,
                 "sail_log": sail["log"],
                 "sail_status": sail["status"],

@@ -584,6 +584,68 @@ def validate_case(
     return build_trace_expectation(item, instruction, path, errors)
 
 
+def validate_reject_case(
+    case: object,
+    index: int,
+    ids: set[str],
+    errors: list[str],
+) -> None:
+    path = f"reject_cases[{index}]"
+    item = expect_dict(errors, case, path)
+    case_id = item.get("id")
+    if not isinstance(case_id, str) or ID_RE.fullmatch(case_id) is None:
+        fail(errors, f"{path}.id", "bad canonical id")
+    elif case_id in ids:
+        fail(errors, f"{path}.id", "duplicate canonical id")
+    else:
+        ids.add(case_id)
+
+    if item.get("status") != "rejected":
+        fail(errors, f"{path}.status", "expected rejected")
+    if item.get("check_area") != "trap":
+        fail(errors, f"{path}.check_area", "expected trap")
+
+    assembler = expect_list(errors, item.get("assembler"), f"{path}.assembler")
+    if not assembler or not all(isinstance(line, str) and line for line in assembler):
+        fail(errors, f"{path}.assembler", "empty assembler")
+
+    words = expect_list(errors, item.get("words"), f"{path}.words")
+    if not words:
+        fail(errors, f"{path}.words", "empty words")
+    for word_index, word in enumerate(words):
+        validate_hex(word, WORD_RE, f"{path}.words[{word_index}]", errors)
+
+    keys = expect_list(errors, item.get("decode_keys"), f"{path}.decode_keys")
+    for key_index, key in enumerate(keys):
+        if not isinstance(key, str) or NIBBLE_RE.fullmatch(key) is None:
+            fail(errors, f"{path}.decode_keys[{key_index}]", "decode key must be one nibble")
+
+    initial = expect_dict(errors, item.get("initial"), f"{path}.initial")
+    expected = expect_dict(errors, item.get("expected"), f"{path}.expected")
+    validate_hex(initial.get("pc"), WORD_RE, f"{path}.initial.pc", errors)
+    validate_hex(expected.get("pc"), WORD_RE, f"{path}.expected.pc", errors)
+    validate_regs(initial.get("regs", {}), f"{path}.initial.regs", errors)
+    validate_regs(expected.get("regs", {}), f"{path}.expected.regs", errors)
+
+    initial_hnzvc = initial.get("ccr_hnzvc")
+    if not isinstance(initial_hnzvc, str) or HNZVC_INITIAL_RE.fullmatch(initial_hnzvc) is None:
+        fail(errors, f"{path}.initial.ccr_hnzvc", "bad HNZVC value")
+
+    expected_hnzvc = expected.get("ccr_hnzvc")
+    if (
+        expected_hnzvc != "preserve"
+        and (not isinstance(expected_hnzvc, str) or HNZVC_EXPECTED_RE.fullmatch(expected_hnzvc) is None)
+    ):
+        fail(errors, f"{path}.expected.ccr_hnzvc", "bad HNZVC value")
+
+    if expected.get("trap") is not True:
+        fail(errors, f"{path}.expected.trap", "expected true")
+    if "memory" in item:
+        memory = expect_dict(errors, item.get("memory"), f"{path}.memory")
+        validate_memory_map(memory.get("initial", {}), f"{path}.memory.initial", errors)
+        validate_memory_map(memory.get("expected", {}), f"{path}.memory.expected", errors)
+
+
 def validate_table(table: object, sail_text: str) -> tuple[list[str], dict[str, object]]:
     errors: list[str] = []
     root = expect_dict(errors, table, "root")
@@ -634,6 +696,12 @@ def validate_table(table: object, sail_text: str) -> tuple[list[str], dict[str, 
     if profile == "h8300_base":
         validate_branch_coverage(branch_coverage, errors)
 
+    reject_cases = expect_list(errors, root.get("reject_cases", []), "reject_cases")
+    if profile != "h8300_base" and reject_cases:
+        fail(errors, "reject_cases", "only h8300_base may define reject cases")
+    for index, case in enumerate(reject_cases):
+        validate_reject_case(case, index, case_ids, errors)
+
     summary = {
         "case_count": len(cases),
         "decode_key_bits_max": root.get("decode_key_bits_max"),
@@ -642,6 +710,7 @@ def validate_table(table: object, sail_text: str) -> tuple[list[str], dict[str, 
         "profile": root.get("profile"),
         "retire_trace_case_count": len(trace_expectations),
         "retire_trace_field_count": len(trace_fields),
+        "reject_case_count": len(reject_cases),
         "schema": root.get("schema"),
         "storage_word_bits": root.get("storage_word_bits"),
     }

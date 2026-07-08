@@ -16,6 +16,12 @@ enum H8BranchCond = {
   H8_BGE, H8_BLT, H8_BGT, H8_BLE
 }
 enum H8Profile = {H8_BASE, H8_EXTENDED}
+enum H8BitOp = {
+  H8_BIT_BSET, H8_BIT_BNOT, H8_BIT_BCLR, H8_BIT_BTST,
+  H8_BIT_BST, H8_BIT_BIST, H8_BIT_BLD, H8_BIT_BILD,
+  H8_BIT_BOR, H8_BIT_BIOR, H8_BIT_BXOR, H8_BIT_BIXOR,
+  H8_BIT_BAND, H8_BIT_BIAND
+}
 
 struct H8CCR = {
   i : bit,
@@ -31,6 +37,11 @@ struct H8CCR = {
 struct H8R8 = {
   reg : h8_r8_pair,
   high : bool
+}
+
+union H8BitIndex = {
+  H8_BIT_INDEX_IMM3 : bits(3),
+  H8_BIT_INDEX_R8 : H8R8
 }
 
 struct H8State = {
@@ -117,6 +128,8 @@ union H8Inst = {
   H8_BIXOR_IMM3_R8 : (bits(3), H8R8),
   H8_BAND_IMM3_R8 : (bits(3), H8R8),
   H8_BIAND_IMM3_R8 : (bits(3), H8R8),
+  H8_BIT_ABS8_READ : (H8BitOp, H8BitIndex, byte),
+  H8_BIT_ABS8_WRITE : (H8BitOp, H8BitIndex, byte),
   H8_NOT8_R8 : H8R8,
   H8_NEG8_R8 : H8R8,
   H8_DAA8_R8 : H8R8,
@@ -737,6 +750,36 @@ function h8_bit_write3(value : byte, bit : bits(3), data : bit) -> byte =
 function h8_bit_index_r8(st : H8State, rs : H8R8) -> bits(3) =
   read_r8(st, rs)[2 .. 0]
 
+function h8_bit_index_value(st : H8State, index : H8BitIndex) -> bits(3) =
+  match index {
+    H8_BIT_INDEX_IMM3(bit) => bit,
+    H8_BIT_INDEX_R8(rs) => h8_bit_index_r8(st, rs)
+  }
+
+function h8_bit_read_ccr(op : H8BitOp, value : byte, bit : bits(3), ccr : H8CCR) -> H8CCR =
+  match op {
+    H8_BIT_BTST => {ccr with z = h8_bit_invert(h8_bit_value3(value, bit))},
+    H8_BIT_BLD => {ccr with c = h8_bit_value3(value, bit)},
+    H8_BIT_BILD => {ccr with c = h8_bit_invert(h8_bit_value3(value, bit))},
+    H8_BIT_BOR => {ccr with c = h8_bit_or(ccr.c, h8_bit_value3(value, bit))},
+    H8_BIT_BIOR => {ccr with c = h8_bit_or(ccr.c, h8_bit_invert(h8_bit_value3(value, bit)))},
+    H8_BIT_BXOR => {ccr with c = h8_bit_xor(ccr.c, h8_bit_value3(value, bit))},
+    H8_BIT_BIXOR => {ccr with c = h8_bit_xor(ccr.c, h8_bit_invert(h8_bit_value3(value, bit)))},
+    H8_BIT_BAND => {ccr with c = h8_bit_and(ccr.c, h8_bit_value3(value, bit))},
+    H8_BIT_BIAND => {ccr with c = h8_bit_and(ccr.c, h8_bit_invert(h8_bit_value3(value, bit)))},
+    _ => ccr
+  }
+
+function h8_bit_write_result(op : H8BitOp, value : byte, bit : bits(3), ccr : H8CCR) -> byte =
+  match op {
+    H8_BIT_BSET => value | h8_bit_mask3(bit),
+    H8_BIT_BNOT => xor_vec(value, h8_bit_mask3(bit)),
+    H8_BIT_BCLR => value & not_vec(h8_bit_mask3(bit)),
+    H8_BIT_BST => h8_bit_write3(value, bit, ccr.c),
+    H8_BIT_BIST => h8_bit_write3(value, bit, h8_bit_invert(ccr.c)),
+    _ => value
+  }
+
 function h8_exec_bset_imm3(st : H8State, bit : bits(3), rd : H8R8) -> H8State = {
   let result : byte = read_r8(st, rd) | h8_bit_mask3(bit);
   let st1 = write_r8(st, rd, result);
@@ -822,6 +865,21 @@ function h8_exec_band_imm3(st : H8State, bit : bits(3), rd : H8R8) -> H8State = 
 function h8_exec_biand_imm3(st : H8State, bit : bits(3), rd : H8R8) -> H8State = {
   let c : bit = h8_bit_and(st.ccr.c, h8_bit_invert(h8_bit_value3(read_r8(st, rd), bit)));
   {st with ccr = {st.ccr with c = c}, pc = st.pc + 0x0002}
+}
+
+function h8_exec_bit_abs8_read(m : H8Machine, op : H8BitOp, index : H8BitIndex, addr : byte) -> H8Machine = {
+  let value : byte = h8_mem_read8(m.mem, h8_abs8_addr(addr));
+  let bit : bits(3) = h8_bit_index_value(m.st, index);
+  let ccr : H8CCR = h8_bit_read_ccr(op, value, bit, m.st.ccr);
+  {m with st = {m.st with ccr = ccr, pc = m.st.pc + 0x0004}, trap = false}
+}
+
+function h8_exec_bit_abs8_write(m : H8Machine, op : H8BitOp, index : H8BitIndex, addr : byte) -> H8Machine = {
+  let value : byte = h8_mem_read8(m.mem, h8_abs8_addr(addr));
+  let bit : bits(3) = h8_bit_index_value(m.st, index);
+  let result : byte = h8_bit_write_result(op, value, bit, m.st.ccr);
+  let mem1 = h8_mem_write8(m.mem, h8_abs8_addr(addr), result);
+  {m with st = {m.st with pc = m.st.pc + 0x0004}, mem = mem1, trap = false}
 }
 
 function h8_branch_taken(cond : H8BranchCond, ccr : H8CCR) -> bool = {
@@ -931,6 +989,55 @@ function h8_word_rr_allowed(profile : H8Profile, op1 : byte) -> bool =
     H8_BASE => op1[7] == 0b0 & op1[3] == 0b0,
     H8_EXTENDED => true
   }
+
+function h8_decode_bit_abs8_read(addr : byte, ext : word) -> option(H8Inst) = {
+  let ext0 : byte = ext[15 .. 8];
+  let ext1 : byte = ext[7 .. 0];
+  if ext1[3 .. 0] != 0x0 then
+    None()
+  else if ext0 == 0x63 then
+    Some(H8_BIT_ABS8_READ(H8_BIT_BTST, H8_BIT_INDEX_R8(h8_r8_from_code(ext1[7 .. 4])), addr))
+  else if ext0 == 0x73 & ext1[7] == 0b0 then
+    Some(H8_BIT_ABS8_READ(H8_BIT_BTST, H8_BIT_INDEX_IMM3(ext1[6 .. 4]), addr))
+  else if ext0 == 0x74 then
+    Some(H8_BIT_ABS8_READ(if ext1[7] == 0b1 then H8_BIT_BIOR else H8_BIT_BOR,
+                          H8_BIT_INDEX_IMM3(ext1[6 .. 4]), addr))
+  else if ext0 == 0x75 then
+    Some(H8_BIT_ABS8_READ(if ext1[7] == 0b1 then H8_BIT_BIXOR else H8_BIT_BXOR,
+                          H8_BIT_INDEX_IMM3(ext1[6 .. 4]), addr))
+  else if ext0 == 0x76 then
+    Some(H8_BIT_ABS8_READ(if ext1[7] == 0b1 then H8_BIT_BIAND else H8_BIT_BAND,
+                          H8_BIT_INDEX_IMM3(ext1[6 .. 4]), addr))
+  else if ext0 == 0x77 then
+    Some(H8_BIT_ABS8_READ(if ext1[7] == 0b1 then H8_BIT_BILD else H8_BIT_BLD,
+                          H8_BIT_INDEX_IMM3(ext1[6 .. 4]), addr))
+  else
+    None()
+}
+
+function h8_decode_bit_abs8_write(addr : byte, ext : word) -> option(H8Inst) = {
+  let ext0 : byte = ext[15 .. 8];
+  let ext1 : byte = ext[7 .. 0];
+  if ext1[3 .. 0] != 0x0 then
+    None()
+  else if ext0 == 0x60 then
+    Some(H8_BIT_ABS8_WRITE(H8_BIT_BSET, H8_BIT_INDEX_R8(h8_r8_from_code(ext1[7 .. 4])), addr))
+  else if ext0 == 0x61 then
+    Some(H8_BIT_ABS8_WRITE(H8_BIT_BNOT, H8_BIT_INDEX_R8(h8_r8_from_code(ext1[7 .. 4])), addr))
+  else if ext0 == 0x62 then
+    Some(H8_BIT_ABS8_WRITE(H8_BIT_BCLR, H8_BIT_INDEX_R8(h8_r8_from_code(ext1[7 .. 4])), addr))
+  else if ext0 == 0x67 then
+    Some(H8_BIT_ABS8_WRITE(if ext1[7] == 0b1 then H8_BIT_BIST else H8_BIT_BST,
+                           H8_BIT_INDEX_IMM3(ext1[6 .. 4]), addr))
+  else if ext0 == 0x70 & ext1[7] == 0b0 then
+    Some(H8_BIT_ABS8_WRITE(H8_BIT_BSET, H8_BIT_INDEX_IMM3(ext1[6 .. 4]), addr))
+  else if ext0 == 0x71 & ext1[7] == 0b0 then
+    Some(H8_BIT_ABS8_WRITE(H8_BIT_BNOT, H8_BIT_INDEX_IMM3(ext1[6 .. 4]), addr))
+  else if ext0 == 0x72 & ext1[7] == 0b0 then
+    Some(H8_BIT_ABS8_WRITE(H8_BIT_BCLR, H8_BIT_INDEX_IMM3(ext1[6 .. 4]), addr))
+  else
+    None()
+}
 
 function h8_decode_profile(profile : H8Profile, first : word, ext : word) -> option(H8Inst) = {
   let op0 : byte = first[15 .. 8];
@@ -1114,6 +1221,10 @@ function h8_decode_profile(profile : H8Profile, first : word, ext : word) -> opt
              Some(H8_BLD_IMM3_R8(op1[6 .. 4], rr8_rd))
            else if op0 == 0x77 & op1[7] == 0b1 then
              Some(H8_BILD_IMM3_R8(op1[6 .. 4], rr8_rd))
+           else if op0 == 0x7E then
+             h8_decode_bit_abs8_read(op1, ext)
+           else if op0 == 0x7F then
+             h8_decode_bit_abs8_write(op1, ext)
            else if op0 == 0x79 & op1[7 .. 3] == 0b00000 then
              Some(H8_MOV16_IMM(h8_r16_from_code(op1[2 .. 0]), ext))
            else
@@ -1212,6 +1323,8 @@ function h8_execute(st : H8State, inst : H8Inst) -> H8ExecResult =
     H8_BIXOR_IMM3_R8(bit, rd) => struct {st = h8_exec_bixor_imm3(st, bit, rd), trap = false},
     H8_BAND_IMM3_R8(bit, rd) => struct {st = h8_exec_band_imm3(st, bit, rd), trap = false},
     H8_BIAND_IMM3_R8(bit, rd) => struct {st = h8_exec_biand_imm3(st, bit, rd), trap = false},
+    H8_BIT_ABS8_READ(_, _, _) => struct {st = st, trap = true},
+    H8_BIT_ABS8_WRITE(_, _, _) => struct {st = st, trap = true},
     H8_NOT8_R8(rd) => struct {st = h8_exec_not8(st, rd), trap = false},
     H8_NEG8_R8(rd) => struct {st = h8_exec_neg8(st, rd), trap = false},
     H8_DAA8_R8(rd) => struct {st = h8_exec_daa8(st, rd), trap = false},
@@ -1264,6 +1377,8 @@ function h8_execute_machine(m : H8Machine, inst : H8Inst) -> H8Machine =
     H8_MOV8_R8_ABS16(addr, rs) => h8_exec_mov8_reg_to_abs(m, addr, rs),
     H8_MOV16_ABS16_R16(rd, addr) => h8_exec_mov16_abs_to_reg(m, rd, addr),
     H8_MOV16_R16_ABS16(addr, rs) => h8_exec_mov16_reg_to_abs(m, addr, rs),
+    H8_BIT_ABS8_READ(op, index, addr) => h8_exec_bit_abs8_read(m, op, index, addr),
+    H8_BIT_ABS8_WRITE(op, index, addr) => h8_exec_bit_abs8_write(m, op, index, addr),
     _ => {
       let result = h8_execute(m.st, inst);
       {m with st = result.st, trap = result.trap}

@@ -50,81 +50,204 @@ def load_tables(sail_text: str) -> tuple[list[dict[str, object]], list[str]]:
     return tables, errors
 
 
+def increment(counter: dict[str, int], key: str) -> None:
+    counter[key] = counter.get(key, 0) + 1
+
+
 def main() -> int:
     sail_text = SAIL_PATH.read_text(encoding="utf-8")
     constructors = h8_constructors(sail_text)
     constructor_set = set(constructors)
-    tables, errors = load_tables(sail_text)
+    tables, blocking_errors = load_tables(sail_text)
 
-    coverage: dict[str, list[dict[str, str]]] = {name: [] for name in constructors}
+    instruction_mappings: dict[str, list[dict[str, object]]] = {name: [] for name in constructors}
+    case_evidence: dict[str, list[dict[str, str]]] = {name: [] for name in constructors}
+    effects_by_constructor: dict[str, set[str]] = {name: set() for name in constructors}
+    area_counts: dict[str, int] = {}
     duplicate_rows: list[str] = []
-    uncovered_instruction_rows: list[str] = []
+    instructions_without_case_evidence: list[str] = []
+    case_table_summaries = []
+
     for table in tables:
         instructions = {}
         seen_in_table: set[str] = set()
+        table_area_counts: dict[str, int] = {}
         for instruction in table["instructions"]:
             instruction_id = str(instruction["id"])
-            decode = str(instruction["sail"]["decode"])
+            sail = instruction.get("sail") if isinstance(instruction, dict) else None
+            decode = sail.get("decode") if isinstance(sail, dict) else None
+            if not isinstance(decode, str):
+                continue
             if decode not in constructor_set:
-                errors.append(f"{table['case_table']}: unknown Sail constructor {decode}")
+                blocking_errors.append(f"{table['case_table']}: unknown Sail constructor {decode}")
                 continue
             if decode in seen_in_table:
                 duplicate_rows.append(f"{table['case_table']}: duplicate constructor {decode}")
             seen_in_table.add(decode)
             instructions[instruction_id] = instruction
+            instruction_mappings[decode].append({
+                "case_table": str(table["case_table"]),
+                "effects": instruction.get("effects", []),
+                "instruction": instruction_id,
+                "profile": str(table["profile"]),
+            })
+            effects = instruction.get("effects")
+            if isinstance(effects, list):
+                effects_by_constructor[decode].update(str(effect) for effect in effects)
 
         used_instruction_ids: set[str] = set()
         for case in table["cases"]:
-            instruction_id = str(case["instruction"])
+            if not isinstance(case, dict):
+                continue
+            instruction_id = case.get("instruction")
+            if not isinstance(instruction_id, str):
+                continue
             instruction = instructions.get(instruction_id)
             if instruction is None:
-                errors.append(f"{table['case_table']}: unknown instruction {instruction_id}")
+                blocking_errors.append(f"{table['case_table']}: unknown instruction {instruction_id}")
                 continue
-            decode = str(case["sail"]["decode"])
+            case_sail = case.get("sail")
+            decode = case_sail.get("decode") if isinstance(case_sail, dict) else None
+            if not isinstance(decode, str):
+                continue
             if decode not in constructor_set:
-                errors.append(f"{table['case_table']}: unknown Sail constructor {decode}")
+                blocking_errors.append(f"{table['case_table']}: unknown Sail constructor {decode}")
                 continue
             used_instruction_ids.add(instruction_id)
-            coverage[decode].append({
+            check_area = case.get("check_area")
+            if not isinstance(check_area, str):
+                continue
+            increment(area_counts, check_area)
+            increment(table_area_counts, check_area)
+            case_evidence[decode].append({
                 "case_table": str(table["case_table"]),
                 "case": str(case["id"]),
+                "check_area": check_area,
                 "instruction": instruction_id,
                 "profile": str(table["profile"]),
             })
         for instruction_id in sorted(set(instructions) - used_instruction_ids):
-            uncovered_instruction_rows.append(f"{table['case_table']}: instruction {instruction_id}")
+            instructions_without_case_evidence.append(f"{table['case_table']}: instruction {instruction_id}")
+        case_table_summaries.append({
+            "case_count": len(table["cases"]),
+            "case_table": str(table["case_table"]),
+            "check_area_counts": dict(sorted(table_area_counts.items())),
+            "instruction_count": len(table["instructions"]),
+            "profile": str(table["profile"]),
+            "reject_case_count": len(table["reject_cases"]),
+        })
 
-    if uncovered_instruction_rows:
-        errors.append("uncovered instruction rows: " + ", ".join(uncovered_instruction_rows))
+    unmapped_constructors = sorted(name for name, rows in instruction_mappings.items() if not rows)
+    if unmapped_constructors:
+        blocking_errors.append("unmapped Sail constructors: " + ", ".join(unmapped_constructors))
 
-    missing = sorted(name for name, rows in coverage.items() if not rows)
-    if missing:
-        errors.append("missing constructor coverage: " + ", ".join(missing))
+    case_count_by_constructor = {}
+    constructors_without_case_evidence = []
+    constructors_with_decode_only_cases = []
+    semantic_case_count_by_constructor = {}
+    semantic_evidence_constructor_count = 0
+    per_constructor_case_area_counts = {}
+    for name, rows in case_evidence.items():
+        constructor_area_counts: dict[str, int] = {}
+        for row in rows:
+            increment(constructor_area_counts, row["check_area"])
+        semantic_case_count = sum(count for area, count in constructor_area_counts.items() if area != "decode")
+        case_count_by_constructor[name] = len(rows)
+        per_constructor_case_area_counts[name] = dict(sorted(constructor_area_counts.items()))
+        semantic_case_count_by_constructor[name] = semantic_case_count
+        if not rows:
+            constructors_without_case_evidence.append(name)
+        elif semantic_case_count == 0:
+            constructors_with_decode_only_cases.append(name)
+        else:
+            semantic_evidence_constructor_count += 1
+
+    constructors_without_semantic_cases = sorted(
+        set(constructors_without_case_evidence) | set(constructors_with_decode_only_cases)
+    )
+    advisory_gaps = {
+        "constructors_with_decode_only_cases": sorted(constructors_with_decode_only_cases),
+        "constructors_without_case_evidence": sorted(constructors_without_case_evidence),
+        "instructions_without_case_evidence": instructions_without_case_evidence,
+    }
+    advisory_gap_count = sum(len(items) for items in advisory_gaps.values())
+
+    instruction_mappings_by_constructor = {
+        name: rows for name, rows in instruction_mappings.items() if rows
+    }
+    effects_report = {
+        name: sorted(effects) for name, effects in effects_by_constructor.items() if effects
+    }
+    constructor_evidence = {
+        name: {
+            "case_count": len(rows),
+            "case_count_by_check_area": per_constructor_case_area_counts[name],
+            "semantic_case_count": semantic_case_count_by_constructor[name],
+        }
+        for name, rows in case_evidence.items()
+    }
 
     base_reject_count = 0
     for table in tables:
         if table["profile"] == "h8300_base":
             base_reject_count += len(table["reject_cases"])
 
-    report = {
+    constructor_coverage = {
         "constructor_count": len(constructors),
-        "covered_constructor_count": len(constructors) - len(missing),
-        "coverage": coverage,
-        "duplicate_rows": duplicate_rows,
-        "errors": errors,
-        "profile_count": len(tables),
+        "duplicate_constructor_mappings": duplicate_rows,
+        "effects_by_constructor": effects_report,
+        "instruction_mappings_by_constructor": instruction_mappings_by_constructor,
+        "mapped_constructor_count": len(constructors) - len(unmapped_constructors),
+        "unmapped_constructors": unmapped_constructors,
+    }
+    semantic_case_evidence = {
+        "advisory_gap_count": advisory_gap_count,
+        "advisory_gaps": advisory_gaps,
+        "case_count_by_check_area": dict(sorted(area_counts.items())),
+        "case_count_by_constructor": case_count_by_constructor,
+        "case_evidence_by_constructor": case_evidence,
+        "case_table_summaries": case_table_summaries,
+        "constructor_evidence": constructor_evidence,
+        "constructors_with_decode_only_cases": sorted(constructors_with_decode_only_cases),
+        "constructors_without_case_evidence": sorted(constructors_without_case_evidence),
+        "constructors_without_semantic_cases": constructors_without_semantic_cases,
+        "oracle_gap_status": "non_blocking",
         "reject_case_count": base_reject_count,
-        "status": "fail" if errors else "pass",
-        "uncovered_instruction_rows": uncovered_instruction_rows,
+        "semantic_case_count_by_constructor": semantic_case_count_by_constructor,
+        "semantic_evidence_constructor_count": semantic_evidence_constructor_count,
+    }
+    report = {
+        "blocking_errors": blocking_errors,
+        "case_check_area_counts": dict(sorted(area_counts.items())),
+        "constructor_coverage": constructor_coverage,
+        "constructor_count": len(constructors),
+        "covered_constructor_count": constructor_coverage["mapped_constructor_count"],
+        "decode_only_constructors": semantic_case_evidence["constructors_with_decode_only_cases"],
+        "duplicate_rows": duplicate_rows,
+        "errors": blocking_errors,
+        "limitations": [
+            "semantic evidence is case-focused coverage, not operand-space closure",
+            "third-party oracle gaps are advisory in this report",
+        ],
+        "profile_count": len(tables),
+        "report_schema": 2,
+        "reject_case_count": base_reject_count,
+        "semantic_case_evidence": semantic_case_evidence,
+        "semantic_covered_constructor_count": semantic_evidence_constructor_count,
+        "status": "fail" if blocking_errors else "pass",
+        "uncovered_instruction_rows": instructions_without_case_evidence,
     }
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     report_path = OUT_DIR / "sail-coverage.json"
     report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(f"sail coverage {report['status']}: {report_path.relative_to(REPO_ROOT)}")
-    if errors:
-        for error in errors:
+    print(
+        f"sail coverage {report['status']}: {report_path.relative_to(REPO_ROOT)} "
+        f"semantic={report['semantic_covered_constructor_count']}/{report['constructor_count']}"
+    )
+    if blocking_errors:
+        for error in blocking_errors:
             print(error)
-    return 1 if errors else 0
+    return 1 if blocking_errors else 0
 
 
 if __name__ == "__main__":

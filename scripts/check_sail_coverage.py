@@ -106,6 +106,19 @@ def bit_memory_subop_coverage(tables: list[dict[str, object]]) -> dict[str, obje
     return coverage
 
 
+def bit_memory_gap_summary(coverage: dict[str, object]) -> list[dict[str, object]]:
+    gaps = []
+    for instruction, entry in sorted(coverage.items()):
+        missing = entry.get("missing_ops")
+        if isinstance(missing, list) and missing:
+            gaps.append({
+                "instruction": instruction,
+                "missing_ops": missing,
+                "owner": "isa_yaml_cases",
+            })
+    return gaps
+
+
 def main() -> int:
     sail_text = SAIL_PATH.read_text(encoding="utf-8")
     constructors = h8_constructors(sail_text)
@@ -225,6 +238,7 @@ def main() -> int:
     advisory_gap_count = sum(len(items) for items in advisory_gaps.values())
     bit_memory_coverage = bit_memory_subop_coverage(tables)
     bit_memory_gap_count = sum(len(entry["missing_ops"]) for entry in bit_memory_coverage.values())
+    bit_memory_gaps = bit_memory_gap_summary(bit_memory_coverage)
 
     instruction_mappings_by_constructor = {
         name: rows for name, rows in instruction_mappings.items() if rows
@@ -257,6 +271,7 @@ def main() -> int:
     semantic_case_evidence = {
         "advisory_gap_count": advisory_gap_count,
         "advisory_gaps": advisory_gaps,
+        "bit_memory_gap_summary": bit_memory_gaps,
         "bit_memory_missing_subop_count": bit_memory_gap_count,
         "bit_memory_subop_coverage": bit_memory_coverage,
         "case_count_by_check_area": dict(sorted(area_counts.items())),
@@ -275,6 +290,12 @@ def main() -> int:
     report = {
         "blocking_errors": blocking_errors,
         "case_check_area_counts": dict(sorted(area_counts.items())),
+        "case_source_policy": {
+            "coverage_gaps_are_case_author_todos": True,
+            "isa_yaml_cases_are_third_party_oracle_data": True,
+            "sail_implementer_must_not_edit_cases": True,
+        },
+        "bit_memory_gap_summary": bit_memory_gaps,
         "bit_memory_missing_subop_count": bit_memory_gap_count,
         "constructor_coverage": constructor_coverage,
         "constructor_count": len(constructors),

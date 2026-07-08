@@ -32,6 +32,12 @@ check-add:
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_add
 
+check-byte:
+	bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_byte test/core/tb_core_byte.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_byte
+
 gnu-oracle:
 	python3 scripts/check_gnu_oracle.py
 

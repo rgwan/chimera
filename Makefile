@@ -20,6 +20,11 @@ check-alu:
 	iverilog -o rtl/generated/tb_alu test/alu/tb_alu.v rtl/generated/Alu.sv
 	vvp rtl/generated/tb_alu
 
+check-core:
+	rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_core test/core/tb_core.v rtl/generated/*.sv
+	vvp rtl/generated/sim_core
+
 gnu-oracle:
 	python3 scripts/check_gnu_oracle.py
 

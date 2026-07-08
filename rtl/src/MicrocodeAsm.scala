@@ -56,12 +56,31 @@ object MicrocodeImage:
     "microword field packing"
   )
 
-  /** Routines by ROM address. Empty entries default to the all-zero word
-    * (SeqSrc.Next no-op); the fetch/dispatch and instruction routines land here.
+  /** Routines by ROM address. Instruction routines sit at ROM[dispatch]; the
+    * fetch mainloop and multi-step tails live in upper ROM (>= FetchEntry).
+    * Unlisted addresses read as the all-zero word (SeqSrc.Next no-op).
     */
-  val program: Map[Int, MW] = Map.empty
+  val program: Map[Int, MW] = Map(
+    // fetch mainloop
+    Ucode.FetchEntry ->                       // issue fetch at PC
+      MW(bus = BusCtl.Fetch, intIdx = IntIdx.PC),
+    (Ucode.FetchEntry + 1) ->                 // PC += 2, then dispatch on the opcode
+      MW(aSel = ASel.Int, bSel = BSel.Lit, lit = 2, alu = AluOp.Add,
+         wsel = WSel.Int, intIdx = IntIdx.PC, we = true, seq = SeqSrc.Dispatch),
 
-  private val depth = 512
-  val words: Seq[BigInt] =
-    if program.isEmpty then Seq.empty
-    else (0 until depth).map(a => program.getOrElse(a, MW()).encode)
+    // NOP (dispatch 0x00): return to fetch
+    0x00 -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+
+    // add.b Rs,Rd (dispatch 0x08): stage Rs into TEMP, then Rd = Rd + TEMP
+    0x08 -> MW(bSel = BSel.H8, h8Idx = H8Idx.RsReg, alu = AluOp.Pass,
+               wsel = WSel.Int, intIdx = IntIdx.Temp, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x10),
+    (Ucode.FetchEntry + 0x10) ->
+      MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, bSel = BSel.Int, intIdx = IntIdx.Temp,
+         alu = AluOp.Add, flag = FlagCtl.AddSub, wsel = WSel.H8, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry)
+  )
+
+  /** Sparse image: only authored addresses; the ROM defaults the rest to zero. */
+  val sparse: Seq[(Int, BigInt)] =
+    program.toSeq.sortBy(_._1).map { case (a, mw) => (a, mw.encode) }

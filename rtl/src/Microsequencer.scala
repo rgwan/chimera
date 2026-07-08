@@ -40,7 +40,7 @@ object Microsequencer
     val upc = RegInit(Ucode.FetchEntry.U(parameter.upcBits))
     val ret = RegInit(0.U(parameter.upcBits))
 
-    val seqNext        = upc + 1.U(parameter.upcBits)
+    val seqNext = (upc + 1.U(parameter.upcBits)).asBits.bits(parameter.upcBits - 1, 0).asUInt
     val dispatchTarget = (0.B(1) ## io.dispatch.asBits).asUInt
 
     val pred = Wire(Bool())

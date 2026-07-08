@@ -25,7 +25,7 @@ object MicrocodeRom
     val io = summon[Interface[MicrocodeRomIO]]
     val d  = Wire(UInt(parameter.uromWidth))
     d := 0.U(parameter.uromWidth)
-    MicrocodeImage.words.zipWithIndex.foreach { case (w, i) =>
-      when(io.addr === i.U(parameter.upcBits))(d := w.U(parameter.uromWidth))
+    MicrocodeImage.sparse.foreach { case (addr, w) =>
+      when(io.addr === addr.U(parameter.upcBits))(d := w.U(parameter.uromWidth))
     }
     io.data := d

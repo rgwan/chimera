@@ -282,6 +282,58 @@ def check_case(case: dict[str, object], work: Path) -> dict[str, object]:
     }
 
 
+def exception_coverage(results: list[dict[str, object]]) -> dict[str, object]:
+    sim_hits = {name: [] for name in sorted(SIM_DIVERGENT)}
+    unmodeled_hits = {flag: [] for flag in sorted(UNMODELED_FLAGS)}
+    flag_hits = {
+        name: {flag: [] for flag in sorted(flags)}
+        for name, flags in sorted(DIVERGENT_FLAGS.items())
+    }
+    for result in results:
+        instruction = str(result.get("instruction"))
+        case_id = str(result.get("case_id"))
+        if (
+            result.get("status") == "abstain"
+            and result.get("reason_code") == SIM_DIVERGENT_REASON
+        ):
+            if instruction in sim_hits:
+                sim_hits[instruction].append(case_id)
+        scope = result.get("comparison_scope")
+        if not isinstance(scope, dict):
+            continue
+        excluded = scope.get("ccr_flags_excluded")
+        if not isinstance(excluded, list):
+            continue
+        for item in excluded:
+            if not isinstance(item, dict):
+                continue
+            flag = item.get("flag")
+            reason = item.get("reason_code")
+            if reason == UNMODELED_FLAG_REASON and flag in unmodeled_hits:
+                unmodeled_hits[str(flag)].append(case_id)
+            if reason == DIVERGENT_FLAG_REASON:
+                if instruction in flag_hits and flag in flag_hits[instruction]:
+                    flag_hits[instruction][str(flag)].append(case_id)
+
+    unused_sim = sorted(name for name, case_ids in sim_hits.items() if not case_ids)
+    unused_unmodeled = sorted(
+        flag for flag, case_ids in unmodeled_hits.items() if not case_ids
+    )
+    unused_flags = {
+        name: sorted(flag for flag, case_ids in flags.items() if not case_ids)
+        for name, flags in flag_hits.items()
+    }
+    unused_flags = {name: flags for name, flags in unused_flags.items() if flags}
+    return {
+        "divergent_flag_hits": flag_hits,
+        "sim_divergent_hits": sim_hits,
+        "unused_divergent_flag_exceptions": unused_flags,
+        "unused_sim_divergent_exceptions": unused_sim,
+        "unused_unmodeled_flag_exceptions": unused_unmodeled,
+        "unmodeled_flag_hits": unmodeled_hits,
+    }
+
+
 def main() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     work_root = OUT_DIR / "work"
@@ -324,6 +376,25 @@ def main() -> int:
         skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
     if not passed:
         blocking_errors.append("no comparable GDB oracle cases")
+    exceptions = exception_coverage(results)
+    if exceptions["unused_sim_divergent_exceptions"]:
+        names = ", ".join(exceptions["unused_sim_divergent_exceptions"])
+        blocking_errors.append(
+            f"unused GDB simulator divergent instruction exceptions: {names}"
+        )
+    if exceptions["unused_unmodeled_flag_exceptions"]:
+        flags = ", ".join(exceptions["unused_unmodeled_flag_exceptions"])
+        blocking_errors.append(f"unused GDB unmodeled flag exceptions: {flags}")
+    if exceptions["unused_divergent_flag_exceptions"]:
+        items = [
+            f"{name}:{','.join(flags)}"
+            for name, flags in sorted(
+                exceptions["unused_divergent_flag_exceptions"].items()
+            )
+        ]
+        blocking_errors.append(
+            "unused GDB divergent flag exceptions: " + "; ".join(items)
+        )
     status = "fail" if failed or blocking_errors else "pass"
     report = {
         "abstained_case_count": len(skipped),
@@ -342,6 +413,7 @@ def main() -> int:
         "divergent_flags_by_instruction": {
             name: sorted(flags) for name, flags in sorted(DIVERGENT_FLAGS.items())
         },
+        "exception_coverage": exceptions,
         "failed_cases": failed,
         "global_excluded_flags": [{"flag": flag, "reason_code": UNMODELED_FLAG_REASON} for flag in sorted(UNMODELED_FLAGS)],
         "limitations": [

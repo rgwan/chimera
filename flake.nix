@@ -104,6 +104,38 @@ EOF
           doInstallCheck = false;
         });
 
+        h8300Gdb = pkgs.gdb.overrideAttrs (old: {
+          pname = "h8300-elf-gdb";
+          configurePlatforms = [ "build" "host" ];
+          configureFlags =
+            (builtins.filter
+              (flag:
+                !(pkgs.lib.hasPrefix "--program-prefix=" flag)
+                && !(pkgs.lib.hasPrefix "--target=" flag))
+              (old.configureFlags or []))
+            ++ [
+              "--target=h8300-elf"
+              "--program-prefix=h8300-elf-"
+              "--enable-sim"
+              "--disable-werror"
+            ];
+          doInstallCheck = false;
+        });
+
+        gdbOracleCheck = pkgs.runCommand "chimera-gdb-oracle-smoke" {
+          nativeBuildInputs = [
+            h8300Binutils
+            h8300Gdb
+            pythonEnv
+          ];
+        } ''
+          cp -R ${self} src
+          chmod -R u+w src
+          cd src
+          python3 scripts/check_gdb_oracle.py
+          touch $out
+        '';
+
         gnuOracleCheck = pkgs.runCommand "chimera-gnu-oracle-smoke" {
           nativeBuildInputs = [
             h8300Binutils
@@ -174,6 +206,7 @@ EOF
           pkgs.git
           pkgs.gnumake
           h8300Binutils
+          h8300Gdb
           pkgs.ocamlPackages.sail
           pkgs.reuse
           pkgs.scala-cli
@@ -189,6 +222,7 @@ EOF
       {
         packages.default = smokeCheck;
         packages.h8300-binutils = h8300Binutils;
+        packages.h8300-gdb = h8300Gdb;
         packages.isa-cases = isaCasesCheck;
         packages.sail-coverage = sailCoverageCheck;
         packages.sail-model = sailModelCheck;
@@ -207,6 +241,7 @@ EOF
 
         checks = {
           build-smoke = smokeCheck;
+          gdb-oracle-smoke = gdbOracleCheck;
           gnu-oracle-smoke = gnuOracleCheck;
           isa-cases = isaCasesCheck;
           reuse = reuseCheck;

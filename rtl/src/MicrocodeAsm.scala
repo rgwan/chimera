@@ -117,6 +117,16 @@ object MicrocodeImage:
          alu = AluOp.Sub, flag = FlagCtl.AddSub, wsel = WSel.H8, we = true,
          seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
 
+    // mov.w #imm16,Rd (dispatch 0x79, 4-byte): Rd = ext word at PC; then PC += 2
+    // (total +4) and fetch. Ext word is natural big-endian data (no byteswap).
+    0x79 -> MW(bus = BusCtl.Read, intIdx = IntIdx.PC, aSel = ASel.Mem,
+               alu = AluOp.PassA, flag = FlagCtl.Nz, wsel = WSel.H8, h8Idx = H8Idx.RdReg,
+               we = true, size = 1, seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x40),
+    (Ucode.FetchEntry + 0x40) ->               // PC += 2 (seq=Next avoids the lit clash)
+      MW(aSel = ASel.Int, intIdx = IntIdx.PC, bSel = BSel.Lit, lit = 2, alu = AluOp.Add,
+         wsel = WSel.Int, we = true),
+    (Ucode.FetchEntry + 0x41) -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+
     // Bcc shared routine: taken -> PC += signext(disp8); not taken -> fetch.
     // cond nibble drives the CcInstr predicate (evaluated in Core).
     (Ucode.FetchEntry + 0x20) ->

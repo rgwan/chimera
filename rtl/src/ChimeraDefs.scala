@@ -58,7 +58,7 @@ object AluOp:
   val Rol   = 12 // rotate left (adder with cin = old bit7)
   val Ror   = 13 // rotate right
   val Rorc  = 14 // rotate right through carry
-  val Rsvd  = 15
+  val PassA = 15 // pass A (loads / moves: y = a)
 
 /** Flag update group (V/C come from hardware; N/Z/H are microcode). */
 object FlagCtl:
@@ -81,6 +81,7 @@ object ASel:
   val H8   = 0 // H8 register read (index from H8_IDX)
   val Int  = 1 // internal register read (index from INT_IDX)
   val Zero = 2
+  val Mem  = 3 // BIU read data (natural big-endian, for loads / ext words)
 
 /** ALU B source. */
 object BSel:

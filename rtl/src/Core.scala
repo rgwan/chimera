@@ -88,6 +88,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     aMux := h8Read
     when(udec.io.aSel === ASel.Int.U(2))(aMux := intrf.io.rdata)
     when(udec.io.aSel === ASel.Zero.U(2))(aMux := 0.U(parameter.dataWidth))
+    when(udec.io.aSel === ASel.Mem.U(2))(aMux := biu.io.rdata) // load data (BE)
 
     // ALU B mux
     val bMux = Wire(UInt(parameter.dataWidth))

@@ -85,12 +85,13 @@ object Alu extends Generator[ChimeraParameter, ChimeraLayers, AluIO, ChimeraProb
     when(isOp(AluOp.Xor))(logic := (a ^ b).asUInt)
     when(isOp(AluOp.Not))(logic := (~a).asUInt)
     when(isOp(AluOp.Pass))(logic := io.b)
+    when(isOp(AluOp.PassA))(logic := io.a)
 
     // result: adder ops (add/sub/adc/sbc/cmp and rol) default to addY
     val y = Wire(UInt(parameter.dataWidth))
     y := addY.asUInt
     when(isOp(AluOp.And) | isOp(AluOp.Or) | isOp(AluOp.Xor) | isOp(AluOp.Not) |
-      isOp(AluOp.Pass))(y := logic)
+      isOp(AluOp.Pass) | isOp(AluOp.PassA))(y := logic)
     when(isOp(AluOp.Shar))(y := shar.asUInt)
     when(isOp(AluOp.Shr1))(y := shlr.asUInt)
     when(isOp(AluOp.Ror))(y := ror.asUInt)

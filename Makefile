@@ -20,7 +20,7 @@ check-decode:
 
 check-alu:
 	TOP=Alu bash rtl/build.sh
-	iverilog -o rtl/generated/tb_alu test/alu/tb_alu.v rtl/generated/Alu.sv
+	iverilog -g2012 -o rtl/generated/tb_alu test/alu/tb_alu.v rtl/generated/Alu.sv
 	vvp rtl/generated/tb_alu
 
 check-core:
@@ -76,6 +76,12 @@ check-sub:
 	iverilog -g2012 -o rtl/generated/sim_sub test/core/tb_core_sub.v \
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_sub
+
+check-movw:
+	bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_movw test/core/tb_core_movw.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_movw
 
 gnu-oracle:
 	python3 scripts/check_gnu_oracle.py

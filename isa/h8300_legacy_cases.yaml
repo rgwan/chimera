@@ -1,0 +1,240 @@
+# SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
+# SPDX-License-Identifier: MIT
+
+schema: 1
+profile: h8300_legacy
+fetch_word_bits: 16
+storage_word_bits: 18
+byte_order: big
+ccr_order: HNZVC
+decode_key_bits_max: 4
+retire_compare:
+  - pc
+  - regs
+  - ccr_hnzvc
+  - trap
+  - memory
+retire_trace:
+  schema: 1
+  record: h8_retire
+  compare_fields:
+    - pc
+    - regs
+    - ccr_hnzvc
+    - trap
+    - memory
+  fields:
+    - name: valid
+      kind: bool
+      source: retire.valid
+      required: true
+    - name: start_pc
+      kind: bits
+      bits: 16
+      source: state.pc.before
+      required: true
+    - name: pc
+      kind: bits
+      bits: 16
+      source: state.pc.after
+      required: true
+    - name: instruction_id
+      kind: enum
+      source: case.instruction
+      required: true
+    - name: trap
+      kind: bool
+      source: execute.trap
+      required: true
+    - name: ccr_hnzvc
+      kind: bits
+      bits: 5
+      source: state.ccr.after
+      required: true
+    - name: gpr_write_count
+      kind: uint
+      bits: 2
+      source: writeback.count
+      required: true
+    - name: gpr_write0_name
+      kind: enum
+      source: writeback.reg0.name
+      required: false
+    - name: gpr_write0_value
+      kind: bits
+      bits: 16
+      source: writeback.reg0.value
+      required: false
+    - name: gpr_write1_name
+      kind: enum
+      source: writeback.reg1.name
+      required: false
+    - name: gpr_write1_value
+      kind: bits
+      bits: 16
+      source: writeback.reg1.value
+      required: false
+    - name: mem_access_count
+      kind: uint
+      bits: 2
+      source: memory.count
+      required: true
+    - name: mem0_kind
+      kind: enum
+      source: memory.access0.kind
+      required: false
+    - name: mem0_addr
+      kind: bits
+      bits: 16
+      source: memory.access0.addr
+      required: false
+    - name: mem0_wmask
+      kind: bits
+      bits: 2
+      source: memory.access0.wmask
+      required: false
+    - name: mem0_wdata
+      kind: bits
+      bits: 16
+      source: memory.access0.wdata
+      required: false
+    - name: mem0_rdata
+      kind: bits
+      bits: 16
+      source: memory.access0.rdata
+      required: false
+    - name: mem1_kind
+      kind: enum
+      source: memory.access1.kind
+      required: false
+    - name: mem1_addr
+      kind: bits
+      bits: 16
+      source: memory.access1.addr
+      required: false
+    - name: mem1_wmask
+      kind: bits
+      bits: 2
+      source: memory.access1.wmask
+      required: false
+    - name: mem1_wdata
+      kind: bits
+      bits: 16
+      source: memory.access1.wdata
+      required: false
+    - name: mem1_rdata
+      kind: bits
+      bits: 16
+      source: memory.access1.rdata
+      required: false
+audits:
+  chip:
+    - legacy profile stays separate from the default decode contract
+    - E-clock moves are checked as architectural byte transfers
+    - fetch storage width is a multiple of 9
+  psychology:
+    - each case has one canonical id
+    - profile names make compatibility boundaries explicit
+    - failures map to one check area
+instructions:
+  - id: h8_movfpe_abs16_r8
+    assembler_template: "movfpe @{abs16}:16, {rd8}"
+    length_bytes: 4
+    encoding:
+      mask: "0xfff0"
+      match: "0x6a40"
+      fields:
+        rd8: "word[3:0]"
+        abs16: "ext[15:0]"
+    sail:
+      decode: H8_MOVFPE_ABS16_R8
+      execute: h8_exec_movfpe_abs_to_reg
+    effects: [pc, rd8, ccr_nzv, mem_read]
+
+  - id: h8_movtpe_r8_abs16
+    assembler_template: "movtpe {rs8}, @{abs16}:16"
+    length_bytes: 4
+    encoding:
+      mask: "0xfff0"
+      match: "0x6ac0"
+      fields:
+        rs8: "word[3:0]"
+        abs16: "ext[15:0]"
+    sail:
+      decode: H8_MOVTPE_R8_ABS16
+      execute: h8_exec_movtpe_reg_to_abs
+    effects: [pc, ccr_nzv, mem_write]
+
+cases:
+  - id: h8_movfpe_abs16_r0l_negative
+    instruction: h8_movfpe_abs16_r8
+    status: supported
+    check_area: memory
+    assembler:
+      - "movfpe @0x0140:16, r0l"
+    words:
+      - "0x6a48"
+      - "0x0140"
+    decode_keys: ["6", "a"]
+    sail:
+      decode: H8_MOVFPE_ABS16_R8
+      execute: h8_exec_movfpe_abs_to_reg
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x00"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0004"
+      regs:
+        r0l: "0x80"
+      ccr_hnzvc: "11001"
+      trap: false
+    memory:
+      initial:
+        "0x0140": "0x80"
+      expected:
+        "0x0140": "0x80"
+      access:
+        kind: read
+        width: byte
+        addr: "0x0140"
+        wmask: "00"
+        rdata: "0x0080"
+
+  - id: h8_movtpe_r1h_abs16_zero
+    instruction: h8_movtpe_r8_abs16
+    status: supported
+    check_area: memory
+    assembler:
+      - "movtpe r1h, @0x0142:16"
+    words:
+      - "0x6ac1"
+      - "0x0142"
+    decode_keys: ["6", "a"]
+    sail:
+      decode: H8_MOVTPE_R8_ABS16
+      execute: h8_exec_movtpe_reg_to_abs
+    initial:
+      pc: "0x0000"
+      regs:
+        r1h: "0x00"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0004"
+      regs: {}
+      ccr_hnzvc: "10101"
+      trap: false
+    memory:
+      initial:
+        "0x0142": "0xaa"
+        "0x0143": "0x55"
+      expected:
+        "0x0142": "0x00"
+        "0x0143": "0x55"
+      access:
+        kind: write
+        width: byte
+        addr: "0x0142"
+        wmask: "01"
+        wdata: "0x0000"

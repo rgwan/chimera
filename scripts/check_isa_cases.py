@@ -11,9 +11,16 @@ import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CASE_PATH = REPO_ROOT / "isa" / "h8300_base_cases.yaml"
+CASE_PATHS = [
+    REPO_ROOT / "isa" / "h8300_base_cases.yaml",
+    REPO_ROOT / "isa" / "h8300_legacy_cases.yaml",
+]
 SAIL_PATH = REPO_ROOT / "sail" / "h8300.sail"
 OUT_DIR = REPO_ROOT / "result" / "isa-cases"
+PROFILE_SAIL_ENUM = {
+    "h8300_base": "H8_BASE",
+    "h8300_legacy": "H8_LEGACY",
+}
 
 ID_RE = re.compile(r"^h8_[a-z0-9_]+$")
 FIELD_RE = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -582,8 +589,9 @@ def validate_table(table: object, sail_text: str) -> tuple[list[str], dict[str, 
     root = expect_dict(errors, table, "root")
     if root.get("schema") != 1:
         fail(errors, "schema", "expected schema 1")
-    if root.get("profile") != "h8300_base":
-        fail(errors, "profile", "expected h8300_base")
+    profile = root.get("profile")
+    if profile not in PROFILE_SAIL_ENUM:
+        fail(errors, "profile", "unknown profile")
     if root.get("decode_key_bits_max") != 4:
         fail(errors, "decode_key_bits_max", "expected 4")
     if root.get("fetch_word_bits") != 16:
@@ -623,7 +631,8 @@ def validate_table(table: object, sail_text: str) -> tuple[list[str], dict[str, 
         if isinstance(case, dict):
             validate_branch_case(case, f"cases[{index}]", branch_coverage, errors)
         trace_expectations.append(validate_case(case, index, sail_text, case_ids, instructions, errors))
-    validate_branch_coverage(branch_coverage, errors)
+    if profile == "h8300_base":
+        validate_branch_coverage(branch_coverage, errors)
 
     summary = {
         "case_count": len(cases),
@@ -640,14 +649,24 @@ def validate_table(table: object, sail_text: str) -> tuple[list[str], dict[str, 
 
 
 def main() -> int:
-    table = yaml.safe_load(CASE_PATH.read_text(encoding="utf-8"))
     sail_text = SAIL_PATH.read_text(encoding="utf-8")
-    errors, summary = validate_table(table, sail_text)
+    errors: list[str] = []
+    tables = []
+    for case_path in CASE_PATHS:
+        table = yaml.safe_load(case_path.read_text(encoding="utf-8"))
+        table_errors, summary = validate_table(table, sail_text)
+        errors.extend(f"{case_path.relative_to(REPO_ROOT)}: {error}" for error in table_errors)
+        tables.append({
+            "case_table": str(case_path.relative_to(REPO_ROOT)),
+            "status": "fail" if table_errors else "pass",
+            "summary": summary,
+            "errors": table_errors,
+        })
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     report = {
-        "case_table": str(CASE_PATH.relative_to(REPO_ROOT)),
         "status": "fail" if errors else "pass",
-        "summary": summary,
+        "table_count": len(tables),
+        "tables": tables,
         "errors": errors,
     }
     report_path = OUT_DIR / "isa-cases.json"

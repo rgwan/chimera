@@ -15,7 +15,6 @@ import check_isa_cases
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CASE_PATH = REPO_ROOT / "isa" / "h8300_base_cases.yaml"
 OUT_DIR = REPO_ROOT / "result" / "gnu-oracle"
 SAIL_RESULT_RE = re.compile(r"Result = (true|false)")
 
@@ -182,7 +181,7 @@ def sail_ccr_checks(hnzvc: str) -> list[str]:
     ]
 
 
-def sail_case_body(case: dict[str, object]) -> str:
+def sail_case_body(case: dict[str, object], sail_profile: str) -> str:
     initial = case["initial"]
     expected = case["expected"]
     byte_literal = ", ".join(f"0x{value:02X}" for value in program_bytes(case))
@@ -208,7 +207,9 @@ def sail_case_body(case: dict[str, object]) -> str:
         lines.append(f"  let {next_name} = h8_mem_write8({mem_name}, {addr}, {value});")
         mem_name = next_name
     lines.append(f"  let mach1 = h8_make_machine({state_name}, {mem_name});")
-    lines.append("  let res = h8_run(mach1, 1);")
+    lines.append(f"  let first = h8_fetch16({mem_name}, {initial['pc']});")
+    lines.append(f"  let ext = h8_fetch16({mem_name}, {initial['pc']} + 0x0002);")
+    lines.append(f"  let res = h8_decode_execute_machine_profile(mach1, {sail_profile}, first, ext);")
     checks = [
         f"(res.st.pc == {expected['pc']})",
         "(res.trap)" if expected["trap"] else "(not_bool(res.trap))",
@@ -223,11 +224,11 @@ def sail_case_body(case: dict[str, object]) -> str:
     return "\n".join(lines)
 
 
-def write_sail_case_project(case: dict[str, object], work: Path) -> None:
+def write_sail_case_project(case: dict[str, object], work: Path, sail_profile: str) -> None:
     (work / "prelude.sail").symlink_to(REPO_ROOT / "sail" / "prelude.sail")
     (work / "h8300.sail").symlink_to(REPO_ROOT / "sail" / "h8300.sail")
     (work / "oracle_case.sail").write_text(
-        f"function gnu_oracle_case() -> bool = {sail_case_body(case)}\n",
+        f"function gnu_oracle_case() -> bool = {sail_case_body(case, sail_profile)}\n",
         encoding="utf-8",
     )
     (work / "oracle_case.sail_project").write_text(
@@ -256,14 +257,14 @@ def sail_function_name(case: dict[str, object]) -> str:
     return f"gnu_oracle_case_{case['id']}"
 
 
-def write_sail_cases_project(cases: list[dict[str, object]], work: Path) -> None:
+def write_sail_cases_project(cases: list[dict[str, object]], work: Path, sail_profile: str) -> None:
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
     (work / "prelude.sail").symlink_to(REPO_ROOT / "sail" / "prelude.sail")
     (work / "h8300.sail").symlink_to(REPO_ROOT / "sail" / "h8300.sail")
     bodies = []
     for case in cases:
-        bodies.append(f"function {sail_function_name(case)}() -> bool = {sail_case_body(case)}\n")
+        bodies.append(f"function {sail_function_name(case)}() -> bool = {sail_case_body(case, sail_profile)}\n")
     (work / "oracle_cases.sail").write_text("\n".join(bodies), encoding="utf-8")
     (work / "oracle_cases.sail_project").write_text(
         "prelude {\n"
@@ -287,9 +288,13 @@ def write_sail_cases_project(cases: list[dict[str, object]], work: Path) -> None
     )
 
 
-def run_sail_cases(cases: list[dict[str, object]], log_path: Path) -> dict[str, dict[str, object]]:
+def run_sail_cases(
+    cases: list[dict[str, object]],
+    log_path: Path,
+    sail_profile: str,
+) -> dict[str, dict[str, object]]:
     work = log_path.parent
-    write_sail_cases_project(cases, work)
+    write_sail_cases_project(cases, work, sail_profile)
     cmd = [
         "sail",
         "--no-color",
@@ -314,9 +319,9 @@ def run_sail_cases(cases: list[dict[str, object]], log_path: Path) -> dict[str, 
     return output
 
 
-def run_sail_case(case: dict[str, object], log_path: Path) -> dict[str, object]:
+def run_sail_case(case: dict[str, object], log_path: Path, sail_profile: str) -> dict[str, object]:
     work = log_path.parent
-    write_sail_case_project(case, work)
+    write_sail_case_project(case, work, sail_profile)
     cmd = [
         "sail",
         "--no-color",
@@ -332,44 +337,63 @@ def run_sail_case(case: dict[str, object], log_path: Path) -> dict[str, object]:
     return result
 
 
-def load_table() -> dict[str, object]:
-    table = yaml.safe_load(CASE_PATH.read_text(encoding="utf-8"))
+def load_tables() -> list[dict[str, object]]:
     sail_text = (REPO_ROOT / "sail" / "h8300.sail").read_text(encoding="utf-8")
-    errors, _summary = check_isa_cases.validate_table(table, sail_text)
-    if errors:
-        raise ValueError("\n".join(errors))
-    return table
+    tables = []
+    for case_path in check_isa_cases.CASE_PATHS:
+        table = yaml.safe_load(case_path.read_text(encoding="utf-8"))
+        errors, _summary = check_isa_cases.validate_table(table, sail_text)
+        if errors:
+            prefix = str(case_path.relative_to(REPO_ROOT))
+            raise ValueError("\n".join(f"{prefix}: {error}" for error in errors))
+        profile = str(table["profile"])
+        tables.append({
+            "case_path": case_path,
+            "cases": table["cases"],
+            "profile": profile,
+            "sail_profile": check_isa_cases.PROFILE_SAIL_ENUM[profile],
+        })
+    return tables
 
 
 def main() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     work_root = OUT_DIR / "work"
     work_root.mkdir(parents=True, exist_ok=True)
-    table = load_table()
-    cases = table["cases"]
+    tables = load_tables()
 
     results = []
-    sail_results = run_sail_cases(cases, work_root / "sail-all" / "sail.log")
-    for case in cases:
-        gnu = assemble_case(case, work_root)
-        sail = sail_results[str(case["id"])]
-        status = "pass" if gnu["status"] == "pass" and sail["status"] == "pass" else "fail"
-        results.append({
-            "actual_hex": gnu["actual_hex"],
-            "case_id": case["id"],
-            "expected_hex": gnu["expected_hex"],
-            "gnu_status": gnu["status"],
-            "instruction": case["instruction"],
-            "sail_log": sail["log"],
-            "sail_status": sail["status"],
-            "status": status,
-        })
+    for table in tables:
+        cases = table["cases"]
+        profile = str(table["profile"])
+        table_work = work_root / profile
+        sail_results = run_sail_cases(
+            cases,
+            table_work / "sail-all" / "sail.log",
+            str(table["sail_profile"]),
+        )
+        for case in cases:
+            gnu = assemble_case(case, table_work)
+            sail = sail_results[str(case["id"])]
+            status = "pass" if gnu["status"] == "pass" and sail["status"] == "pass" else "fail"
+            results.append({
+                "actual_hex": gnu["actual_hex"],
+                "case_id": case["id"],
+                "case_table": str(table["case_path"].relative_to(REPO_ROOT)),
+                "expected_hex": gnu["expected_hex"],
+                "gnu_status": gnu["status"],
+                "instruction": case["instruction"],
+                "profile": profile,
+                "sail_log": sail["log"],
+                "sail_status": sail["status"],
+                "status": status,
+            })
 
     status = "pass" if all(result["status"] == "pass" for result in results) else "fail"
     report = {
         "case_count": len(results),
-        "case_table": str(CASE_PATH.relative_to(REPO_ROOT)),
         "cases": results,
+        "table_count": len(tables),
         "status": status,
     }
     report_path = OUT_DIR / "gnu-oracle.json"

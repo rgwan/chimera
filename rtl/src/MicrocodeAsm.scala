@@ -71,6 +71,10 @@ object MicrocodeImage:
     // NOP (dispatch 0x00): return to fetch
     0x00 -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
 
+    // mov.b #imm8,Rd (dispatch 0x87): Rd = imm8, set N/Z, clear V
+    0x87 -> MW(bSel = BSel.Imm8, alu = AluOp.Pass, wsel = WSel.H8, h8Idx = H8Idx.RdImm,
+               we = true, flag = FlagCtl.Nz, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+
     // add.b Rs,Rd (dispatch 0x08): stage Rs into TEMP, then Rd = Rd + TEMP
     0x08 -> MW(bSel = BSel.H8, h8Idx = H8Idx.RsReg, alu = AluOp.Pass,
                wsel = WSel.Int, intIdx = IntIdx.Temp, we = true,

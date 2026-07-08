@@ -3,6 +3,7 @@
 package com.vowstar.chimera
 
 import me.jiuyang.zaozi.*
+import me.jiuyang.zaozi.default.{*, given}
 
 /** Core parameters. H8/300H is disabled by default; the LUT budget is measured
   * with it off.
@@ -26,10 +27,19 @@ case class ChimeraParameter(
 
 given upickle.default.ReadWriter[ChimeraParameter] = upickle.default.macroRW
 
-/** No verification layers in the production core. */
+/** Verification layer; lowered into bind collateral and stripped in production. */
 class ChimeraLayers(parameter: ChimeraParameter) extends LayerInterface(parameter):
-  def layers = Seq.empty
+  def layers = Seq(Layer("DV"))
 
-/** No DV probe ports. */
+/** Empty probe for leaf modules (no trace surface). */
 class ChimeraProbe(parameter: ChimeraParameter)
     extends DVBundle[ChimeraParameter, ChimeraLayers](parameter)
+
+/** Retire-trace surface (architectural state) on the Core, read via the DV layer. */
+class CoreProbe(parameter: ChimeraParameter)
+    extends DVBundle[ChimeraParameter, ChimeraLayers](parameter):
+  private def dv = layers("DV")
+  val traceH8    = ProbeRead(UInt(parameter.regCount * parameter.dataWidth), dv)
+  val tracePc    = ProbeRead(UInt(parameter.dataWidth), dv)
+  val traceCcr   = ProbeRead(UInt(5), dv)
+  val traceFetch = ProbeRead(Bool(), dv)

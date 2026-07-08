@@ -21,7 +21,7 @@ class CoreIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val bus   = Aligned(new SramBus(parameter))
 
 @generator
-object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, ChimeraProbe]:
+object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe]:
   override def moduleName(parameter: ChimeraParameter): String = "Core"
 
   def architecture(parameter: ChimeraParameter) =
@@ -149,3 +149,12 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, ChimeraPr
     io.bus.req   := biu.io.bus.req
     biu.io.bus.rdata := io.bus.rdata
     biu.io.bus.rdy   := io.bus.rdy
+
+    // retire-trace surface, lowered into the DV layer bind collateral (stripped
+    // in production). doFetch marks one fetch per instruction.
+    val probe = summon[Interface[CoreProbe]]
+    layer("DV"):
+      probe.traceH8    <== h8rf.io.dbg
+      probe.tracePc    <== intrf.io.dbgPc
+      probe.traceCcr   <== ccr.io.hnzvc
+      probe.traceFetch <== doFetch

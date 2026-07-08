@@ -38,12 +38,13 @@ echo "[chimera-rtl] design"
 ( cd "$out" && scala-cli run "${scala_args[@]}" "$src" -- design "$out/config.json" )
 
 echo "[chimera-rtl] firtool"
-# The design pass emits one mlirbc per module; lower each to its own .sv so the
-# whole hierarchy (Core + submodules) is available to simulators.
+# The design pass emits one mlirbc per module; lower each to its own .sv. Core's
+# DV layer also emits layers-Core-DV.sv / ref_Core.sv collateral (production sims
+# exclude those; trace sims include them).
 for f in "$out"/*.mlirbc; do
-  firtool "$f" -disable-all-randomization -O=release \
+  firtool "$f" --split-verilog -disable-all-randomization -O=release \
     --lowering-options=disallowLocalVariables,disallowPackedArrays,locationInfoStyle=none \
-    -o "${f%.mlirbc}.sv"
+    -o "$out"
 done
 
 echo "[chimera-rtl] wrote SystemVerilog to $out"

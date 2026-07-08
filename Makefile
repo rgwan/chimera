@@ -22,7 +22,8 @@ check-alu:
 
 check-core:
 	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_core test/core/tb_core.v rtl/generated/*.sv
+	iverilog -g2012 -o rtl/generated/sim_core test/core/tb_core.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_core
 
 gnu-oracle:

@@ -21,6 +21,7 @@ class H8RegFileIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val wdata = Flipped(UInt(parameter.dataWidth))
   val wmask = Flipped(UInt(parameter.wmaskWidth))
   val we    = Flipped(Bool())
+  val dbg   = Aligned(UInt(parameter.regCount * parameter.dataWidth)) // R7..R0, verify tap
 
 @generator
 object H8RegFile
@@ -50,3 +51,6 @@ object H8RegFile
       when(io.raddr === i.U(parameter.regIndexBits))(rd := r)
     }
     io.rdata := rd
+
+    // verification tap: R7 .. R0 (R0 in the low bits)
+    io.dbg := regs.reverse.map(_.asBits).reduce(_ ## _).asUInt

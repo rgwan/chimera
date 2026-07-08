@@ -65,6 +65,12 @@ check-bcc:
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_bcc
 
+check-loop:
+	bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_loop test/core/tb_core_loop.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_loop
+
 gnu-oracle:
 	python3 scripts/check_gnu_oracle.py
 

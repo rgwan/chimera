@@ -63,6 +63,11 @@ SIM_DIVERGENT = {
 }
 SIM_DIVERGENT_REASON = "gdb_sim_divergent_instruction"
 
+# The sim reads word/long memory at the literal address; the H8/300 forces
+# even alignment by clearing bit0. Cases whose pointer register is odd are
+# abstained rather than compared.
+UNALIGNED_WORD_REASON = "gdb_sim_unaligned_word_access"
+
 # CCR bit position of each flag in the HNZVC string order.
 CCR_BITS = (5, 3, 2, 1, 0)
 CCR_I = 1 << 7
@@ -100,6 +105,15 @@ def initial_reg_values(case: dict[str, object]) -> list[int]:
     return regs
 
 
+def unaligned_word_access(case: dict[str, object]) -> bool:
+    memory = case.get("memory")
+    access = memory.get("access") if isinstance(memory, dict) else None
+    if not isinstance(access, dict) or access.get("width") not in ("word", "long"):
+        return False
+    odd_ptr = int(str(access.get("addr", "0x0")), 16) | 1
+    return any(int(str(v), 16) == odd_ptr for v in case["initial"].get("regs", {}).values())
+
+
 def applicability(case: dict[str, object]) -> str | None:
     if str(case.get("status")) == "rejected":
         return "rejected_encoding_no_sim_semantics"
@@ -109,6 +123,8 @@ def applicability(case: dict[str, object]) -> str | None:
         return "extended_registers_absent"
     if str(case.get("instruction")) in SIM_DIVERGENT:
         return SIM_DIVERGENT_REASON
+    if unaligned_word_access(case):
+        return UNALIGNED_WORD_REASON
     return None
 
 
@@ -119,6 +135,7 @@ def abstain_reason_text(case: dict[str, object], reason_code: str) -> str:
         "expected_trap_no_sim_semantics": "expected trap has no sim semantics",
         "extended_registers_absent": "extended registers absent from H8/300 sim",
         "rejected_encoding_no_sim_semantics": "rejected encoding has no sim trap semantics",
+        UNALIGNED_WORD_REASON: "sim does not force even alignment on word access",
     }[reason_code]
 
 

@@ -50,6 +50,12 @@ check-imm:
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_imm
 
+check-branch:
+	bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_branch test/core/tb_core_branch.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_branch
+
 gnu-oracle:
 	python3 scripts/check_gnu_oracle.py
 

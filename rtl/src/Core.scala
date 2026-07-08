@@ -73,7 +73,10 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     val h8Byte = h8Sel3.?(h8rf.io.rdata.asBits.bits(7, 0), h8rf.io.rdata.asBits.bits(15, 8))
     val h8Read = sizeWord.?(h8rf.io.rdata, (0.B(8) ## h8Byte).asUInt)
 
-    val imm8ext  = (0.B(8) ## opx.io.imm8.asBits).asUInt
+    // imm8 sign-extended: correct for branch disp8 (16-bit PC add) and harmless
+    // for byte ALU ops (which use only [7:0]).
+    val imm8sign = opx.io.imm8.asBits.bit(7).?(0xff.B(8), 0.B(8))
+    val imm8ext  = (imm8sign ## opx.io.imm8.asBits).asUInt
     val litConst = (0.B(8) ## udec.io.literal.asBits.bits(7, 0)).asUInt
 
     // register-file reads (single port each)
@@ -144,7 +147,31 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     useq.io.condZ    := ccr.io.zFlag
     useq.io.condC    := ccr.io.cFlag
     useq.io.busRdy   := biu.io.rdy
-    useq.io.ccTaken  := false.B // branch-condition eval: filled later
+
+    // Bcc condition evaluator: cond nibble = instr[3:0], flags from CCR.
+    val fN = ccr.io.hnzvc.asBits.bit(3)
+    val fZ = ccr.io.hnzvc.asBits.bit(2)
+    val fV = ccr.io.hnzvc.asBits.bit(1)
+    val fC = ccr.io.hnzvc.asBits.bit(0)
+    val cc = opx.io.rdImm
+    val taken = Wire(Bool())
+    taken := true.B                                       // 0 BRA
+    when(cc === 0x1.U(4))(taken := false.B)               // BRN
+    when(cc === 0x2.U(4))(taken := !(fC | fZ))            // BHI
+    when(cc === 0x3.U(4))(taken := fC | fZ)               // BLS
+    when(cc === 0x4.U(4))(taken := !fC)                   // BCC
+    when(cc === 0x5.U(4))(taken := fC)                    // BCS
+    when(cc === 0x6.U(4))(taken := !fZ)                   // BNE
+    when(cc === 0x7.U(4))(taken := fZ)                    // BEQ
+    when(cc === 0x8.U(4))(taken := !fV)                   // BVC
+    when(cc === 0x9.U(4))(taken := fV)                    // BVS
+    when(cc === 0xa.U(4))(taken := !fN)                   // BPL
+    when(cc === 0xb.U(4))(taken := fN)                    // BMI
+    when(cc === 0xc.U(4))(taken := !(fN ^ fV))            // BGE
+    when(cc === 0xd.U(4))(taken := fN ^ fV)               // BLT
+    when(cc === 0xe.U(4))(taken := !(fZ | (fN ^ fV)))     // BGT
+    when(cc === 0xf.U(4))(taken := fZ | (fN ^ fV))        // BLE
+    useq.io.ccTaken := taken
 
     // irq latch (polled by microcode)
     val irqLatch = RegInit(false.B)

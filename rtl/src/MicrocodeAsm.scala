@@ -102,8 +102,18 @@ object MicrocodeImage:
     (Ucode.FetchEntry + 0x10) ->
       MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, bSel = BSel.Int, intIdx = IntIdx.Temp,
          alu = AluOp.Add, flag = FlagCtl.AddSub, wsel = WSel.H8, we = true,
-         seq = SeqSrc.Literal, lit = Ucode.FetchEntry)
-  )
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+
+    // Bcc shared routine: taken -> PC += signext(disp8); not taken -> fetch.
+    // cond nibble drives the CcInstr predicate (evaluated in Core).
+    (Ucode.FetchEntry + 0x20) ->
+      MW(seq = SeqSrc.Literal, cond = Cond.CcInstr, lit = Ucode.FetchEntry + 0x22),
+    (Ucode.FetchEntry + 0x21) -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    (Ucode.FetchEntry + 0x22) ->
+      MW(aSel = ASel.Int, bSel = BSel.Imm8, intIdx = IntIdx.PC, alu = AluOp.Add,
+         wsel = WSel.Int, we = true, seq = SeqSrc.Literal, lit = Ucode.FetchEntry)
+  ) ++ (0x40 to 0x4f).map(a =>
+    a -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x20)).toMap
 
   /** Sparse image: only authored addresses; the ROM defaults the rest to zero. */
   val sparse: Seq[(Int, BigInt)] =

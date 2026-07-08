@@ -10,7 +10,8 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 src="$here/src"
 out="${CHIMERA_RTL_OUT:-$here/generated}"
-top="com.vowstar.chimera.Core"
+mod="${TOP:-Core}"
+top="com.vowstar.chimera.$mod"
 
 : "${ZAOZI_JAR:?set ZAOZI_JAR to the zaozi elaborator.jar}"
 : "${CIRCT_INSTALL_PATH:?set CIRCT_INSTALL_PATH}"
@@ -37,7 +38,7 @@ echo "[chimera-rtl] design"
 ( cd "$out" && scala-cli run "${scala_args[@]}" "$src" -- design "$out/config.json" )
 
 echo "[chimera-rtl] firtool"
-firtool "$out/Core.mlirbc" \
+firtool "$out/$mod.mlirbc" \
   --split-verilog -disable-all-randomization -O=release \
   --lowering-options=noAlwaysComb,disallowLocalVariables,disallowPackedArrays,emittedLineLength=160,locationInfoStyle=none \
   -o "$out"

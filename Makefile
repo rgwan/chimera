@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
 
-.PHONY: build smoke rtl-verilog gnu-oracle gdb-oracle isa-cases sail-coverage sail-model verify-smoke check clean
+.PHONY: build smoke rtl-verilog check-decode gnu-oracle gdb-oracle isa-cases sail-coverage sail-model verify-smoke check clean
 
 build: smoke
 
@@ -10,6 +10,10 @@ smoke:
 
 rtl-verilog:
 	rtl/build.sh
+
+check-decode:
+	TOP=CoarseDecoder rtl/build.sh
+	COARSE_SV=rtl/generated/CoarseDecoder.sv python3 scripts/check_decode_dispatch.py
 
 gnu-oracle:
 	python3 scripts/check_gnu_oracle.py

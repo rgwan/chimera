@@ -37,11 +37,20 @@ DIVERGENT_FLAGS = {
     "h8_inc8_r8": frozenset("V"),
     "h8_dec8_r8": frozenset("V"),
     "h8_neg8_r8": frozenset("V"),
+    "h8_daa8_r8": frozenset("NZC"),
+    "h8_das8_r8": frozenset("NZC"),
+    "h8_rte": frozenset("NZVC"),
+    "h8_subx8_r8_r8": frozenset("ZV"),
 }
 DIVERGENT_FLAG_REASON = "gdb_sim_divergent_flag"
+DIVERGENT_RESULT_BYTE_INSTRUCTIONS = {
+    "h8_daa8_r8": "decimal adjust result byte differs",
+    "h8_das8_r8": "decimal adjust result byte differs",
+}
+DIVERGENT_RESULT_BYTE_REASON = "gdb_sim_divergent_result_byte"
 EXPECTED_TRAP_REASON = "expected_trap_no_sim_semantics"
 REJECTED_ENCODING_REASON = "rejected_encoding_no_sim_semantics"
-MIN_COMPARED_CASES = 234
+MIN_COMPARED_CASES = 246
 
 # The sim resolves @aa:8 to 0x00aa instead of the datasheet 0xFFaa page;
 # for these ops the case memory address is remapped down so the data-path
@@ -53,14 +62,8 @@ ABS8_INSTRUCTIONS = frozenset({
     "h8_bit_abs8_write",
 })
 
-# Instructions the simulator executes with datasheet-divergent addressing
-# or results; abstained from rather than compared.
-SIM_DIVERGENT = {
-    "h8_daa8_r8": "decimal adjust carry and result differ from datasheet",
-    "h8_das8_r8": "decimal adjust carry and result differ from datasheet",
-    "h8_subx8_r8_r8": "subx does not model sticky zero",
-    "h8_rte": "rte restores ccr differently from datasheet",
-}
+# Instructions the simulator executes with whole-result divergence.
+SIM_DIVERGENT = {}
 SIM_DIVERGENT_REASON = "gdb_sim_divergent_instruction"
 SIM_DIVERGENT_CASES = {
     "h8_divxu_r0h_r1_zero_divisor": "divide-by-zero result differs",
@@ -74,7 +77,7 @@ UNALIGNED_WORD_REASON = "gdb_sim_unaligned_word_access"
 ABSTAIN_REASON_LIMITS = {
     EXPECTED_TRAP_REASON: 1,
     REJECTED_ENCODING_REASON: 4,
-    SIM_DIVERGENT_REASON: 15,
+    SIM_DIVERGENT_REASON: 3,
     UNALIGNED_WORD_REASON: 1,
 }
 
@@ -166,6 +169,28 @@ def compared_ccr_flags(case: dict[str, object]) -> list[str]:
     return [flag for flag in "HNZVC" if flag not in excluded]
 
 
+def r8_code_name(code: int) -> str:
+    suffix = "h" if code & 0x8 == 0 else "l"
+    return f"r{code & 0x7}{suffix}"
+
+
+def excluded_register_bytes(case: dict[str, object]) -> list[dict[str, str]]:
+    instruction = str(case.get("instruction"))
+    if instruction not in DIVERGENT_RESULT_BYTE_INSTRUCTIONS:
+        return []
+    words = case.get("words", [])
+    if not words:
+        return []
+    code = int(str(words[0]), 16) & 0xF
+    return [{
+        "byte": "high" if code & 0x8 == 0 else "low",
+        "reason": DIVERGENT_RESULT_BYTE_INSTRUCTIONS[instruction],
+        "reason_code": DIVERGENT_RESULT_BYTE_REASON,
+        "register": f"r{code & 0x7}",
+        "register_byte": r8_code_name(code),
+    }]
+
+
 def comparison_scope(case: dict[str, object]) -> dict[str, object]:
     expected_memory = memory_map(case, "expected")
     return {
@@ -173,6 +198,7 @@ def comparison_scope(case: dict[str, object]) -> dict[str, object]:
         "ccr_flags_excluded": excluded_ccr_flags(case),
         "fields": ["pc", "regs", "ccr_hnzvc", "memory"],
         "memory_addresses_compared": sorted(expected_memory, key=lambda addr: int(addr, 16)),
+        "register_bytes_excluded": excluded_register_bytes(case),
     }
 
 
@@ -259,8 +285,22 @@ def compare(case: dict[str, object], dump: dict[str, int]) -> list[str]:
         if want != "x" and want != got:
             diffs.append(f"ccr {name} {got} != {want}")
 
+    excluded_bytes = {
+        (int(str(item["register"])[1:]), str(item["byte"]))
+        for item in excluded_register_bytes(case)
+    }
     for index, want in enumerate(expected_regs(case)[:8]):
         got = dump[f"R{index}"]
+        if (index, "high") in excluded_bytes or (index, "low") in excluded_bytes:
+            for byte_name, shift in (("high", 8), ("low", 0)):
+                if (index, byte_name) in excluded_bytes:
+                    continue
+                got_byte = (got >> shift) & 0xFF
+                want_byte = (want >> shift) & 0xFF
+                if got_byte != want_byte:
+                    suffix = "h" if byte_name == "high" else "l"
+                    diffs.append(f"r{index}{suffix} {got_byte:#04x} != {want_byte:#04x}")
+            continue
         if got != want:
             diffs.append(f"r{index} {got:#06x} != {want:#06x}")
 
@@ -322,6 +362,7 @@ def exception_coverage(results: list[dict[str, object]]) -> dict[str, object]:
         name: {flag: [] for flag in sorted(flags)}
         for name, flags in sorted(DIVERGENT_FLAGS.items())
     }
+    result_byte_hits = {name: [] for name in sorted(DIVERGENT_RESULT_BYTE_INSTRUCTIONS)}
     for result in results:
         instruction = str(result.get("instruction"))
         case_id = str(result.get("case_id"))
@@ -337,18 +378,25 @@ def exception_coverage(results: list[dict[str, object]]) -> dict[str, object]:
         if not isinstance(scope, dict):
             continue
         excluded = scope.get("ccr_flags_excluded")
-        if not isinstance(excluded, list):
-            continue
-        for item in excluded:
-            if not isinstance(item, dict):
-                continue
-            flag = item.get("flag")
-            reason = item.get("reason_code")
-            if reason == UNMODELED_FLAG_REASON and flag in unmodeled_hits:
-                unmodeled_hits[str(flag)].append(case_id)
-            if reason == DIVERGENT_FLAG_REASON:
-                if instruction in flag_hits and flag in flag_hits[instruction]:
-                    flag_hits[instruction][str(flag)].append(case_id)
+        if isinstance(excluded, list):
+            for item in excluded:
+                if not isinstance(item, dict):
+                    continue
+                flag = item.get("flag")
+                reason = item.get("reason_code")
+                if reason == UNMODELED_FLAG_REASON and flag in unmodeled_hits:
+                    unmodeled_hits[str(flag)].append(case_id)
+                if reason == DIVERGENT_FLAG_REASON:
+                    if instruction in flag_hits and flag in flag_hits[instruction]:
+                        flag_hits[instruction][str(flag)].append(case_id)
+        reg_excluded = scope.get("register_bytes_excluded")
+        if isinstance(reg_excluded, list):
+            for item in reg_excluded:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("reason_code") == DIVERGENT_RESULT_BYTE_REASON:
+                    if instruction in result_byte_hits:
+                        result_byte_hits[instruction].append(case_id)
 
     unused_sim = sorted(name for name, case_ids in sim_hits.items() if not case_ids)
     unused_cases = sorted(
@@ -362,11 +410,16 @@ def exception_coverage(results: list[dict[str, object]]) -> dict[str, object]:
         for name, flags in flag_hits.items()
     }
     unused_flags = {name: flags for name, flags in unused_flags.items() if flags}
+    unused_result_bytes = sorted(
+        name for name, case_ids in result_byte_hits.items() if not case_ids
+    )
     return {
         "divergent_flag_hits": flag_hits,
+        "divergent_result_byte_hits": result_byte_hits,
         "sim_divergent_case_hits": case_hits,
         "sim_divergent_hits": sim_hits,
         "unused_divergent_flag_exceptions": unused_flags,
+        "unused_divergent_result_byte_exceptions": unused_result_bytes,
         "unused_sim_divergent_case_exceptions": unused_cases,
         "unused_sim_divergent_exceptions": unused_sim,
         "unused_unmodeled_flag_exceptions": unused_unmodeled,
@@ -476,6 +529,11 @@ def main() -> int:
         blocking_errors.append(
             "unused GDB divergent flag exceptions: " + "; ".join(items)
         )
+    if exceptions["unused_divergent_result_byte_exceptions"]:
+        names = ", ".join(exceptions["unused_divergent_result_byte_exceptions"])
+        blocking_errors.append(
+            f"unused GDB divergent result-byte exceptions: {names}"
+        )
     status = "fail" if failed or blocking_errors else "pass"
     report = {
         "abstained_case_count": len(skipped),
@@ -495,9 +553,15 @@ def main() -> int:
         "divergent_flags_by_instruction": {
             name: sorted(flags) for name, flags in sorted(DIVERGENT_FLAGS.items())
         },
+        "divergent_result_byte_instructions": dict(
+            sorted(DIVERGENT_RESULT_BYTE_INSTRUCTIONS.items())
+        ),
         "exception_coverage": exceptions,
         "failed_cases": failed,
-        "global_excluded_flags": [{"flag": flag, "reason_code": UNMODELED_FLAG_REASON} for flag in sorted(UNMODELED_FLAGS)],
+        "global_excluded_flags": [
+            {"flag": flag, "reason_code": UNMODELED_FLAG_REASON}
+            for flag in sorted(UNMODELED_FLAGS)
+        ],
         "limitations": [
             "gdb simulator evidence is independent execution evidence, not the ISA specification",
             "abstained cases are advisory, not pass evidence",

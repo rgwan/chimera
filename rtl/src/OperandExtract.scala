@@ -9,16 +9,16 @@ import me.jiuyang.zaozi.valuetpe.*
 import org.llvm.mlir.scalalib.capi.ir.{Block, Context}
 import java.lang.foreign.Arena
 
-/** Hardwired field muxes over the instruction register (not ROM). Exposes the
-  * operand fields at instr[3:0]/[7:4]/[11:8], the imm8, and the bit index.
+/** Hardwired field muxes over the little-endian IR (first byte in [7:0]).
+  * Positions are the ISA-word offsets mapped through the BIU byteswap.
   */
 class OperandExtractIO(parameter: ChimeraParameter) extends HWBundle(parameter):
-  val word = Flipped(UInt(parameter.dataWidth))
-  val f0   = Aligned(UInt(4)) // instr[3:0]
-  val f1   = Aligned(UInt(4)) // instr[7:4]
-  val f2   = Aligned(UInt(4)) // instr[11:8]
-  val imm8 = Aligned(UInt(8)) // instr[7:0]
-  val bit3 = Aligned(UInt(3)) // instr[6:4]
+  val word  = Flipped(UInt(parameter.dataWidth))
+  val rdImm = Aligned(UInt(4)) // instr[3:0]   imm-ALU / mov-imm rd
+  val rdReg = Aligned(UInt(4)) // instr[11:8]  reg-reg / rd-only rd
+  val rsReg = Aligned(UInt(4)) // instr[15:12] reg-reg rs
+  val imm8  = Aligned(UInt(8)) // instr[15:8]  imm8 / disp8 / abs8
+  val bit3  = Aligned(UInt(3)) // instr[14:12] bit index
 
 @generator
 object OperandExtract
@@ -28,8 +28,8 @@ object OperandExtract
   def architecture(parameter: ChimeraParameter) =
     val io = summon[Interface[OperandExtractIO]]
     val w  = io.word.asBits
-    io.f0   := w.bits(3, 0).asUInt
-    io.f1   := w.bits(7, 4).asUInt
-    io.f2   := w.bits(11, 8).asUInt
-    io.imm8 := w.bits(7, 0).asUInt
-    io.bit3 := w.bits(6, 4).asUInt
+    io.rdImm := w.bits(3, 0).asUInt
+    io.rdReg := w.bits(11, 8).asUInt
+    io.rsReg := w.bits(15, 12).asUInt
+    io.imm8  := w.bits(15, 8).asUInt
+    io.bit3  := w.bits(14, 12).asUInt

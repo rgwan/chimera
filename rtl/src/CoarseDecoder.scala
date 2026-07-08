@@ -9,8 +9,8 @@ import me.jiuyang.zaozi.valuetpe.*
 import org.llvm.mlir.scalalib.capi.ir.{Block, Context}
 import java.lang.foreign.Arena
 
-/** Fetch word: first opcode byte in [7:0] (`d ooo pppp`), second byte in
-  * [15:8] (`m xxx xxxx`).
+/** Decoder-visible word (BIU-byteswapped from big-endian memory): first opcode
+  * byte in [7:0] (`d ooo pppp`, d=bit7), second byte in [15:8] (`m xxx xxxx`).
   */
 class CoarseDecoderIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val word     = Flipped(UInt(parameter.dataWidth))
@@ -34,7 +34,7 @@ object CoarseDecoder
     // ooo=0 joins the m-class only with H8/300H enabled.
     val m = if parameter.h8300h then (sym & mf) else (sym & mf & oooNZ)
 
-    val cAddr = w.bits(7, 0)                // bucket C: 0x00-0x7f (d=0 => bit7=0)
+    val cAddr = w.bits(7, 0)                // bucket C: first byte (d=0 => bit7=0)
     val bAddr = 3.B(2) ## w.bits(5, 0)      // bucket B: 0xc0-0xff
     val aAddr = 16.B(5) ## w.bits(6, 4)     // bucket A: 0x80-0x87
 

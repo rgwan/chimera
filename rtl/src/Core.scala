@@ -60,8 +60,8 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, ChimeraPr
     val sizeWord = udec.io.misc.asBits.bit(Misc.SizeWord)
 
     // operand fields -> register indices
-    val rdIdx = opx.io.f2.asBits.bits(parameter.regIndexBits - 1, 0).asUInt
-    val rsIdx = opx.io.f1.asBits.bits(parameter.regIndexBits - 1, 0).asUInt
+    val rdIdx = opx.io.rdReg.asBits.bits(parameter.regIndexBits - 1, 0).asUInt
+    val rsIdx = opx.io.rsReg.asBits.bits(parameter.regIndexBits - 1, 0).asUInt
     val imm16 = (0.B(8) ## opx.io.imm8.asBits).asUInt
 
     // register-file reads
@@ -116,8 +116,11 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, ChimeraPr
     biu.io.word   := sizeWord
 
     // fetch capture into IR
-    val doFetch = udec.io.busCtl === BusCtl.Fetch.U(3)
-    when(doFetch & biu.io.rdy)(ir := biu.io.rdata)
+    // memory is big-endian; the decoder-visible IR is byteswapped (first byte in
+    // [7:0]). Data loads use biu.rdata directly (natural BE value).
+    val doFetch  = udec.io.busCtl === BusCtl.Fetch.U(3)
+    val fetchLe  = biu.io.rdata.asBits.bits(7, 0) ## biu.io.rdata.asBits.bits(15, 8)
+    when(doFetch & biu.io.rdy)(ir := fetchLe.asUInt)
 
     // sequencer inputs
     useq.io.seqSrc   := udec.io.seqSrc

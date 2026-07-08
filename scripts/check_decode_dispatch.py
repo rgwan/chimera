@@ -33,6 +33,7 @@ def load_expected():
             lo = int(row[1], 16)
             hi = int(row[2], 16)
             pre = int(row[3], 16)
+            # decoder word is BIU-byteswapped: first byte in [7:0], second in [15:8]
             for sb in range(lo, hi + 1):
                 expected[(sb << 8) | fb] = pre
     gaps = [w for w, v in enumerate(expected) if v is None]

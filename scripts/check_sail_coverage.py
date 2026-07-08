@@ -168,9 +168,10 @@ def bit_memory_gap_summary(coverage: dict[str, object]) -> list[dict[str, object
 
 
 def sail_function_body(sail_text: str, function_name: str) -> str:
-    start = sail_text.find(f"function {function_name}")
-    if start < 0:
+    match = re.search(rf"\bfunction\s+{re.escape(function_name)}\s*\(", sail_text)
+    if match is None:
         raise ValueError(f"Sail function {function_name} not found")
+    start = match.start()
     ends = [
         index
         for marker in ("\nfunction ", "\nval ", "\ntype ", "\nstruct ", "\nunion ")
@@ -235,8 +236,15 @@ def big_endian_model_checks(
     write16_body = sail_function_body(sail_text, "h8_mem_write16")
     fetch16_body = sail_function_body(sail_text, "h8_fetch16")
     load_body = sail_function_body(sail_text, "h8_load_bytes")
+    step_profile_body = sail_function_body(sail_text, "h8_step_profile")
     step_body = sail_function_body(sail_text, "h8_step")
     branch_body = sail_function_body(sail_text, "h8_exec_branch")
+    jmp_r16_body = sail_function_body(sail_text, "h8_exec_jmp_r16_ind")
+    jmp_abs16_body = sail_function_body(sail_text, "h8_exec_jmp_abs16")
+    jmp_abs8_body = sail_function_body(sail_text, "h8_exec_jmp_abs8_ind")
+    call_body = sail_function_body(sail_text, "h8_exec_call16")
+    rts_body = sail_function_body(sail_text, "h8_exec_rts")
+    rte_body = sail_function_body(sail_text, "h8_exec_rte")
     bsr_body = sail_function_body(sail_text, "h8_exec_bsr_rel8")
     checks = [
         {
@@ -273,8 +281,15 @@ def big_endian_model_checks(
         {
             "name": "step_aligns_pc_before_execute",
             "status": "pass"
-            if "let fetch_pc : word = align_word_addr(m.st.pc);" in step_body
-            and "h8_decode_execute_machine(aligned, first, ext)" in step_body
+            if "let fetch_pc : word = align_word_addr(m.st.pc);" in step_profile_body
+            and "h8_decode_execute_machine_profile(aligned, profile, first, ext)"
+            in step_profile_body
+            else "fail",
+        },
+        {
+            "name": "step_uses_base_profile",
+            "status": "pass"
+            if "h8_step_profile(m, H8_BASE)" in step_body
             else "fail",
         },
         {
@@ -282,6 +297,42 @@ def big_endian_model_checks(
             "status": "pass"
             if "pc = align_word_addr(next_pc + sign_extend8_to16(disp))"
             in branch_body
+            else "fail",
+        },
+        {
+            "name": "jmp_r16_target_aligns_word",
+            "status": "pass"
+            if "pc = align_word_addr(read_r16(st, rs_addr))" in jmp_r16_body
+            else "fail",
+        },
+        {
+            "name": "jmp_abs16_target_aligns_word",
+            "status": "pass"
+            if "pc = align_word_addr(target)" in jmp_abs16_body
+            else "fail",
+        },
+        {
+            "name": "jmp_abs8_indirect_target_aligns_word",
+            "status": "pass"
+            if "pc = align_word_addr(target)" in jmp_abs8_body
+            else "fail",
+        },
+        {
+            "name": "call_target_aligns_word",
+            "status": "pass"
+            if "pc = align_word_addr(target)" in call_body
+            else "fail",
+        },
+        {
+            "name": "rts_target_aligns_word",
+            "status": "pass"
+            if "pc = align_word_addr(target)" in rts_body
+            else "fail",
+        },
+        {
+            "name": "rte_target_aligns_word",
+            "status": "pass"
+            if "pc = align_word_addr(target)" in rte_body
             else "fail",
         },
         {

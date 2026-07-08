@@ -1548,7 +1548,7 @@ function h8_decode_execute_machine_profile(m : H8Machine, profile : H8Profile, f
 function h8_decode_execute_machine(m : H8Machine, first : word, ext : word) -> H8Machine =
   h8_decode_execute_machine_profile(m, H8_BASE, first, ext)
 
-function h8_step(m : H8Machine) -> H8Machine =
+function h8_step_profile(m : H8Machine, profile : H8Profile) -> H8Machine =
   if m.trap then
     m
   else {
@@ -1556,8 +1556,11 @@ function h8_step(m : H8Machine) -> H8Machine =
     let aligned = {m with st = {m.st with pc = fetch_pc}};
     let first : word = h8_fetch16(m.mem, fetch_pc);
     let ext : word = h8_fetch16(m.mem, fetch_pc + 0x0002);
-    h8_decode_execute_machine(aligned, first, ext)
+    h8_decode_execute_machine_profile(aligned, profile, first, ext)
   }
+
+function h8_step(m : H8Machine) -> H8Machine =
+  h8_step_profile(m, H8_BASE)
 
 type h8_step_count = {'n, 0 < 'n. int('n)}
 

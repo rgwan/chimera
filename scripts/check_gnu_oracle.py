@@ -207,9 +207,7 @@ def sail_case_body(case: dict[str, object], sail_profile: str) -> str:
         lines.append(f"  let {next_name} = h8_mem_write8({mem_name}, {addr}, {value});")
         mem_name = next_name
     lines.append(f"  let mach1 = h8_make_machine({state_name}, {mem_name});")
-    lines.append(f"  let first = h8_fetch16({mem_name}, {initial['pc']});")
-    lines.append(f"  let ext = h8_fetch16({mem_name}, {initial['pc']} + 0x0002);")
-    lines.append(f"  let res = h8_decode_execute_machine_profile(mach1, {sail_profile}, first, ext);")
+    lines.append(f"  let res = h8_step_profile(mach1, {sail_profile});")
     checks = [
         f"(res.st.pc == {expected['pc']})",
         "(res.trap)" if expected["trap"] else "(not_bool(res.trap))",

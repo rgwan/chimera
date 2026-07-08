@@ -129,6 +129,16 @@ EOF
           touch $out
         '';
 
+        sailCoverageCheck = pkgs.runCommand "chimera-sail-coverage" {
+          nativeBuildInputs = [ pythonEnv ];
+        } ''
+          cp -R ${self} src
+          chmod -R u+w src
+          cd src
+          python3 scripts/check_sail_coverage.py
+          touch $out
+        '';
+
         sailModelCheck = pkgs.runCommand "chimera-sail-model" {
           nativeBuildInputs = [
             pkgs.gcc
@@ -180,6 +190,7 @@ EOF
         packages.default = smokeCheck;
         packages.h8300-binutils = h8300Binutils;
         packages.isa-cases = isaCasesCheck;
+        packages.sail-coverage = sailCoverageCheck;
         packages.sail-model = sailModelCheck;
 
         apps.default = {
@@ -199,6 +210,7 @@ EOF
           gnu-oracle-smoke = gnuOracleCheck;
           isa-cases = isaCasesCheck;
           reuse = reuseCheck;
+          sail-coverage = sailCoverageCheck;
           sail-model = sailModelCheck;
         };
 

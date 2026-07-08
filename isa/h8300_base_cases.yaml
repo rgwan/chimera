@@ -2910,6 +2910,78 @@ cases:
       ccr_hnzvc: "10101"
       trap: false
 
+  - id: h8_add8_imm_r2h_half_carry
+    instruction: h8_add8_imm_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "add.b #0x01, r2h"
+    words:
+      - "0x8201"
+    decode_keys: ["8", "2"]
+    sail:
+      decode: H8_ADD8_IMM
+      execute: h8_exec_add8
+    initial:
+      pc: "0x0000"
+      regs:
+        r2h: "0x0f"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r2h: "0x10"
+      ccr_hnzvc: "10000"
+      trap: false
+
+  - id: h8_add8_imm_r3h_signed_overflow
+    instruction: h8_add8_imm_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "add.b #0x01, r3h"
+    words:
+      - "0x8301"
+    decode_keys: ["8", "3"]
+    sail:
+      decode: H8_ADD8_IMM
+      execute: h8_exec_add8
+    initial:
+      pc: "0x0000"
+      regs:
+        r3h: "0x7f"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r3h: "0x80"
+      ccr_hnzvc: "11010"
+      trap: false
+
+  - id: h8_add8_imm_r4h_carry_no_overflow
+    instruction: h8_add8_imm_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "add.b #0xff, r4h"
+    words:
+      - "0x84ff"
+    decode_keys: ["8", "4"]
+    sail:
+      decode: H8_ADD8_IMM
+      execute: h8_exec_add8
+    initial:
+      pc: "0x0000"
+      regs:
+        r4h: "0xff"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r4h: "0xfe"
+      ccr_hnzvc: "11001"
+      trap: false
+
   - id: h8_cmp8_imm_r0h
     instruction: h8_cmp8_imm_r8
     status: supported

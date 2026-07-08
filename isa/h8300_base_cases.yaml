@@ -6719,6 +6719,56 @@ cases:
       ccr_hnzvc: "11001"
       trap: false
 
+  - id: h8_cmp16_r2_r3_signed_overflow
+    instruction: h8_cmp16_r16_r16
+    status: supported
+    check_area: flags
+    assembler:
+      - "cmp.w r2, r3"
+    words:
+      - "0x1d23"
+    decode_keys: ["1", "d"]
+    sail:
+      decode: H8_CMP16_R16_R16
+      execute: h8_exec_cmp16
+    initial:
+      pc: "0x0000"
+      regs:
+        r2: "0x0001"
+        r3: "0x8000"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r3: "0x8000"
+      ccr_hnzvc: "10010"
+      trap: false
+
+  - id: h8_cmp16_r4_r5_equal
+    instruction: h8_cmp16_r16_r16
+    status: supported
+    check_area: flags
+    assembler:
+      - "cmp.w r4, r5"
+    words:
+      - "0x1d45"
+    decode_keys: ["1", "d"]
+    sail:
+      decode: H8_CMP16_R16_R16
+      execute: h8_exec_cmp16
+    initial:
+      pc: "0x0000"
+      regs:
+        r4: "0x4321"
+        r5: "0x4321"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r5: "0x4321"
+      ccr_hnzvc: "00100"
+      trap: false
+
   - id: h8_bra_rel8_taken
     instruction: h8_branch_rel8
     status: supported
@@ -7463,3 +7513,57 @@ reject_cases:
       expected:
         "0x0142": "0xaa"
         "0x0143": "0x55"
+
+  - id: h8_reject_movfpe_abs16_r7l_base
+    status: rejected
+    check_area: trap
+    assembler:
+      - "movfpe @0xff80:16, r7l"
+    words:
+      - "0x6a4f"
+      - "0xff80"
+    decode_keys: ["6", "a"]
+    initial:
+      pc: "0x0000"
+      regs:
+        r7l: "0x00"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0000"
+      regs:
+        r7l: "0x00"
+      ccr_hnzvc: preserve
+      trap: true
+    memory:
+      initial:
+        "0xff80": "0x7f"
+      expected:
+        "0xff80": "0x7f"
+
+  - id: h8_reject_movtpe_r0l_abs16_base
+    status: rejected
+    check_area: trap
+    assembler:
+      - "movtpe r0l, @0x0140:16"
+    words:
+      - "0x6ac8"
+      - "0x0140"
+    decode_keys: ["6", "a"]
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x80"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0000"
+      regs:
+        r0l: "0x80"
+      ccr_hnzvc: preserve
+      trap: true
+    memory:
+      initial:
+        "0x0140": "0xaa"
+        "0x0141": "0x55"
+      expected:
+        "0x0140": "0xaa"
+        "0x0141": "0x55"

@@ -238,3 +238,76 @@ cases:
         addr: "0x0142"
         wmask: "01"
         wdata: "0x0000"
+
+  - id: h8_movfpe_abs16_r7l_high_addr
+    instruction: h8_movfpe_abs16_r8
+    status: supported
+    check_area: memory
+    assembler:
+      - "movfpe @0xff80:16, r7l"
+    words:
+      - "0x6a4f"
+      - "0xff80"
+    decode_keys: ["6", "a"]
+    sail:
+      decode: H8_MOVFPE_ABS16_R8
+      execute: h8_exec_movfpe_abs_to_reg
+    initial:
+      pc: "0x0000"
+      regs:
+        r7l: "0x00"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0004"
+      regs:
+        r7l: "0x7f"
+      ccr_hnzvc: "10001"
+      trap: false
+    memory:
+      initial:
+        "0xff80": "0x7f"
+      expected:
+        "0xff80": "0x7f"
+      access:
+        kind: read
+        width: byte
+        addr: "0xff80"
+        wmask: "00"
+        rdata: "0x007f"
+
+  - id: h8_movtpe_r0l_abs16_negative
+    instruction: h8_movtpe_r8_abs16
+    status: supported
+    check_area: memory
+    assembler:
+      - "movtpe r0l, @0x0140:16"
+    words:
+      - "0x6ac8"
+      - "0x0140"
+    decode_keys: ["6", "a"]
+    sail:
+      decode: H8_MOVTPE_R8_ABS16
+      execute: h8_exec_movtpe_reg_to_abs
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x80"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0004"
+      regs: {}
+      ccr_hnzvc: "11001"
+      trap: false
+    memory:
+      initial:
+        "0x0140": "0xaa"
+        "0x0141": "0x55"
+      expected:
+        "0x0140": "0x80"
+        "0x0141": "0x55"
+      access:
+        kind: write
+        width: byte
+        addr: "0x0140"
+        wmask: "01"
+        wdata: "0x0080"

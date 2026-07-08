@@ -17,11 +17,56 @@ SAIL_PATH = REPO_ROOT / "sail" / "h8300.sail"
 OUT_DIR = REPO_ROOT / "result" / "sail-coverage"
 CONSTRUCTOR_RE = re.compile(r"^\s*(H8_[A-Z0-9_]+)\s*:")
 BIT_MEMORY_REQUIRED_OPS = {
-    "h8_bit_abs8_read": {"band", "biand", "bild", "bior", "bixor", "bld", "bor", "btst", "bxor"},
+    "h8_bit_abs8_read": {
+        "band",
+        "biand",
+        "bild",
+        "bior",
+        "bixor",
+        "bld",
+        "bor",
+        "btst",
+        "bxor",
+    },
     "h8_bit_abs8_write": {"bclr", "bist", "bnot", "bset", "bst"},
-    "h8_bit_r16i_read": {"band", "biand", "bild", "bior", "bixor", "bld", "bor", "btst", "bxor"},
+    "h8_bit_r16i_read": {
+        "band",
+        "biand",
+        "bild",
+        "bior",
+        "bixor",
+        "bld",
+        "bor",
+        "btst",
+        "bxor",
+    },
     "h8_bit_r16i_write": {"bclr", "bist", "bnot", "bset", "bst"},
 }
+BIT_MEMORY_CONSTRUCTORS = {
+    "h8_bit_abs8_read": "H8_BIT_ABS8_READ",
+    "h8_bit_abs8_write": "H8_BIT_ABS8_WRITE",
+    "h8_bit_r16i_read": "H8_BIT_R16I_READ",
+    "h8_bit_r16i_write": "H8_BIT_R16I_WRITE",
+}
+BIT_MEMORY_DECODE_FUNCTIONS = {
+    "h8_bit_abs8_read": "h8_decode_bit_abs8_read",
+    "h8_bit_abs8_write": "h8_decode_bit_abs8_write",
+    "h8_bit_r16i_read": "h8_decode_bit_r16i_read",
+    "h8_bit_r16i_write": "h8_decode_bit_r16i_write",
+}
+BIT_MEMORY_EXEC_HELPERS = {
+    "h8_bit_abs8_read": "h8_bit_read_ccr",
+    "h8_bit_abs8_write": "h8_bit_write_result",
+    "h8_bit_r16i_read": "h8_bit_read_ccr",
+    "h8_bit_r16i_write": "h8_bit_write_result",
+}
+BIT_OP_ENUM_RE = re.compile(
+    r"\bH8_BIT_("
+    + "|".join(
+        sorted({op.upper() for ops in BIT_MEMORY_REQUIRED_OPS.values() for op in ops})
+    )
+    + r")\b"
+)
 
 
 def h8_constructors(sail_text: str) -> list[str]:
@@ -117,6 +162,62 @@ def bit_memory_gap_summary(coverage: dict[str, object]) -> list[dict[str, object
                 "owner": "isa_yaml_cases",
             })
     return gaps
+
+
+def sail_function_body(sail_text: str, function_name: str) -> str:
+    start = sail_text.find(f"function {function_name}")
+    if start < 0:
+        raise ValueError(f"Sail function {function_name} not found")
+    ends = [
+        index
+        for marker in ("\nfunction ", "\nval ", "\ntype ", "\nstruct ", "\nunion ")
+        for index in [sail_text.find(marker, start + 1)]
+        if index >= 0
+    ]
+    return sail_text[start:min(ends)] if ends else sail_text[start:]
+
+
+def sail_bit_ops_in_function(sail_text: str, function_name: str) -> set[str]:
+    body = sail_function_body(sail_text, function_name)
+    return {match.group(1).lower() for match in BIT_OP_ENUM_RE.finditer(body)}
+
+
+def bit_memory_model_coverage(sail_text: str) -> dict[str, object]:
+    machine_body = sail_function_body(sail_text, "h8_execute_machine")
+    coverage = {}
+    for instruction, required in BIT_MEMORY_REQUIRED_OPS.items():
+        constructor = BIT_MEMORY_CONSTRUCTORS[instruction]
+        decode_function = BIT_MEMORY_DECODE_FUNCTIONS[instruction]
+        execute_helper = BIT_MEMORY_EXEC_HELPERS[instruction]
+        decode_ops = sail_bit_ops_in_function(sail_text, decode_function)
+        execute_ops = sail_bit_ops_in_function(sail_text, execute_helper)
+        machine_handler = f"{constructor}(" in machine_body
+        coverage[instruction] = {
+            "constructor": constructor,
+            "decode_function": decode_function,
+            "decode_missing_ops": sorted(required - decode_ops),
+            "decode_ops": sorted(decode_ops & required),
+            "execute_helper": execute_helper,
+            "execute_missing_ops": sorted(required - execute_ops),
+            "execute_ops": sorted(execute_ops & required),
+            "machine_handler": machine_handler,
+            "required_ops": sorted(required),
+            "status": "complete"
+            if required <= decode_ops and required <= execute_ops and machine_handler
+            else "incomplete",
+        }
+    return coverage
+
+
+def bit_memory_model_gap_count(coverage: dict[str, object]) -> int:
+    count = 0
+    for entry in coverage.values():
+        if not isinstance(entry, dict):
+            continue
+        count += len(entry.get("decode_missing_ops", []))
+        count += len(entry.get("execute_missing_ops", []))
+        count += 0 if entry.get("machine_handler") else 1
+    return count
 
 
 def main() -> int:
@@ -239,6 +340,10 @@ def main() -> int:
     bit_memory_coverage = bit_memory_subop_coverage(tables)
     bit_memory_gap_count = sum(len(entry["missing_ops"]) for entry in bit_memory_coverage.values())
     bit_memory_gaps = bit_memory_gap_summary(bit_memory_coverage)
+    bit_model_coverage = bit_memory_model_coverage(sail_text)
+    bit_model_gap_count = bit_memory_model_gap_count(bit_model_coverage)
+    if bit_model_gap_count:
+        blocking_errors.append("incomplete Sail bit-memory model coverage")
 
     instruction_mappings_by_constructor = {
         name: rows for name, rows in instruction_mappings.items() if rows
@@ -273,6 +378,8 @@ def main() -> int:
         "advisory_gaps": advisory_gaps,
         "bit_memory_gap_summary": bit_memory_gaps,
         "bit_memory_missing_subop_count": bit_memory_gap_count,
+        "bit_memory_model_coverage": bit_model_coverage,
+        "bit_memory_model_gap_count": bit_model_gap_count,
         "bit_memory_subop_coverage": bit_memory_coverage,
         "case_count_by_check_area": dict(sorted(area_counts.items())),
         "case_count_by_constructor": case_count_by_constructor,
@@ -297,6 +404,8 @@ def main() -> int:
         },
         "bit_memory_gap_summary": bit_memory_gaps,
         "bit_memory_missing_subop_count": bit_memory_gap_count,
+        "bit_memory_model_coverage": bit_model_coverage,
+        "bit_memory_model_gap_count": bit_model_gap_count,
         "constructor_coverage": constructor_coverage,
         "constructor_count": len(constructors),
         "covered_constructor_count": constructor_coverage["mapped_constructor_count"],
@@ -321,7 +430,8 @@ def main() -> int:
     print(
         f"sail coverage {report['status']}: {report_path.relative_to(REPO_ROOT)} "
         f"semantic={report['semantic_covered_constructor_count']}/{report['constructor_count']} "
-        f"bit_subop_gaps={bit_memory_gap_count}"
+        f"bit_subop_gaps={bit_memory_gap_count} "
+        f"bit_model_gaps={bit_model_gap_count}"
     )
     if blocking_errors:
         for error in blocking_errors:

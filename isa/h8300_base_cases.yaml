@@ -3860,6 +3860,198 @@ cases:
       ccr_hnzvc: "11001"
       trap: false
 
+  - id: h8_shll8_r1l_no_overflow
+    instruction: h8_shll8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "shll.b r1l"
+    words:
+      - "0x1009"
+    decode_keys: ["1", "0"]
+    sail:
+      decode: H8_SHLL8_R8
+      execute: h8_exec_shll8
+    initial:
+      pc: "0x0000"
+      regs:
+        r1l: "0x40"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1l: "0x80"
+      ccr_hnzvc: "11000"
+      trap: false
+
+  - id: h8_shal8_r1l_no_overflow
+    instruction: h8_shal8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "shal.b r1l"
+    words:
+      - "0x1089"
+    decode_keys: ["1", "0"]
+    sail:
+      decode: H8_SHAL8_R8
+      execute: h8_exec_shal8
+    initial:
+      pc: "0x0000"
+      regs:
+        r1l: "0xc0"
+      ccr_hnzvc: "10000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1l: "0x80"
+      ccr_hnzvc: "11001"
+      trap: false
+
+  - id: h8_shlr8_r1l_msb_clear
+    instruction: h8_shlr8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "shlr.b r1l"
+    words:
+      - "0x1109"
+    decode_keys: ["1", "1"]
+    sail:
+      decode: H8_SHLR8_R8
+      execute: h8_exec_shlr8
+    initial:
+      pc: "0x0000"
+      regs:
+        r1l: "0x80"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1l: "0x40"
+      ccr_hnzvc: "10000"
+      trap: false
+
+  - id: h8_shar8_r1l_positive_zero
+    instruction: h8_shar8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "shar.b r1l"
+    words:
+      - "0x1189"
+    decode_keys: ["1", "1"]
+    sail:
+      decode: H8_SHAR8_R8
+      execute: h8_exec_shar8
+    initial:
+      pc: "0x0000"
+      regs:
+        r1l: "0x01"
+      ccr_hnzvc: "10000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1l: "0x00"
+      ccr_hnzvc: "10101"
+      trap: false
+
+  - id: h8_rotxl8_r1l_no_carry_out
+    instruction: h8_rotxl8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "rotxl.b r1l"
+    words:
+      - "0x1209"
+    decode_keys: ["1", "2"]
+    sail:
+      decode: H8_ROTXL8_R8
+      execute: h8_exec_rotxl8
+    initial:
+      pc: "0x0000"
+      regs:
+        r1l: "0x40"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1l: "0x81"
+      ccr_hnzvc: "11000"
+      trap: false
+
+  - id: h8_rotl8_r1l_no_carry
+    instruction: h8_rotl8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "rotl.b r1l"
+    words:
+      - "0x1289"
+    decode_keys: ["1", "2"]
+    sail:
+      decode: H8_ROTL8_R8
+      execute: h8_exec_rotl8
+    initial:
+      pc: "0x0000"
+      regs:
+        r1l: "0x40"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1l: "0x80"
+      ccr_hnzvc: "11000"
+      trap: false
+
+  - id: h8_rotxr8_r1l_no_carry_out
+    instruction: h8_rotxr8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "rotxr.b r1l"
+    words:
+      - "0x1309"
+    decode_keys: ["1", "3"]
+    sail:
+      decode: H8_ROTXR8_R8
+      execute: h8_exec_rotxr8
+    initial:
+      pc: "0x0000"
+      regs:
+        r1l: "0x02"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1l: "0x81"
+      ccr_hnzvc: "11000"
+      trap: false
+
+  - id: h8_rotr8_r1l_no_carry
+    instruction: h8_rotr8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "rotr.b r1l"
+    words:
+      - "0x1389"
+    decode_keys: ["1", "3"]
+    sail:
+      decode: H8_ROTR8_R8
+      execute: h8_exec_rotr8
+    initial:
+      pc: "0x0000"
+      regs:
+        r1l: "0x02"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1l: "0x01"
+      ccr_hnzvc: "10000"
+      trap: false
+
   - id: h8_bset_imm3_r0l
     instruction: h8_bset_imm3_r8
     status: supported

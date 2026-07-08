@@ -4,6 +4,11 @@
 /*.fir
 /*.sv
 /*.v
+/rtl/generated/
+/rtl/**/*.mlirbc
+
+# Diagram render products (SVG is the committed source; generator lives in the skill)
+/doc/diagrams/*.png
 
 # Simulation output
 /test/**/sim_build/

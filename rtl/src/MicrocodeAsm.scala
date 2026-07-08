@@ -71,6 +71,26 @@ object MicrocodeImage:
     // NOP (dispatch 0x00): return to fetch
     0x00 -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
 
+    // Immediate-ALU page (dispatch 0x80|ooo). rd is instr[3:0]; imm8 the 2nd byte.
+    // add.b #imm,Rd
+    0x80 -> MW(aSel = ASel.H8, bSel = BSel.Imm8, h8Idx = H8Idx.RdImm, alu = AluOp.Add,
+               flag = FlagCtl.AddSub, wsel = WSel.H8, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    // cmp.b #imm,Rd (flags only, no writeback)
+    0x82 -> MW(aSel = ASel.H8, bSel = BSel.Imm8, h8Idx = H8Idx.RdImm, alu = AluOp.Cmp,
+               flag = FlagCtl.AddSub, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    // or.b #imm,Rd
+    0x84 -> MW(aSel = ASel.H8, bSel = BSel.Imm8, h8Idx = H8Idx.RdImm, alu = AluOp.Or,
+               flag = FlagCtl.Nz, wsel = WSel.H8, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    // xor.b #imm,Rd
+    0x85 -> MW(aSel = ASel.H8, bSel = BSel.Imm8, h8Idx = H8Idx.RdImm, alu = AluOp.Xor,
+               flag = FlagCtl.Nz, wsel = WSel.H8, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    // and.b #imm,Rd
+    0x86 -> MW(aSel = ASel.H8, bSel = BSel.Imm8, h8Idx = H8Idx.RdImm, alu = AluOp.And,
+               flag = FlagCtl.Nz, wsel = WSel.H8, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
     // mov.b #imm8,Rd (dispatch 0x87): Rd = imm8, set N/Z, clear V
     0x87 -> MW(bSel = BSel.Imm8, alu = AluOp.Pass, wsel = WSel.H8, h8Idx = H8Idx.RdImm,
                we = true, flag = FlagCtl.Nz, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),

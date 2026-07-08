@@ -44,6 +44,12 @@ check-flags:
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_flags
 
+check-imm:
+	bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_imm test/core/tb_core_imm.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_imm
+
 gnu-oracle:
 	python3 scripts/check_gnu_oracle.py
 

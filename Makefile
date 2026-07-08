@@ -38,6 +38,12 @@ check-byte:
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_byte
 
+check-flags:
+	bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_flags test/core/tb_core_flags.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_flags
+
 gnu-oracle:
 	python3 scripts/check_gnu_oracle.py
 

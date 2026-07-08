@@ -103,11 +103,12 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     ccr.io.ldWe    := false.B
     ccr.io.ldVal   := 0.U(8)
 
-    // writeback: WSel picks the H8 or internal file (shared index/data)
+    // writeback: WSel picks the H8 or internal file (shared index/data). Byte ops
+    // use the low byte (RnL); full RnH byte-select is a later datapath refinement.
     val toInternal = udec.io.wsel
     h8rf.io.waddr  := h8Idx
     h8rf.io.wdata  := alu.io.y
-    h8rf.io.wmask  := sizeWord.?(3.U(parameter.wmaskWidth), 2.U(parameter.wmaskWidth))
+    h8rf.io.wmask  := sizeWord.?(3.U(parameter.wmaskWidth), 1.U(parameter.wmaskWidth))
     h8rf.io.we     := udec.io.regWe & (!toInternal)
     intrf.io.waddr := udec.io.intIdx
     intrf.io.wdata := alu.io.y

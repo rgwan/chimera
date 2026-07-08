@@ -26,6 +26,12 @@ check-core:
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_core
 
+check-add:
+	bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_add test/core/tb_core_add.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_add
+
 gnu-oracle:
 	python3 scripts/check_gnu_oracle.py
 

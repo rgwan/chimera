@@ -15,7 +15,7 @@ enum H8BranchCond = {
   H8_BVC, H8_BVS, H8_BPL, H8_BMI,
   H8_BGE, H8_BLT, H8_BGT, H8_BLE
 }
-enum H8Profile = {H8_BASE, H8_EXTENDED}
+enum H8Profile = {H8_BASE, H8_LEGACY, H8_EXTENDED}
 enum H8BitOp = {
   H8_BIT_BSET, H8_BIT_BNOT, H8_BIT_BCLR, H8_BIT_BTST,
   H8_BIT_BST, H8_BIT_BIST, H8_BIT_BLD, H8_BIT_BILD,
@@ -86,6 +86,8 @@ union H8Inst = {
   H8_MOV8_R8_ABS8 : (byte, H8R8),
   H8_MOV8_ABS16_R8 : (H8R8, word),
   H8_MOV8_R8_ABS16 : (word, H8R8),
+  H8_MOVFPE_ABS16_R8 : (H8R8, word),
+  H8_MOVTPE_R8_ABS16 : (word, H8R8),
   H8_MOV16_ABS16_R16 : (h8_r16, word),
   H8_MOV16_R16_ABS16 : (word, h8_r16),
   H8_ADD8_IMM : (H8R8, byte),
@@ -470,6 +472,12 @@ function h8_exec_mov8_reg_to_abs(m : H8Machine, addr : word, rs : H8R8) -> H8Mac
   let st1 = {m.st with ccr = h8_nz_flags(H8_BYTE, 0x00 @ value, m.st.ccr), pc = m.st.pc + 0x0004};
   {m with st = st1, mem = mem1, trap = false}
 }
+
+function h8_exec_movfpe_abs_to_reg(m : H8Machine, rd : H8R8, addr : word) -> H8Machine =
+  h8_exec_mov8_abs_to_reg(m, rd, addr)
+
+function h8_exec_movtpe_reg_to_abs(m : H8Machine, addr : word, rs : H8R8) -> H8Machine =
+  h8_exec_mov8_reg_to_abs(m, addr, rs)
 
 function h8_exec_mov16_abs_to_reg(m : H8Machine, rd : h8_r16, addr : word) -> H8Machine = {
   let value : word = h8_mem_read16(m.mem, addr);
@@ -1001,7 +1009,14 @@ function h8_branch_cond_from_code(code : bits(4)) -> H8BranchCond =
 function h8_word_rr_allowed(profile : H8Profile, op1 : byte) -> bool =
   match profile {
     H8_BASE => op1[7] == 0b0 & op1[3] == 0b0,
+    H8_LEGACY => op1[7] == 0b0 & op1[3] == 0b0,
     H8_EXTENDED => true
+  }
+
+function h8_legacy_peripheral_allowed(profile : H8Profile) -> bool =
+  match profile {
+    H8_LEGACY => true,
+    _ => false
   }
 
 function h8_decode_bit_abs8_read(addr : byte, ext : word) -> option(H8Inst) = {
@@ -1236,8 +1251,12 @@ function h8_decode_profile(profile : H8Profile, first : word, ext : word) -> opt
              Some(H8_MOV16_R16_R16I(h8_r16_from_code(op1[6 .. 4]), h8_r16_from_code(op1[2 .. 0])))
            else if op0 == 0x6A & op1[7 .. 4] == 0b0000 then
              Some(H8_MOV8_ABS16_R8(rr8_rd, ext))
+           else if op0 == 0x6A & op1[7 .. 4] == 0b0100 & h8_legacy_peripheral_allowed(profile) then
+             Some(H8_MOVFPE_ABS16_R8(rr8_rd, ext))
            else if op0 == 0x6A & op1[7 .. 4] == 0b1000 then
              Some(H8_MOV8_R8_ABS16(ext, rr8_rd))
+           else if op0 == 0x6A & op1[7 .. 4] == 0b1100 & h8_legacy_peripheral_allowed(profile) then
+             Some(H8_MOVTPE_R8_ABS16(ext, rr8_rd))
            else if op0 == 0x6B & op1[7 .. 3] == 0b00000 then
              Some(H8_MOV16_ABS16_R16(h8_r16_from_code(op1[2 .. 0]), ext))
            else if op0 == 0x6B & op1[7 .. 3] == 0b10000 then
@@ -1348,6 +1367,8 @@ function h8_execute(st : H8State, inst : H8Inst) -> H8ExecResult =
     H8_MOV8_R8_ABS8(_, _) => struct {st = st, trap = true},
     H8_MOV8_ABS16_R8(_, _) => struct {st = st, trap = true},
     H8_MOV8_R8_ABS16(_, _) => struct {st = st, trap = true},
+    H8_MOVFPE_ABS16_R8(_, _) => struct {st = st, trap = true},
+    H8_MOVTPE_R8_ABS16(_, _) => struct {st = st, trap = true},
     H8_MOV16_ABS16_R16(_, _) => struct {st = st, trap = true},
     H8_MOV16_R16_ABS16(_, _) => struct {st = st, trap = true},
     H8_ADD8_IMM(rd, imm) => struct {st = h8_exec_add8(st, rd, imm), trap = false},
@@ -1444,6 +1465,8 @@ function h8_execute_machine(m : H8Machine, inst : H8Inst) -> H8Machine =
     H8_MOV8_R8_ABS8(addr, rs) => h8_exec_mov8_reg_to_abs8(m, addr, rs),
     H8_MOV8_ABS16_R8(rd, addr) => h8_exec_mov8_abs_to_reg(m, rd, addr),
     H8_MOV8_R8_ABS16(addr, rs) => h8_exec_mov8_reg_to_abs(m, addr, rs),
+    H8_MOVFPE_ABS16_R8(rd, addr) => h8_exec_movfpe_abs_to_reg(m, rd, addr),
+    H8_MOVTPE_R8_ABS16(addr, rs) => h8_exec_movtpe_reg_to_abs(m, addr, rs),
     H8_MOV16_ABS16_R16(rd, addr) => h8_exec_mov16_abs_to_reg(m, rd, addr),
     H8_MOV16_R16_ABS16(addr, rs) => h8_exec_mov16_reg_to_abs(m, addr, rs),
     H8_BIT_ABS8_READ(op, index, addr) => h8_exec_bit_abs8_read(m, op, index, addr),
@@ -1660,6 +1683,12 @@ function h8_decode_selftest() -> bool = {
   let s6 = h8_decode_execute({s5.st with ccr = h8_test_ccr(0b0, 0b0, 0b0, 0b0)}, 0x46FE, 0x0000);
   let s7 = h8_decode_execute(s6.st, 0x4601, 0x0000);
   let s8 = h8_decode_execute(s6.st, 0x0100, 0x0000);
+  let legacy_mem0 = h8_mem_write8(h8_empty_mem(), 0x1234, 0x80);
+  let legacy_base = h8_make_machine({h8_reset() with ccr = h8_test_hnzvc(0b1, 0b0, 0b0, 0b1, 0b1)}, legacy_mem0);
+  let legacy_from = h8_decode_execute_machine_profile(legacy_base, H8_LEGACY, 0x6A48, 0x1234);
+  let legacy_to = h8_decode_execute_machine_profile(legacy_from, H8_LEGACY, 0x6AC8, 0x1236);
+  let base_from = h8_decode_execute_machine(legacy_base, 0x6A48, 0x1234);
+  let base_to = h8_decode_execute_machine(legacy_base, 0x6AC8, 0x1236);
   let bad_branch_decode : option(H8Inst) = h8_decode(0x4601, 0x0000);
   let bad_opcode_decode : option(H8Inst) = h8_decode(0x0100, 0x0000);
   let bad_branch = is_none(bad_branch_decode);
@@ -1675,6 +1704,12 @@ function h8_decode_selftest() -> bool = {
     & s6.st.pc == s5.st.pc
     & bad_branch
     & bad_opcode
+    & read_r8(legacy_from.st, r0l) == 0x80
+    & h8_mem_read8(legacy_to.mem, 0x1236) == 0x80
+    & not_bool(legacy_from.trap)
+    & not_bool(legacy_to.trap)
+    & base_from.trap
+    & base_to.trap
     & s7.trap
     & s8.trap
 }

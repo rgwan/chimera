@@ -3200,6 +3200,55 @@ cases:
       ccr_hnzvc: "11010"
       trap: false
 
+  - id: h8_addx8_imm_r3l_carry_in_half
+    instruction: h8_addx8_imm_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "addx.b #0x0f, r3l"
+    words:
+      - "0x9b0f"
+    decode_keys: ["9", "b"]
+    sail:
+      decode: H8_ADDX8_IMM
+      execute: h8_exec_addx8
+    initial:
+      pc: "0x0000"
+      regs:
+        r3l: "0x00"
+      ccr_hnzvc: "00001"
+    expected:
+      pc: "0x0002"
+      regs:
+        r3l: "0x10"
+      ccr_hnzvc: "10000"
+      trap: false
+
+  - id: h8_addx8_r4h_r5h_carry_out
+    instruction: h8_addx8_r8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "addx.b r4h, r5h"
+    words:
+      - "0x0e45"
+    decode_keys: ["0", "e"]
+    sail:
+      decode: H8_ADDX8_R8_R8
+      execute: h8_exec_addx8
+    initial:
+      pc: "0x0000"
+      regs:
+        r4h: "0xff"
+        r5h: "0xff"
+      ccr_hnzvc: "00001"
+    expected:
+      pc: "0x0002"
+      regs:
+        r5h: "0xff"
+      ccr_hnzvc: "11001"
+      trap: false
+
   - id: h8_daa8_r0h_no_adjust
     instruction: h8_daa8_r8
     status: supported
@@ -6198,6 +6247,55 @@ cases:
       regs:
         r0l: "0x00"
       ccr_hnzvc: "10010"
+      trap: false
+
+  - id: h8_subx8_r6h_r7h_sticky_preserve
+    instruction: h8_subx8_r8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "subx.b r6h, r7h"
+    words:
+      - "0x1e67"
+    decode_keys: ["1", "e"]
+    sail:
+      decode: H8_SUBX8_R8_R8
+      execute: h8_exec_subx8
+    initial:
+      pc: "0x0000"
+      regs:
+        r6h: "0x42"
+        r7h: "0x43"
+      ccr_hnzvc: "00101"
+    expected:
+      pc: "0x0002"
+      regs:
+        r7h: "0x00"
+      ccr_hnzvc: "00100"
+      trap: false
+
+  - id: h8_subx8_imm_r1l_borrow_in_half
+    instruction: h8_subx8_imm_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "subx.b #0x00, r1l"
+    words:
+      - "0xb900"
+    decode_keys: ["b", "9"]
+    sail:
+      decode: H8_SUBX8_IMM
+      execute: h8_exec_subx8
+    initial:
+      pc: "0x0000"
+      regs:
+        r1l: "0x10"
+      ccr_hnzvc: "00001"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1l: "0x0f"
+      ccr_hnzvc: "10000"
       trap: false
 
   - id: h8_das8_r0h_no_adjust

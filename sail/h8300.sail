@@ -147,7 +147,9 @@ union H8Inst = {
   H8_ADD16_R16_R16 : (h8_r16, h8_r16),
   H8_MOV16_R16_R16 : (h8_r16, h8_r16),
   H8_SUB16_R16_R16 : (h8_r16, h8_r16),
-  H8_CMP16_R16_R16 : (h8_r16, h8_r16)
+  H8_CMP16_R16_R16 : (h8_r16, h8_r16),
+  H8_MULXU_R8_R16 : (h8_r16, H8R8),
+  H8_DIVXU_R8_R16 : (h8_r16, H8R8)
 }
 
 struct H8ExecResult = {
@@ -638,6 +640,52 @@ function h8_exec_subs16(st : H8State, rd : h8_r16, value : word) -> H8State = {
   let result : word = read_r16(st, rd) - value;
   let st1 = write_r16(st, rd, result);
   {st1 with pc = st.pc + 0x0002}
+}
+
+function h8_shl16_1(value : word) -> word =
+  value[14 .. 0] @ 0b0
+
+function h8_mulxu_product(multiplicand : byte, multiplier : byte) -> word = {
+  var acc : word = 0x0000;
+  var term : word = 0x00 @ multiplicand;
+  foreach (i from 0 to 7) {
+    if multiplier[i] == 0b1 then acc = acc + term else ();
+    term = h8_shl16_1(term)
+  };
+  acc
+}
+
+function h8_exec_mulxu(st : H8State, rd : h8_r16, rs : H8R8) -> H8State = {
+  let product : word = h8_mulxu_product(read_r16(st, rd)[7 .. 0], read_r8(st, rs));
+  let st1 = write_r16(st, rd, product);
+  {st1 with pc = st.pc + 0x0002}
+}
+
+function h8_divxu_result(dividend : word, divisor_byte : byte) -> word = {
+  let divisor : word = 0x00 @ divisor_byte;
+  var remainder : word = 0x0000;
+  var quotient : word = 0x0000;
+  foreach (i from 0 to 15) {
+    remainder = remainder[14 .. 0] @ dividend[15 - i];
+    quotient = h8_shl16_1(quotient);
+    if unsigned(remainder) >= unsigned(divisor) then {
+      remainder = remainder - divisor;
+      quotient = quotient | 0x0001
+    } else ()
+  };
+  remainder[7 .. 0] @ quotient[7 .. 0]
+}
+
+function h8_exec_divxu(st : H8State, rd : h8_r16, rs : H8R8) -> H8State = {
+  let divisor : byte = read_r8(st, rs);
+  let ccr1 = {st.ccr with n = divisor[7], z = bool_to_bit(divisor == 0x00)};
+  if divisor == 0x00 then
+    {st with ccr = ccr1, pc = st.pc + 0x0002}
+  else {
+    let result : word = h8_divxu_result(read_r16(st, rd), divisor);
+    let st1 = write_r16(st, rd, result);
+    {st1 with ccr = ccr1, pc = st.pc + 0x0002}
+  }
 }
 
 function h8_exec_and8(st : H8State, rd : H8R8, value : byte) -> H8State = {
@@ -1209,7 +1257,11 @@ function h8_decode_profile(profile : H8Profile, first : word, ext : word) -> opt
              Some(H8_BRANCH(h8_branch_cond_from_code(op0[3 .. 0]), op1))
            else
              None(),
-    0x5 => if op0 == 0x54 & op1 == 0x70 then
+    0x5 => if op0 == 0x50 & op1[3] == 0b0 then
+             Some(H8_MULXU_R8_R16(h8_r16_from_code(op1[2 .. 0]), rr8_rs))
+           else if op0 == 0x51 & op1[3] == 0b0 then
+             Some(H8_DIVXU_R8_R16(h8_r16_from_code(op1[2 .. 0]), rr8_rs))
+           else if op0 == 0x54 & op1 == 0x70 then
              Some(H8_RTS())
            else if op0 == 0x56 & op1 == 0x70 then
              Some(H8_RTE())
@@ -1428,7 +1480,9 @@ function h8_execute(st : H8State, inst : H8Inst) -> H8ExecResult =
     H8_ADD16_R16_R16(rd, rs) => struct {st = h8_exec_add16(st, rd, read_r16(st, rs)), trap = false},
     H8_MOV16_R16_R16(rd, rs) => struct {st = h8_exec_mov16(st, rd, rs), trap = false},
     H8_SUB16_R16_R16(rd, rs) => struct {st = h8_exec_sub16(st, rd, read_r16(st, rs)), trap = false},
-    H8_CMP16_R16_R16(rd, rs) => struct {st = h8_exec_cmp16(st, rd, read_r16(st, rs)), trap = false}
+    H8_CMP16_R16_R16(rd, rs) => struct {st = h8_exec_cmp16(st, rd, read_r16(st, rs)), trap = false},
+    H8_MULXU_R8_R16(rd, rs) => struct {st = h8_exec_mulxu(st, rd, rs), trap = false},
+    H8_DIVXU_R8_R16(rd, rs) => struct {st = h8_exec_divxu(st, rd, rs), trap = false}
   }
 
 function h8_decode_execute_profile(st : H8State, profile : H8Profile, first : word, ext : word) -> H8ExecResult =

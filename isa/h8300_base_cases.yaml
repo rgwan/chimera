@@ -366,6 +366,34 @@ instructions:
       execute: h8_exec_add16
     effects: [pc, rd16, ccr_hnzvc]
 
+  - id: h8_mulxu_r8_r16
+    assembler_template: "mulxu {rs8}, {rd16}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff08"
+      match: "0x5000"
+      fields:
+        rs8: "word[7:4]"
+        rd16: "word[2:0]"
+    sail:
+      decode: H8_MULXU_R8_R16
+      execute: h8_exec_mulxu
+    effects: [pc, rd16]
+
+  - id: h8_divxu_r8_r16
+    assembler_template: "divxu {rs8}, {rd16}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff08"
+      match: "0x5100"
+      fields:
+        rs8: "word[7:4]"
+        rd16: "word[2:0]"
+    sail:
+      decode: H8_DIVXU_R8_R16
+      execute: h8_exec_divxu
+    effects: [pc, rd16, ccr_hnzvc]
+
   - id: h8_inc8_r8
     assembler_template: "inc.b {rd8}"
     length_bytes: 2
@@ -3234,6 +3262,156 @@ cases:
       regs:
         r0: "0x8000"
       ccr_hnzvc: "11010"
+      trap: false
+
+  - id: h8_mulxu_r0h_r3_product
+    instruction: h8_mulxu_r8_r16
+    status: supported
+    check_area: execute
+    assembler:
+      - "mulxu r0h, r3"
+    words:
+      - "0x5003"
+    decode_keys: ["5", "0"]
+    sail:
+      decode: H8_MULXU_R8_R16
+      execute: h8_exec_mulxu
+    initial:
+      pc: "0x0000"
+      regs:
+        r0h: "0x12"
+        r3: "0xab34"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r3: "0x03a8"
+      ccr_hnzvc: "10011"
+      trap: false
+
+  - id: h8_mulxu_r0l_r1_low_source
+    instruction: h8_mulxu_r8_r16
+    status: supported
+    check_area: execute
+    assembler:
+      - "mulxu r0l, r1"
+    words:
+      - "0x5081"
+    decode_keys: ["5", "0"]
+    sail:
+      decode: H8_MULXU_R8_R16
+      execute: h8_exec_mulxu
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0xff"
+        r1: "0x0002"
+      ccr_hnzvc: "01101"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1: "0x01fe"
+      ccr_hnzvc: "01101"
+      trap: false
+
+  - id: h8_divxu_r0l_r1_valid
+    instruction: h8_divxu_r8_r16
+    status: supported
+    check_area: flags
+    assembler:
+      - "divxu r0l, r1"
+    words:
+      - "0x5181"
+    decode_keys: ["5", "1"]
+    sail:
+      decode: H8_DIVXU_R8_R16
+      execute: h8_exec_divxu
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x12"
+        r1: "0x0234"
+      ccr_hnzvc: "11111"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1: "0x061f"
+      ccr_hnzvc: "10011"
+      trap: false
+
+  - id: h8_divxu_r2h_r4_negative_divisor
+    instruction: h8_divxu_r8_r16
+    status: supported
+    check_area: flags
+    assembler:
+      - "divxu r2h, r4"
+    words:
+      - "0x5124"
+    decode_keys: ["5", "1"]
+    sail:
+      decode: H8_DIVXU_R8_R16
+      execute: h8_exec_divxu
+    initial:
+      pc: "0x0000"
+      regs:
+        r2h: "0x80"
+        r4: "0x4001"
+      ccr_hnzvc: "00001"
+    expected:
+      pc: "0x0002"
+      regs:
+        r4: "0x0180"
+      ccr_hnzvc: "01001"
+      trap: false
+
+  - id: h8_divxu_r0h_r1_zero_divisor
+    instruction: h8_divxu_r8_r16
+    status: supported
+    check_area: flags
+    assembler:
+      - "divxu r0h, r1"
+    words:
+      - "0x5101"
+    decode_keys: ["5", "1"]
+    sail:
+      decode: H8_DIVXU_R8_R16
+      execute: h8_exec_divxu
+    initial:
+      pc: "0x0000"
+      regs:
+        r0h: "0x00"
+        r1: "0xbeef"
+      ccr_hnzvc: "11011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1: "0xbeef"
+      ccr_hnzvc: "10111"
+      trap: false
+
+  - id: h8_divxu_r0l_r1_overflow_truncate
+    instruction: h8_divxu_r8_r16
+    status: supported
+    check_area: flags
+    assembler:
+      - "divxu r0l, r1"
+    words:
+      - "0x5181"
+    decode_keys: ["5", "1"]
+    sail:
+      decode: H8_DIVXU_R8_R16
+      execute: h8_exec_divxu
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x01"
+        r1: "0xffff"
+      ccr_hnzvc: "10101"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1: "0x00ff"
+      ccr_hnzvc: "10001"
       trap: false
 
   - id: h8_mov16_r2_r3

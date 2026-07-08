@@ -29,6 +29,7 @@ LD = "h8300-elf-ld"
 
 # The GNU H8/300 simulator does not model the half-carry flag at all.
 UNMODELED_FLAGS = frozenset("H")
+UNMODELED_FLAG_REASON = "gdb_sim_unmodeled"
 
 # Flags whose simulator result diverges from the H8/300 datasheet for a
 # specific instruction; the rest of that instruction is still compared.
@@ -37,6 +38,7 @@ DIVERGENT_FLAGS = {
     "h8_dec8_r8": frozenset("V"),
     "h8_neg8_r8": frozenset("V"),
 }
+DIVERGENT_FLAG_REASON = "gdb_sim_divergent_flag"
 
 # Instructions the simulator executes with datasheet-divergent addressing
 # or results; abstained from rather than compared.
@@ -53,6 +55,7 @@ SIM_DIVERGENT = {
     "h8_subx8_r8_r8": "subx does not model sticky zero",
     "h8_rte": "rte restores ccr differently from datasheet",
 }
+SIM_DIVERGENT_REASON = "gdb_sim_divergent_instruction"
 
 # CCR bit position of each flag in the HNZVC string order.
 CCR_BITS = (5, 3, 2, 1, 0)
@@ -86,12 +89,46 @@ def initial_reg_values(case: dict[str, object]) -> list[int]:
 
 def applicability(case: dict[str, object]) -> str | None:
     if str(case.get("status")) == "rejected":
-        return "rejected encoding has no sim trap semantics"
+        return "rejected_encoding_no_sim_semantics"
     if case["expected"].get("trap"):
-        return "expected trap has no sim semantics"
+        return "expected_trap_no_sim_semantics"
     if any(initial_reg_values(case)[8:]) or any(expected_regs(case)[8:]):
-        return "extended registers absent from H8/300 sim"
-    return SIM_DIVERGENT.get(str(case.get("instruction")))
+        return "extended_registers_absent"
+    if str(case.get("instruction")) in SIM_DIVERGENT:
+        return SIM_DIVERGENT_REASON
+    return None
+
+
+def abstain_reason_text(case: dict[str, object], reason_code: str) -> str:
+    if reason_code == SIM_DIVERGENT_REASON:
+        return SIM_DIVERGENT[str(case.get("instruction"))]
+    return {
+        "expected_trap_no_sim_semantics": "expected trap has no sim semantics",
+        "extended_registers_absent": "extended registers absent from H8/300 sim",
+        "rejected_encoding_no_sim_semantics": "rejected encoding has no sim trap semantics",
+    }[reason_code]
+
+
+def excluded_ccr_flags(case: dict[str, object]) -> list[dict[str, str]]:
+    excluded = [{"flag": flag, "reason_code": UNMODELED_FLAG_REASON} for flag in sorted(UNMODELED_FLAGS)]
+    for flag in sorted(DIVERGENT_FLAGS.get(str(case.get("instruction")), frozenset())):
+        excluded.append({"flag": flag, "reason_code": DIVERGENT_FLAG_REASON})
+    return excluded
+
+
+def compared_ccr_flags(case: dict[str, object]) -> list[str]:
+    excluded = {item["flag"] for item in excluded_ccr_flags(case)}
+    return [flag for flag in "HNZVC" if flag not in excluded]
+
+
+def comparison_scope(case: dict[str, object]) -> dict[str, object]:
+    expected_memory = memory_map(case, "expected")
+    return {
+        "ccr_flags_compared": compared_ccr_flags(case),
+        "ccr_flags_excluded": excluded_ccr_flags(case),
+        "fields": ["pc", "regs", "ccr_hnzvc", "memory"],
+        "memory_addresses_compared": sorted(expected_memory, key=lambda addr: int(addr, 16)),
+    }
 
 
 def words_asm(case: dict[str, object]) -> str:
@@ -188,12 +225,28 @@ def compare(case: dict[str, object], dump: dict[str, int]) -> list[str]:
     return diffs
 
 
+def case_instruction_metadata(case: dict[str, object], instructions: dict[str, dict[str, object]]) -> dict[str, object]:
+    instruction = instructions.get(str(case.get("instruction")), {})
+    sail = instruction.get("sail") if isinstance(instruction, dict) else {}
+    return {
+        "effects": instruction.get("effects", []),
+        "length_bytes": instruction.get("length_bytes"),
+        "sail_decode": sail.get("decode") if isinstance(sail, dict) else None,
+        "sail_execute": sail.get("execute") if isinstance(sail, dict) else None,
+    }
+
+
 def check_case(case: dict[str, object], work: Path) -> dict[str, object]:
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
     skip = applicability(case)
     if skip is not None:
-        return {"status": "skip", "reason": skip}
+        return {
+            "blocking": False,
+            "reason": abstain_reason_text(case, skip),
+            "reason_code": skip,
+            "status": "abstain",
+        }
 
     steps = build_elf(case, work)
     if any(step["status"] != "pass" for step in steps):
@@ -208,6 +261,7 @@ def check_case(case: dict[str, object], work: Path) -> dict[str, object]:
     diffs = compare(case, dump)
     return {
         "status": "pass" if not diffs else "fail",
+        "comparison_scope": comparison_scope(case),
         "diffs": diffs,
         "log": result["log"],
     }
@@ -218,36 +272,89 @@ def main() -> int:
     work_root = OUT_DIR / "work"
 
     results = []
+    blocking_errors = []
     for case_path in check_isa_cases.CASE_PATHS:
+        sail_text = (REPO_ROOT / "sail" / "h8300.sail").read_text(encoding="utf-8")
         table = yaml.safe_load(case_path.read_text(encoding="utf-8"))
+        table_errors, _summary = check_isa_cases.validate_table(table, sail_text)
+        if table_errors:
+            blocking_errors.extend(f"{case_path.relative_to(REPO_ROOT)}: {error}" for error in table_errors)
+            continue
         profile = str(table["profile"])
+        instructions = {
+            str(instruction["id"]): instruction
+            for instruction in table.get("instructions", [])
+            if isinstance(instruction, dict) and isinstance(instruction.get("id"), str)
+        }
         cases = list(table.get("cases", [])) + list(table.get("reject_cases", []))
         for case in cases:
             outcome = check_case(case, work_root / profile / str(case["id"]))
             results.append({
                 "case_id": case["id"],
                 "case_table": str(case_path.relative_to(REPO_ROOT)),
+                "check_area": case.get("check_area"),
                 "instruction": case.get("instruction", "reserved"),
+                "instruction_metadata": case_instruction_metadata(case, instructions),
                 "profile": profile,
+                "words": case.get("words", []),
                 **outcome,
             })
 
     failed = [r for r in results if r["status"] == "fail"]
-    status = "fail" if failed else "pass"
+    skipped = [r for r in results if r["status"] == "abstain"]
+    passed = [r for r in results if r["status"] == "pass"]
+    skip_reasons: dict[str, int] = {}
+    for result in skipped:
+        reason = str(result.get("reason_code", "unknown"))
+        skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
+    if not passed:
+        blocking_errors.append("no comparable GDB oracle cases")
+    status = "fail" if failed or blocking_errors else "pass"
     report = {
-        "case_count": len(results),
-        "cases": results,
+        "abstained_case_count": len(skipped),
+        "abstained_cases": skipped,
+        "abstain_status": "non_blocking",
+        "blocking_errors": blocking_errors,
+        "case_input_count": len(results),
+        "case_source_policy": {
+            "isa_yaml_cases_are_third_party_oracle_data": True,
+            "sail_implementer_must_not_edit_cases": True,
+        },
+        "compared_case_count": len(passed),
+        "compared_cases": passed,
+        "compared_fail_count": len(failed),
+        "compared_pass_count": len(passed),
+        "divergent_flags_by_instruction": {
+            name: sorted(flags) for name, flags in sorted(DIVERGENT_FLAGS.items())
+        },
+        "failed_cases": failed,
+        "global_excluded_flags": [{"flag": flag, "reason_code": UNMODELED_FLAG_REASON} for flag in sorted(UNMODELED_FLAGS)],
+        "limitations": [
+            "gdb simulator evidence is independent execution evidence, not the ISA specification",
+            "abstained cases are advisory, not pass evidence",
+            "memory comparison is final-state only",
+        ],
         "pass_count": sum(1 for r in results if r["status"] == "pass"),
-        "skip_count": sum(1 for r in results if r["status"] == "skip"),
+        "per_instruction_excluded_flags": [
+            {"flags": sorted(flags), "instruction": name, "reason_code": DIVERGENT_FLAG_REASON}
+            for name, flags in sorted(DIVERGENT_FLAGS.items())
+        ],
+        "report_schema": 2,
+        "sim_divergent_instructions": dict(sorted(SIM_DIVERGENT.items())),
+        "skip_count": len(skipped),
+        "skip_reason_counts": dict(sorted(skip_reasons.items())),
         "status": status,
+        "unmodeled_flags": sorted(UNMODELED_FLAGS),
     }
     report_path = OUT_DIR / "gdb-oracle.json"
     report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(
-        f"gdb oracle {status}: {report['pass_count']} pass, "
-        f"{report['skip_count']} skip, {len(failed)} fail: "
+        f"gdb oracle {status}: {report['compared_case_count']} compare, "
+        f"{report['abstained_case_count']} abstain, {len(failed)} fail: "
         f"{report_path.relative_to(REPO_ROOT)}"
     )
+    for error in blocking_errors:
+        print(error)
     for result in failed:
         print(f"{result['case_id']}: {result.get('reason', '; '.join(result.get('diffs', [])))}")
     return 0 if status == "pass" else 1

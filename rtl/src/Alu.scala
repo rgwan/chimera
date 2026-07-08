@@ -55,10 +55,9 @@ object Alu extends Generator[ChimeraParameter, ChimeraLayers, AluIO, ChimeraProb
     val vW = (a.bit(15) === b.bit(15)) & (addY.bit(15) =/= a.bit(15))
     val addV = io.word.?(vW, vB)
 
-    // 1-bit shifts / rotates (byte datapath; H8 shifts are byte)
-    val v7   = a.bit(7)
-    val v0   = a.bit(0)
-    val shl  = a.bits(6, 0) ## 0.B(1)              // logical/arith left
+    // Left shift (SHLL/SHAL) reuses the adder: r+r on the add path gives the
+    // result, carry-out = old bit7 (C) and signed overflow = bit6^bit7 (SHAL V).
+    // Only right shift/rotate keep a dedicated 1-bit path.
     val shlr = 0.B(1) ## a.bits(7, 1)              // logical right
     val shar = a.bit(7).asBits ## a.bits(7, 1)     // arithmetic right
     val rol  = a.bits(6, 0) ## a.bit(7).asBits
@@ -81,7 +80,6 @@ object Alu extends Generator[ChimeraParameter, ChimeraLayers, AluIO, ChimeraProb
     when(io.op === AluOp.Xor.U(4))(y := logic)
     when(io.op === AluOp.Not.U(4))(y := logic)
     when(io.op === AluOp.Pass.U(4))(y := logic)
-    when(io.op === AluOp.Shl1.U(4))(y := shl.asUInt)
     when(io.op === AluOp.Shr1.U(4))(y := shlr.asUInt)
     when(io.op === AluOp.Rol.U(4))(y := rol.asUInt)
     when(io.op === AluOp.Ror.U(4))(y := ror.asUInt)
@@ -89,11 +87,10 @@ object Alu extends Generator[ChimeraParameter, ChimeraLayers, AluIO, ChimeraProb
     when(io.op === AluOp.Rorc.U(4))(y := rorc.asUInt)
     io.y := y
 
-    // overflow: add/sub give signed overflow; SHAL (Shl1) gives v7^v6; else 0
-    val shalV = a.bit(7) =/= a.bit(6)
-    val vSel  = Wire(Bool())
+    // add/sub (and left shift via the adder) give signed overflow; logical ops
+    // force V=0. SHLL forces V=0 through flag_ctl, not here.
+    val vSel = Wire(Bool())
     vSel := addV
-    when(io.op === AluOp.Shl1.U(4))(vSel := shalV)
     when(io.op === AluOp.And.U(4))(vSel := false.B)
     when(io.op === AluOp.Or.U(4))(vSel := false.B)
     when(io.op === AluOp.Xor.U(4))(vSel := false.B)

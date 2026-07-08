@@ -6372,7 +6372,7 @@ cases:
       pc: "0x0002"
       regs:
         r3h: "0x80"
-      ccr_hnzvc: "10000"
+      ccr_hnzvc: "01000"
       trap: false
 
   - id: h8_and8_imm_r4h_positive
@@ -6445,7 +6445,7 @@ cases:
       pc: "0x0002"
       regs:
         r4h: "0x8f"
-      ccr_hnzvc: "10000"
+      ccr_hnzvc: "01000"
       trap: false
 
   - id: h8_xor8_imm_r2h_negative

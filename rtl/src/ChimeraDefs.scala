@@ -35,7 +35,10 @@ object Cond:
   val CcInstr  = 4 // branch condition selected from instr[11:8]
   val Irq      = 5 // pending interrupt latched
 
-/** ALU operation. No barrel shift, no multiply/divide. */
+/** ALU operation. No barrel shift, no multiply/divide. Left shift (SHLL/SHAL)
+  * and ROTXL reuse the adder (`r+r`, `adc r,r`); only right shift/rotate and the
+  * `a[7]`-carry ROTL keep a path here.
+  */
 object AluOp:
   val Add   = 0
   val Sub   = 1
@@ -47,12 +50,12 @@ object AluOp:
   val Not   = 7
   val Pass  = 8
   val Cmp   = 9
-  val Shl1  = 10
-  val Shr1  = 11
-  val Rol   = 12
-  val Ror   = 13
-  val Rolc  = 14
-  val Rorc  = 15
+  val Shar  = 10 // arithmetic right
+  val Shr1  = 11 // logical right
+  val Rol   = 12 // rotate left (adder with cin = old bit7)
+  val Ror   = 13 // rotate right
+  val Rorc  = 14 // rotate right through carry
+  val Rsvd  = 15
 
 /** Flag update group (V/C come from hardware; N/Z/H are microcode). */
 object FlagCtl:

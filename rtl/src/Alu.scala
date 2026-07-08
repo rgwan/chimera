@@ -33,66 +33,76 @@ object Alu extends Generator[ChimeraParameter, ChimeraLayers, AluIO, ChimeraProb
     val a  = io.a.asBits
     val b  = io.b.asBits
 
-    // Adder with carry-in; subtraction feeds ~b and cin=1 from the caller.
-    val ci   = io.cin.?(1.U(17), 0.U(17))
+    def isOp(c: Int) = io.op === c.U(4)
+    val isSub = isOp(AluOp.Sub) | isOp(AluOp.Cmp) | isOp(AluOp.Sbc)
+    val isAdd = isOp(AluOp.Add) | isOp(AluOp.Adc)
+    val isRol = isOp(AluOp.Rol)
+
+    // Unified adder. Subtract inverts b; carry-in is chosen per op. Left shift is
+    // Add(b=a), ROTXL is Adc(b=a), ROTL injects the old bit7 as carry-in so
+    // a+a+bit7 = {a[6:0], a[7]}.
+    val bEff = isSub.?((~b), b)
+    val cinEff = Wire(Bool())
+    cinEff := false.B
+    when(isOp(AluOp.Adc))(cinEff := io.cin)
+    when(isOp(AluOp.Sub) | isOp(AluOp.Cmp))(cinEff := true.B)
+    when(isOp(AluOp.Sbc))(cinEff := !io.cin)
+    when(isRol)(cinEff := a.bit(7))
+
+    val ci   = cinEff.?(1.U(17), 0.U(17))
     val a17  = (0.B(1) ## a.bits(15, 0)).asUInt
-    val b17  = (0.B(1) ## b.bits(15, 0)).asUInt
-    val sum  = (a17 + b17 + ci).asBits         // 17-bit
+    val be17 = (0.B(1) ## bEff.bits(15, 0)).asUInt
+    val sum  = (a17 + be17 + ci).asBits            // 17-bit
     val addY = sum.bits(15, 0)
 
-    // half-carry: carry out of bit3 (byte) or bit11 (word)
-    val loNib = ((0.B(1) ## a.bits(3, 0)).asUInt + (0.B(1) ## b.bits(3, 0)).asUInt +
-      io.cin.?(1.U(5), 0.U(5))).asBits
-    val hiNib = ((0.B(1) ## a.bits(11, 0)).asUInt + (0.B(1) ## b.bits(11, 0)).asUInt +
-      io.cin.?(1.U(13), 0.U(13))).asBits
-    io.hout := io.word.?(hiNib.bit(12), loNib.bit(4))
+    // byte carry needs its own low-byte add: bit8 of the 17-bit sum is polluted
+    // by the register high byte. Word carry is bit16.
+    val sumB = ((0.B(1) ## a.bits(7, 0)).asUInt + (0.B(1) ## bEff.bits(7, 0)).asUInt +
+      cinEff.?(1.U(9), 0.U(9))).asBits
+    val rawC = io.word.?(sum.bit(16), sumB.bit(8))
+    val arithC = isSub.?((!rawC), rawC)            // borrow = ~carry on subtract
+    // signed overflow via bEff (correct for both add and sub)
+    val vB = (a.bit(7) === bEff.bit(7)) & (addY.bit(7) =/= a.bit(7))
+    val vW = (a.bit(15) === bEff.bit(15)) & (addY.bit(15) =/= a.bit(15))
+    val arithV = io.word.?(vW, vB)
+    // half carry/borrow using bEff/cinEff
+    val loNib = ((0.B(1) ## a.bits(3, 0)).asUInt + (0.B(1) ## bEff.bits(3, 0)).asUInt +
+      cinEff.?(1.U(5), 0.U(5))).asBits
+    val hiNib = ((0.B(1) ## a.bits(11, 0)).asUInt + (0.B(1) ## bEff.bits(11, 0)).asUInt +
+      cinEff.?(1.U(13), 0.U(13))).asBits
+    val rawH = io.word.?(hiNib.bit(12), loNib.bit(4))
+    io.hout := isSub.?((!rawH), rawH)              // half-borrow = ~carry on subtract
 
-    // carry and signed overflow at the active msb
-    val cB = sum.bit(8)
-    val cW = sum.bit(16)
-    io.cout := io.word.?(cW, cB)
-    val vB = (a.bit(7) === b.bit(7)) & (addY.bit(7) =/= a.bit(7))
-    val vW = (a.bit(15) === b.bit(15)) & (addY.bit(15) =/= a.bit(15))
-    val addV = io.word.?(vW, vB)
-
-    // Left shift (SHLL/SHAL) reuses the adder: r+r on the add path gives the
-    // result, carry-out = old bit7 (C) and signed overflow = bit6^bit7 (SHAL V).
-    // Only right shift/rotate keep a dedicated 1-bit path.
+    // right shift / rotate keep a dedicated 1-bit path (byte datapath)
     val shlr = 0.B(1) ## a.bits(7, 1)              // logical right
     val shar = a.bit(7).asBits ## a.bits(7, 1)     // arithmetic right
-    val rol  = a.bits(6, 0) ## a.bit(7).asBits
     val ror  = a.bit(0).asBits ## a.bits(7, 1)
-    val rolc = a.bits(6, 0) ## io.cin.asBits
     val rorc = io.cin.asBits ## a.bits(7, 1)
 
     val logic = Wire(UInt(parameter.dataWidth))
     logic := (a & b).asUInt
-    when(io.op === AluOp.Or.U(4))(logic := (a | b).asUInt)
-    when(io.op === AluOp.Xor.U(4))(logic := (a ^ b).asUInt)
-    when(io.op === AluOp.Not.U(4))(logic := (~a).asUInt)
-    when(io.op === AluOp.Pass.U(4))(logic := io.b)
+    when(isOp(AluOp.Or))(logic := (a | b).asUInt)
+    when(isOp(AluOp.Xor))(logic := (a ^ b).asUInt)
+    when(isOp(AluOp.Not))(logic := (~a).asUInt)
+    when(isOp(AluOp.Pass))(logic := io.b)
 
-    // result mux
+    // result: adder ops (add/sub/adc/sbc/cmp and rol) default to addY
     val y = Wire(UInt(parameter.dataWidth))
     y := addY.asUInt
-    when(io.op === AluOp.And.U(4))(y := logic)
-    when(io.op === AluOp.Or.U(4))(y := logic)
-    when(io.op === AluOp.Xor.U(4))(y := logic)
-    when(io.op === AluOp.Not.U(4))(y := logic)
-    when(io.op === AluOp.Pass.U(4))(y := logic)
-    when(io.op === AluOp.Shr1.U(4))(y := shlr.asUInt)
-    when(io.op === AluOp.Rol.U(4))(y := rol.asUInt)
-    when(io.op === AluOp.Ror.U(4))(y := ror.asUInt)
-    when(io.op === AluOp.Rolc.U(4))(y := rolc.asUInt)
-    when(io.op === AluOp.Rorc.U(4))(y := rorc.asUInt)
+    when(isOp(AluOp.And) | isOp(AluOp.Or) | isOp(AluOp.Xor) | isOp(AluOp.Not) |
+      isOp(AluOp.Pass))(y := logic)
+    when(isOp(AluOp.Shar))(y := shar.asUInt)
+    when(isOp(AluOp.Shr1))(y := shlr.asUInt)
+    when(isOp(AluOp.Ror))(y := ror.asUInt)
+    when(isOp(AluOp.Rorc))(y := rorc.asUInt)
     io.y := y
 
-    // add/sub (and left shift via the adder) give signed overflow; logical ops
-    // force V=0. SHLL forces V=0 through flag_ctl, not here.
-    val vSel = Wire(Bool())
-    vSel := addV
-    when(io.op === AluOp.And.U(4))(vSel := false.B)
-    when(io.op === AluOp.Or.U(4))(vSel := false.B)
-    when(io.op === AluOp.Xor.U(4))(vSel := false.B)
-    when(io.op === AluOp.Not.U(4))(vSel := false.B)
-    io.vout := vSel
+    // carry-out: add carry / sub borrow / rol carry (old bit7) / right shift-out
+    val cout = Wire(Bool())
+    cout := a.bit(0)                               // right shift/rotate default
+    when(isAdd | isRol)(cout := rawC)
+    when(isSub)(cout := arithC)
+    io.cout := cout
+
+    // overflow: only add/sub set it; shifts/rotates/logic force V=0
+    io.vout := (isAdd | isSub).?(arithV, false.B)

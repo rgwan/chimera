@@ -15,6 +15,11 @@ check-decode:
 	TOP=CoarseDecoder rtl/build.sh
 	COARSE_SV=rtl/generated/CoarseDecoder.sv python3 scripts/check_decode_dispatch.py
 
+check-alu:
+	TOP=Alu rtl/build.sh
+	iverilog -o rtl/generated/tb_alu test/alu/tb_alu.v rtl/generated/Alu.sv
+	vvp rtl/generated/tb_alu
+
 gnu-oracle:
 	python3 scripts/check_gnu_oracle.py
 

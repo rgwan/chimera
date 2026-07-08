@@ -6321,6 +6321,81 @@ cases:
       ccr_hnzvc: "11001"
       trap: false
 
+  - id: h8_sub8_r2h_r3h_signed_overflow
+    instruction: h8_sub8_r8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "sub.b r2h, r3h"
+    words:
+      - "0x1823"
+    decode_keys: ["1", "8"]
+    sail:
+      decode: H8_SUB8_R8_R8
+      execute: h8_exec_sub8
+    initial:
+      pc: "0x0000"
+      regs:
+        r2h: "0x01"
+        r3h: "0x80"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r3h: "0x7f"
+      ccr_hnzvc: "10010"
+      trap: false
+
+  - id: h8_sub8_r5h_r4h_zero
+    instruction: h8_sub8_r8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "sub.b r5h, r4h"
+    words:
+      - "0x1854"
+    decode_keys: ["1", "8"]
+    sail:
+      decode: H8_SUB8_R8_R8
+      execute: h8_exec_sub8
+    initial:
+      pc: "0x0000"
+      regs:
+        r4h: "0x42"
+        r5h: "0x42"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r4h: "0x00"
+      ccr_hnzvc: "00100"
+      trap: false
+
+  - id: h8_sub8_r6h_r7h_half_borrow
+    instruction: h8_sub8_r8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "sub.b r6h, r7h"
+    words:
+      - "0x1867"
+    decode_keys: ["1", "8"]
+    sail:
+      decode: H8_SUB8_R8_R8
+      execute: h8_exec_sub8
+    initial:
+      pc: "0x0000"
+      regs:
+        r6h: "0x01"
+        r7h: "0x10"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r7h: "0x0f"
+      ccr_hnzvc: "10000"
+      trap: false
+
   - id: h8_cmp8_r1h_r0l
     instruction: h8_cmp8_r8_r8
     status: supported
@@ -6344,6 +6419,56 @@ cases:
       regs:
         r0l: "0x00"
       ccr_hnzvc: "11001"
+      trap: false
+
+  - id: h8_cmp8_r2h_r3h_equal
+    instruction: h8_cmp8_r8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "cmp.b r2h, r3h"
+    words:
+      - "0x1c23"
+    decode_keys: ["1", "c"]
+    sail:
+      decode: H8_CMP8_R8_R8
+      execute: h8_exec_cmp8
+    initial:
+      pc: "0x0000"
+      regs:
+        r2h: "0x55"
+        r3h: "0x55"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r3h: "0x55"
+      ccr_hnzvc: "00100"
+      trap: false
+
+  - id: h8_cmp8_r4h_r5h_signed_overflow
+    instruction: h8_cmp8_r8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "cmp.b r4h, r5h"
+    words:
+      - "0x1c45"
+    decode_keys: ["1", "c"]
+    sail:
+      decode: H8_CMP8_R8_R8
+      execute: h8_exec_cmp8
+    initial:
+      pc: "0x0000"
+      regs:
+        r4h: "0xff"
+        r5h: "0x7f"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r5h: "0x7f"
+      ccr_hnzvc: "01011"
       trap: false
 
   - id: h8_sub16_r1_r0

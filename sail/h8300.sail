@@ -989,14 +989,14 @@ function h8_exec_branch(st : H8State, cond : H8BranchCond, disp : byte) -> H8Sta
 }
 
 function h8_exec_jmp_r16_ind(st : H8State, rs_addr : h8_r16) -> H8State =
-  {st with pc = read_r16(st, rs_addr)}
+  {st with pc = align_word_addr(read_r16(st, rs_addr))}
 
 function h8_exec_jmp_abs16(st : H8State, target : word) -> H8State =
-  {st with pc = target}
+  {st with pc = align_word_addr(target)}
 
 function h8_exec_jmp_abs8_ind(m : H8Machine, addr : byte) -> H8Machine = {
   let target : word = h8_mem_read16(m.mem, 0x00 @ addr);
-  let st1 = {m.st with pc = target};
+  let st1 = {m.st with pc = align_word_addr(target)};
   {m with st = st1, trap = false}
 }
 
@@ -1004,14 +1004,14 @@ function h8_exec_call16(m : H8Machine, target : word, return_pc : word) -> H8Mac
   let sp : word = read_r16(m.st, 7) - 0x0002;
   let st1 = write_r16(m.st, 7, sp);
   let mem1 = h8_mem_write16(m.mem, sp, return_pc);
-  {m with st = {st1 with pc = target}, mem = mem1, trap = false}
+  {m with st = {st1 with pc = align_word_addr(target)}, mem = mem1, trap = false}
 }
 
 function h8_exec_rts(m : H8Machine) -> H8Machine = {
   let sp : word = read_r16(m.st, 7);
   let target : word = h8_mem_read16(m.mem, sp);
   let st1 = write_r16(m.st, 7, sp + 0x0002);
-  {m with st = {st1 with pc = target}, trap = false}
+  {m with st = {st1 with pc = align_word_addr(target)}, trap = false}
 }
 
 function h8_exec_rte(m : H8Machine) -> H8Machine = {
@@ -1019,7 +1019,7 @@ function h8_exec_rte(m : H8Machine) -> H8Machine = {
   let ccr_word : word = h8_mem_read16(m.mem, sp);
   let target : word = h8_mem_read16(m.mem, sp + 0x0002);
   let st1 = write_r16(m.st, 7, sp + 0x0004);
-  {m with st = {st1 with pc = target, ccr = h8_ccr_from_byte(ccr_word[15 .. 8])}, trap = false}
+  {m with st = {st1 with pc = align_word_addr(target), ccr = h8_ccr_from_byte(ccr_word[15 .. 8])}, trap = false}
 }
 
 function h8_exec_bsr_rel8(m : H8Machine, disp : byte) -> H8Machine = {
@@ -1918,6 +1918,35 @@ function h8_memory_selftest() -> bool = {
     & bad_done.st.pc == 0x0000
 }
 
+function h8_pc_alignment_selftest() -> bool = {
+  let jmp_reg_state = write_r16(h8_reset(), 1, 0x1235);
+  let jmp_reg = h8_decode_execute(jmp_reg_state, 0x5910, 0x0000);
+  let jmp_abs = h8_decode_execute(h8_reset(), 0x5A00, 0x1235);
+  let jmp_vec_mem = h8_mem_write16(h8_empty_mem(), 0x0040, 0x1235);
+  let jmp_vec = h8_decode_execute_machine(h8_make_machine(h8_reset(), jmp_vec_mem), 0x5B40, 0x0000);
+  let jsr_abs = h8_decode_execute_machine(h8_reset_machine(), 0x5E00, 0x1235);
+  let bsr = h8_decode_execute_machine(h8_reset_machine(), 0x5501, 0x0000);
+  let rts_state = write_r16(h8_reset(), 7, 0x0100);
+  let rts_mem = h8_mem_write16(h8_empty_mem(), 0x0100, 0x1235);
+  let rts = h8_decode_execute_machine(h8_make_machine(rts_state, rts_mem), 0x5470, 0x0000);
+  let rte_state = write_r16(h8_reset(), 7, 0x0100);
+  let rte_mem0 = h8_mem_write16(h8_empty_mem(), 0x0100, 0xD700);
+  let rte_mem1 = h8_mem_write16(rte_mem0, 0x0102, 0x1235);
+  let rte = h8_decode_execute_machine(h8_make_machine(rte_state, rte_mem1), 0x5670, 0x0000);
+  jmp_reg.st.pc == 0x1234
+    & jmp_abs.st.pc == 0x1234
+    & jmp_vec.st.pc == 0x1234
+    & jsr_abs.st.pc == 0x1234
+    & h8_mem_read16(jsr_abs.mem, 0xFFFE) == 0x0004
+    & bsr.st.pc == 0x0002
+    & h8_mem_read16(bsr.mem, 0xFFFE) == 0x0002
+    & rts.st.pc == 0x1234
+    & read_r16(rts.st, 7) == 0x0102
+    & rte.st.pc == 0x1234
+    & h8_ccr_to_byte(rte.st.ccr) == 0xD7
+    & read_r16(rte.st, 7) == 0x0104
+}
+
 function h8_selftest() -> bool =
   h8_reg_arith_selftest()
     & h8_r16_state_selftest()
@@ -1929,3 +1958,4 @@ function h8_selftest() -> bool =
     & h8_r8_r8_decode_selftest()
     & h8_r16_r16_decode_selftest()
     & h8_memory_selftest()
+    & h8_pc_alignment_selftest()

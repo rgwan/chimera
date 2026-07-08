@@ -56,6 +56,12 @@ check-branch:
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_branch
 
+check-bcc:
+	bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_bcc test/core/tb_core_bcc.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_bcc
+
 gnu-oracle:
 	python3 scripts/check_gnu_oracle.py
 

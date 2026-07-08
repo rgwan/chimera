@@ -104,6 +104,19 @@ object MicrocodeImage:
          alu = AluOp.Add, flag = FlagCtl.AddSub, wsel = WSel.H8, we = true,
          seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
 
+    // sub.b Rs,Rd (dispatch 0x18, m-class alias 0xD8): rd = rd - rs. AH=1 ops
+    // land at two coarse addresses depending on rs[3]; both route here.
+    0x18 -> MW(bSel = BSel.H8, h8Idx = H8Idx.RsReg, alu = AluOp.Pass,
+               wsel = WSel.Int, intIdx = IntIdx.Temp, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x11),
+    0xd8 -> MW(bSel = BSel.H8, h8Idx = H8Idx.RsReg, alu = AluOp.Pass,
+               wsel = WSel.Int, intIdx = IntIdx.Temp, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x11),
+    (Ucode.FetchEntry + 0x11) ->
+      MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, bSel = BSel.Int, intIdx = IntIdx.Temp,
+         alu = AluOp.Sub, flag = FlagCtl.AddSub, wsel = WSel.H8, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+
     // Bcc shared routine: taken -> PC += signext(disp8); not taken -> fetch.
     // cond nibble drives the CcInstr predicate (evaluated in Core).
     (Ucode.FetchEntry + 0x20) ->

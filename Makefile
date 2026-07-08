@@ -71,6 +71,12 @@ check-loop:
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_loop
 
+check-sub:
+	bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_sub test/core/tb_core_sub.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_sub
+
 gnu-oracle:
 	python3 scripts/check_gnu_oracle.py
 

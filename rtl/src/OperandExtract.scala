@@ -9,8 +9,8 @@ import me.jiuyang.zaozi.valuetpe.*
 import org.llvm.mlir.scalalib.capi.ir.{Block, Context}
 import java.lang.foreign.Arena
 
-/** Hardwired field muxes over the little-endian IR (first byte in [7:0]).
-  * Positions are the ISA-word offsets mapped through the BIU byteswap.
+/** Hardwired field muxes over the byte-swapped IR (first byte in [7:0]).
+  * Positions are the ISA-word offsets mapped through the BIU byte swap.
   */
 class OperandExtractIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val word  = Flipped(UInt(parameter.dataWidth))

@@ -9,9 +9,10 @@ measured with it off.
 
 ## Coarse pre-decode
 
-Operates on the 16-bit fetch word with the first opcode byte in `word[7:0]`
-(`d ooo pppp`, `d=word[7]`) and the second byte in `word[15:8]`
-(`m xxx xxxx`, `m=word[15]`). Three-way map to an 8-bit dispatch address:
+External memory and Sail use the ISA word: first opcode byte in `[15:8]`,
+second byte in `[7:0]`. Coarse pre-decode consumes the BIU byte-swapped IR:
+first byte in `word[7:0]` (`d ooo pppp`, `d=word[7]`) and second byte in
+`word[15:8]` (`m xxx xxxx`, `m=word[15]`). Three-way map:
 
 | Bucket | Condition | Address |
 |---|---|---|

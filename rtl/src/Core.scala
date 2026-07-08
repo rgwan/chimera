@@ -119,11 +119,11 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, ChimeraPr
     biu.io.busCtl := udec.io.busCtl
     biu.io.word   := sizeWord
 
-    // fetch capture into IR (byteswap BE memory -> LE decoder word). Data loads
-    // use biu.rdata directly (natural BE value).
-    val doFetch = udec.io.busCtl === BusCtl.Fetch.U(2)
-    val fetchLe = biu.io.rdata.asBits.bits(7, 0) ## biu.io.rdata.asBits.bits(15, 8)
-    when(doFetch & biu.io.rdy)(ir := fetchLe.asUInt)
+    // memory is big-endian; the decoder-visible IR is byte-swapped (first byte in
+    // [7:0]). Data loads use biu.rdata directly (natural BE value).
+    val doFetch      = udec.io.busCtl === BusCtl.Fetch.U(2)
+    val fetchSwapped = biu.io.rdata.asBits.bits(7, 0) ## biu.io.rdata.asBits.bits(15, 8)
+    when(doFetch & biu.io.rdy)(ir := fetchSwapped.asUInt)
 
     // sequencer inputs
     useq.io.seqSrc   := udec.io.seqSrc

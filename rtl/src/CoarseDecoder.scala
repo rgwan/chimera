@@ -9,7 +9,7 @@ import me.jiuyang.zaozi.valuetpe.*
 import org.llvm.mlir.scalalib.capi.ir.{Block, Context}
 import java.lang.foreign.Arena
 
-/** Decoder-visible word (BIU-byteswapped from big-endian memory): first opcode
+/** Decoder-visible word (BIU byte-swapped from big-endian memory): first opcode
   * byte in [7:0] (`d ooo pppp`, d=bit7), second byte in [15:8] (`m xxx xxxx`).
   */
 class CoarseDecoderIO(parameter: ChimeraParameter) extends HWBundle(parameter):

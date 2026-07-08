@@ -9,19 +9,19 @@ smoke:
 	build-chimera --smoke
 
 rtl-verilog:
-	rtl/build.sh
+	bash rtl/build.sh
 
 check-decode:
-	TOP=CoarseDecoder rtl/build.sh
+	TOP=CoarseDecoder bash rtl/build.sh
 	COARSE_SV=rtl/generated/CoarseDecoder.sv python3 scripts/check_decode_dispatch.py
 
 check-alu:
-	TOP=Alu rtl/build.sh
+	TOP=Alu bash rtl/build.sh
 	iverilog -o rtl/generated/tb_alu test/alu/tb_alu.v rtl/generated/Alu.sv
 	vvp rtl/generated/tb_alu
 
 check-core:
-	rtl/build.sh
+	bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/sim_core test/core/tb_core.v rtl/generated/*.sv
 	vvp rtl/generated/sim_core
 

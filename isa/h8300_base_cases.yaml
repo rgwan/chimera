@@ -6010,6 +6010,153 @@ cases:
       ccr_hnzvc: "10101"
       trap: false
 
+  - id: h8_and8_r2h_r3h_negative
+    instruction: h8_and8_r8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "and.b r2h, r3h"
+    words:
+      - "0x1623"
+    decode_keys: ["1", "6"]
+    sail:
+      decode: H8_AND8_R8_R8
+      execute: h8_exec_and8
+    initial:
+      pc: "0x0000"
+      regs:
+        r2h: "0x80"
+        r3h: "0xf0"
+      ccr_hnzvc: "00010"
+    expected:
+      pc: "0x0002"
+      regs:
+        r3h: "0x80"
+      ccr_hnzvc: "10000"
+      trap: false
+
+  - id: h8_and8_imm_r4h_positive
+    instruction: h8_and8_imm_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "and.b #0x3f, r4h"
+    words:
+      - "0xe43f"
+    decode_keys: ["e", "4"]
+    sail:
+      decode: H8_AND8_IMM
+      execute: h8_exec_and8
+    initial:
+      pc: "0x0000"
+      regs:
+        r4h: "0x7f"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r4h: "0x3f"
+      ccr_hnzvc: "10001"
+      trap: false
+
+  - id: h8_or8_imm_r2h_zero
+    instruction: h8_or8_imm_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "or.b #0x00, r2h"
+    words:
+      - "0xc200"
+    decode_keys: ["c", "2"]
+    sail:
+      decode: H8_OR8_IMM
+      execute: h8_exec_or8
+    initial:
+      pc: "0x0000"
+      regs:
+        r2h: "0x00"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r2h: "0x00"
+      ccr_hnzvc: "10101"
+      trap: false
+
+  - id: h8_or8_r3h_r4h_negative
+    instruction: h8_or8_r8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "or.b r3h, r4h"
+    words:
+      - "0x1434"
+    decode_keys: ["1", "4"]
+    sail:
+      decode: H8_OR8_R8_R8
+      execute: h8_exec_or8
+    initial:
+      pc: "0x0000"
+      regs:
+        r3h: "0x80"
+        r4h: "0x0f"
+      ccr_hnzvc: "00010"
+    expected:
+      pc: "0x0002"
+      regs:
+        r4h: "0x8f"
+      ccr_hnzvc: "10000"
+      trap: false
+
+  - id: h8_xor8_imm_r2h_negative
+    instruction: h8_xor8_imm_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "xor.b #0x80, r2h"
+    words:
+      - "0xd280"
+    decode_keys: ["d", "2"]
+    sail:
+      decode: H8_XOR8_IMM
+      execute: h8_exec_xor8
+    initial:
+      pc: "0x0000"
+      regs:
+        r2h: "0x0f"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r2h: "0x8f"
+      ccr_hnzvc: "11001"
+      trap: false
+
+  - id: h8_xor8_r5h_r6h_zero
+    instruction: h8_xor8_r8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "xor.b r5h, r6h"
+    words:
+      - "0x1556"
+    decode_keys: ["1", "5"]
+    sail:
+      decode: H8_XOR8_R8_R8
+      execute: h8_exec_xor8
+    initial:
+      pc: "0x0000"
+      regs:
+        r5h: "0x55"
+        r6h: "0x55"
+      ccr_hnzvc: "00010"
+    expected:
+      pc: "0x0002"
+      regs:
+        r6h: "0x00"
+      ccr_hnzvc: "00100"
+      trap: false
+
   - id: h8_not8_r0l_negative
     instruction: h8_not8_r8
     status: supported

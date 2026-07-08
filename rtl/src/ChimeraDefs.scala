@@ -85,3 +85,9 @@ object Misc:
 object Dispatch:
   val ImmAluBase = 0x80 // bucket A: {0x80 | ooo}
   val MClassBase = 0xc0 // bucket B: {0xc0 | word[5:0]}
+
+/** Microcode address map. Instruction routines start at ROM[dispatch] (0x00-0xFF);
+  * the reset/fetch mainloop lives in the upper half so the two never collide.
+  */
+object Ucode:
+  val FetchEntry = 0x100

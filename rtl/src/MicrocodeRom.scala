@@ -9,12 +9,6 @@ import me.jiuyang.zaozi.valuetpe.*
 import org.llvm.mlir.scalalib.capi.ir.{Block, Context}
 import java.lang.foreign.Arena
 
-/** Microcode image (512 x 36). Filled in under the execution-equivalence work;
-  * an empty image reads as the all-zero microword (SeqSrc.Next / no-op).
-  */
-object MicrocodeImage:
-  val words: Seq[BigInt] = Seq.empty
-
 /** Combinational 512 x 36 ROM. Backed by a mux over the image; when the image
   * grows, revisit as a PLA/truth-table for area.
   */

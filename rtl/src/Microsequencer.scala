@@ -37,7 +37,7 @@ object Microsequencer
     given Ref[Clock] = io.clock
     given Ref[Reset] = io.reset
 
-    val upc = RegInit(0.U(parameter.upcBits))
+    val upc = RegInit(Ucode.FetchEntry.U(parameter.upcBits))
     val ret = RegInit(0.U(parameter.upcBits))
 
     val seqNext        = upc + 1.U(parameter.upcBits)

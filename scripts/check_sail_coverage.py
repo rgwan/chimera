@@ -236,6 +236,8 @@ def big_endian_model_checks(
     fetch16_body = sail_function_body(sail_text, "h8_fetch16")
     load_body = sail_function_body(sail_text, "h8_load_bytes")
     step_body = sail_function_body(sail_text, "h8_step")
+    branch_body = sail_function_body(sail_text, "h8_exec_branch")
+    bsr_body = sail_function_body(sail_text, "h8_exec_bsr_rel8")
     checks = [
         {
             "name": "read16_high_byte_at_even_address",
@@ -273,6 +275,19 @@ def big_endian_model_checks(
             "status": "pass"
             if "let fetch_pc : word = align_word_addr(m.st.pc);" in step_body
             and "h8_decode_execute_machine(aligned, first, ext)" in step_body
+            else "fail",
+        },
+        {
+            "name": "branch_target_aligns_word",
+            "status": "pass"
+            if "pc = align_word_addr(next_pc + sign_extend8_to16(disp))"
+            in branch_body
+            else "fail",
+        },
+        {
+            "name": "bsr_target_aligns_word",
+            "status": "pass"
+            if "align_word_addr(return_pc + sign_extend8_to16(disp))" in bsr_body
             else "fail",
         },
     ]

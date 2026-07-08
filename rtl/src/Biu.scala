@@ -30,11 +30,14 @@ object Biu extends Generator[ChimeraParameter, ChimeraLayers, BiuIO, ChimeraProb
   def architecture(parameter: ChimeraParameter) =
     val io = summon[Interface[BiuIO]]
 
-    val isReq   = io.busCtl =/= BusCtl.None.U(2)
-    val isWrite = io.busCtl === BusCtl.Write.U(2)
-    val byteMask = io.addr.asBits.bit(0).?(1.U(parameter.wmaskWidth), 2.U(parameter.wmaskWidth))
+    val isReq    = io.busCtl =/= BusCtl.None.U(2)
+    val isWrite  = io.busCtl === BusCtl.Write.U(2)
+    val wordLike = io.word | (io.busCtl === BusCtl.Fetch.U(2))
+    val wordAddr = (io.addr.asBits.bits(parameter.addrWidth - 1, 1) ## 0.B).asUInt
+    val busAddr  = wordLike.?(wordAddr, io.addr)
+    val byteMask = busAddr.asBits.bit(0).?(1.U(parameter.wmaskWidth), 2.U(parameter.wmaskWidth))
 
-    io.bus.addr  := io.addr
+    io.bus.addr  := busAddr
     io.bus.wdata := io.wdata
     io.bus.req   := isReq
     io.bus.we    := isWrite

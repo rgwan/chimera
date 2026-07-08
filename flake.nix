@@ -161,6 +161,16 @@ EOF
           touch $out
         '';
 
+        decodeDispatchCheck = pkgs.runCommand "chimera-decode-dispatch" {
+          nativeBuildInputs = [ pythonEnv ];
+        } ''
+          cp -R ${self} src
+          chmod -R u+w src
+          cd src
+          python3 scripts/check_decode_dispatch.py --table-only
+          touch $out
+        '';
+
         sailCoverageCheck = pkgs.runCommand "chimera-sail-coverage" {
           nativeBuildInputs = [ pythonEnv ];
         } ''
@@ -241,6 +251,7 @@ EOF
 
         checks = {
           build-smoke = smokeCheck;
+          decode-dispatch = decodeDispatchCheck;
           gdb-oracle-smoke = gdbOracleCheck;
           gnu-oracle-smoke = gnuOracleCheck;
           isa-cases = isaCasesCheck;

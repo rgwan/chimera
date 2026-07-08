@@ -30,7 +30,7 @@ object IntRegFile
     given Ref[Clock] = io.clock
     given Ref[Reset] = io.reset
 
-    val pc   = RegInit(parameter.resetVector.U(parameter.dataWidth))
+    val pc   = RegInit((parameter.resetVector & ~1).U(parameter.dataWidth))
     val ireg = RegInit(0.U(parameter.dataWidth))
     val temp = RegInit(0.U(parameter.dataWidth))
 

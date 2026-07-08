@@ -6,6 +6,10 @@ profile: h8300_base
 fetch_word_bits: 16
 storage_word_bits: 18
 byte_order: big
+# Memory-access rdata/wdata/wmask are logical: the addressed byte sits in
+# bits [7:0] and wmask bit0 selects it, matching the byte-addressed model.
+# Mapping to the big-endian bus lane (even address -> high byte lane) is the
+# RTL bus adapter's job and is not encoded in these cases.
 ccr_order: HNZVC
 decode_key_bits_max: 4
 retire_compare:

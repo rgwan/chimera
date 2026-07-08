@@ -823,6 +823,62 @@ instructions:
       execute: h8_exec_btst_imm3
     effects: [pc, ccr_hnzvc]
 
+  - id: h8_bset_r8_r8
+    assembler_template: "bset {rs8}, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff00"
+      match: "0x6000"
+      fields:
+        rs8: "word[7:4]"
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_BSET_R8_R8
+      execute: h8_exec_bset_r8
+    effects: [pc, rd8]
+
+  - id: h8_bnot_r8_r8
+    assembler_template: "bnot {rs8}, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff00"
+      match: "0x6100"
+      fields:
+        rs8: "word[7:4]"
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_BNOT_R8_R8
+      execute: h8_exec_bnot_r8
+    effects: [pc, rd8]
+
+  - id: h8_bclr_r8_r8
+    assembler_template: "bclr {rs8}, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff00"
+      match: "0x6200"
+      fields:
+        rs8: "word[7:4]"
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_BCLR_R8_R8
+      execute: h8_exec_bclr_r8
+    effects: [pc, rd8]
+
+  - id: h8_btst_r8_r8
+    assembler_template: "btst {rs8}, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff00"
+      match: "0x6300"
+      fields:
+        rs8: "word[7:4]"
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_BTST_R8_R8
+      execute: h8_exec_btst_r8
+    effects: [pc, ccr_hnzvc]
+
   - id: h8_bst_imm3_r8
     assembler_template: "bst #{bit3}, {rd8}"
     length_bytes: 2
@@ -3495,6 +3551,153 @@ cases:
       pc: "0x0002"
       regs: {}
       ccr_hnzvc: "10000"
+      trap: false
+
+  - id: h8_bset_r8_r8_low3
+    instruction: h8_bset_r8_r8
+    status: supported
+    check_area: execute
+    assembler:
+      - "bset r1h, r0l"
+    words:
+      - "0x6018"
+    decode_keys: ["6", "0"]
+    sail:
+      decode: H8_BSET_R8_R8
+      execute: h8_exec_bset_r8
+    initial:
+      pc: "0x0000"
+      regs:
+        r1h: "0x8a"
+        r0l: "0x00"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0l: "0x04"
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_bset_r8_r8_alias_edge
+    instruction: h8_bset_r8_r8
+    status: supported
+    check_area: decode
+    assembler:
+      - "bset r7l, r7l"
+    words:
+      - "0x60ff"
+    decode_keys: ["6", "0"]
+    sail:
+      decode: H8_BSET_R8_R8
+      execute: h8_exec_bset_r8
+    initial:
+      pc: "0x0000"
+      regs:
+        r7l: "0x07"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r7l: "0x87"
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_bnot_r8_r8_low3
+    instruction: h8_bnot_r8_r8
+    status: supported
+    check_area: execute
+    assembler:
+      - "bnot r2l, r3h"
+    words:
+      - "0x61a3"
+    decode_keys: ["6", "1"]
+    sail:
+      decode: H8_BNOT_R8_R8
+      execute: h8_exec_bnot_r8
+    initial:
+      pc: "0x0000"
+      regs:
+        r2l: "0xfa"
+        r3h: "0x00"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r3h: "0x04"
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_bclr_r8_r8_low3
+    instruction: h8_bclr_r8_r8
+    status: supported
+    check_area: execute
+    assembler:
+      - "bclr r7l, r4l"
+    words:
+      - "0x62fc"
+    decode_keys: ["6", "2"]
+    sail:
+      decode: H8_BCLR_R8_R8
+      execute: h8_exec_bclr_r8
+    initial:
+      pc: "0x0000"
+      regs:
+        r7l: "0xff"
+        r4l: "0xff"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0002"
+      regs:
+        r4l: "0x7f"
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_btst_r8_r8_set
+    instruction: h8_btst_r8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "btst r0h, r7l"
+    words:
+      - "0x630f"
+    decode_keys: ["6", "3"]
+    sail:
+      decode: H8_BTST_R8_R8
+      execute: h8_exec_btst_r8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0h: "0x85"
+        r7l: "0x20"
+      ccr_hnzvc: "10101"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10001"
+      trap: false
+
+  - id: h8_btst_r8_r8_clear
+    instruction: h8_btst_r8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "btst r0h, r7l"
+    words:
+      - "0x630f"
+    decode_keys: ["6", "3"]
+    sail:
+      decode: H8_BTST_R8_R8
+      execute: h8_exec_btst_r8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0h: "0x85"
+        r7l: "0x00"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10101"
       trap: false
 
   - id: h8_or8_imm_r1l

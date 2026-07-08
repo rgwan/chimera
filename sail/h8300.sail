@@ -102,6 +102,10 @@ union H8Inst = {
   H8_BNOT_IMM3_R8 : (bits(3), H8R8),
   H8_BCLR_IMM3_R8 : (bits(3), H8R8),
   H8_BTST_IMM3_R8 : (bits(3), H8R8),
+  H8_BSET_R8_R8 : (H8R8, H8R8),
+  H8_BNOT_R8_R8 : (H8R8, H8R8),
+  H8_BCLR_R8_R8 : (H8R8, H8R8),
+  H8_BTST_R8_R8 : (H8R8, H8R8),
   H8_BST_IMM3_R8 : (bits(3), H8R8),
   H8_BIST_IMM3_R8 : (bits(3), H8R8),
   H8_BLD_IMM3_R8 : (bits(3), H8R8),
@@ -649,6 +653,9 @@ function h8_bit_write3(value : byte, bit : bits(3), data : bit) -> byte =
   if data == 0b1 then value | h8_bit_mask3(bit)
   else value & not_vec(h8_bit_mask3(bit))
 
+function h8_bit_index_r8(st : H8State, rs : H8R8) -> bits(3) =
+  read_r8(st, rs)[2 .. 0]
+
 function h8_exec_bset_imm3(st : H8State, bit : bits(3), rd : H8R8) -> H8State = {
   let result : byte = read_r8(st, rd) | h8_bit_mask3(bit);
   let st1 = write_r8(st, rd, result);
@@ -671,6 +678,18 @@ function h8_exec_btst_imm3(st : H8State, bit : bits(3), rd : H8R8) -> H8State = 
   let z : bit = h8_bit_invert(h8_bit_value3(read_r8(st, rd), bit));
   {st with ccr = {st.ccr with z = z}, pc = st.pc + 0x0002}
 }
+
+function h8_exec_bset_r8(st : H8State, rd : H8R8, rs : H8R8) -> H8State =
+  h8_exec_bset_imm3(st, h8_bit_index_r8(st, rs), rd)
+
+function h8_exec_bnot_r8(st : H8State, rd : H8R8, rs : H8R8) -> H8State =
+  h8_exec_bnot_imm3(st, h8_bit_index_r8(st, rs), rd)
+
+function h8_exec_bclr_r8(st : H8State, rd : H8R8, rs : H8R8) -> H8State =
+  h8_exec_bclr_imm3(st, h8_bit_index_r8(st, rs), rd)
+
+function h8_exec_btst_r8(st : H8State, rd : H8R8, rs : H8R8) -> H8State =
+  h8_exec_btst_imm3(st, h8_bit_index_r8(st, rs), rd)
 
 function h8_exec_bst_imm3(st : H8State, bit : bits(3), rd : H8R8) -> H8State = {
   let result : byte = h8_bit_write3(read_r8(st, rd), bit, st.ccr.c);
@@ -900,7 +919,15 @@ function h8_decode_profile(profile : H8Profile, first : word, ext : word) -> opt
              Some(H8_JSR_ABS8I(op1))
            else
              None(),
-    0x6 => if op0 == 0x67 & op1[7] == 0b0 then
+    0x6 => if op0 == 0x60 then
+             Some(H8_BSET_R8_R8(rr8_rd, rr8_rs))
+           else if op0 == 0x61 then
+             Some(H8_BNOT_R8_R8(rr8_rd, rr8_rs))
+           else if op0 == 0x62 then
+             Some(H8_BCLR_R8_R8(rr8_rd, rr8_rs))
+           else if op0 == 0x63 then
+             Some(H8_BTST_R8_R8(rr8_rd, rr8_rs))
+           else if op0 == 0x67 & op1[7] == 0b0 then
              Some(H8_BST_IMM3_R8(op1[6 .. 4], rr8_rd))
            else if op0 == 0x67 & op1[7] == 0b1 then
              Some(H8_BIST_IMM3_R8(op1[6 .. 4], rr8_rd))
@@ -1033,6 +1060,10 @@ function h8_execute(st : H8State, inst : H8Inst) -> H8ExecResult =
     H8_BNOT_IMM3_R8(bit, rd) => struct {st = h8_exec_bnot_imm3(st, bit, rd), trap = false},
     H8_BCLR_IMM3_R8(bit, rd) => struct {st = h8_exec_bclr_imm3(st, bit, rd), trap = false},
     H8_BTST_IMM3_R8(bit, rd) => struct {st = h8_exec_btst_imm3(st, bit, rd), trap = false},
+    H8_BSET_R8_R8(rd, rs) => struct {st = h8_exec_bset_r8(st, rd, rs), trap = false},
+    H8_BNOT_R8_R8(rd, rs) => struct {st = h8_exec_bnot_r8(st, rd, rs), trap = false},
+    H8_BCLR_R8_R8(rd, rs) => struct {st = h8_exec_bclr_r8(st, rd, rs), trap = false},
+    H8_BTST_R8_R8(rd, rs) => struct {st = h8_exec_btst_r8(st, rd, rs), trap = false},
     H8_BST_IMM3_R8(bit, rd) => struct {st = h8_exec_bst_imm3(st, bit, rd), trap = false},
     H8_BIST_IMM3_R8(bit, rd) => struct {st = h8_exec_bist_imm3(st, bit, rd), trap = false},
     H8_BLD_IMM3_R8(bit, rd) => struct {st = h8_exec_bld_imm3(st, bit, rd), trap = false},

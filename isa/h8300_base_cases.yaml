@@ -935,6 +935,90 @@ instructions:
       execute: h8_exec_bild_imm3
     effects: [pc, ccr_hnzvc]
 
+  - id: h8_bor_imm3_r8
+    assembler_template: "bor #{bit3}, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff80"
+      match: "0x7400"
+      fields:
+        bit3: "word[6:4]"
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_BOR_IMM3_R8
+      execute: h8_exec_bor_imm3
+    effects: [pc, ccr_hnzvc]
+
+  - id: h8_bior_imm3_r8
+    assembler_template: "bior #{bit3}, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff80"
+      match: "0x7480"
+      fields:
+        bit3: "word[6:4]"
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_BIOR_IMM3_R8
+      execute: h8_exec_bior_imm3
+    effects: [pc, ccr_hnzvc]
+
+  - id: h8_bxor_imm3_r8
+    assembler_template: "bxor #{bit3}, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff80"
+      match: "0x7500"
+      fields:
+        bit3: "word[6:4]"
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_BXOR_IMM3_R8
+      execute: h8_exec_bxor_imm3
+    effects: [pc, ccr_hnzvc]
+
+  - id: h8_bixor_imm3_r8
+    assembler_template: "bixor #{bit3}, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff80"
+      match: "0x7580"
+      fields:
+        bit3: "word[6:4]"
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_BIXOR_IMM3_R8
+      execute: h8_exec_bixor_imm3
+    effects: [pc, ccr_hnzvc]
+
+  - id: h8_band_imm3_r8
+    assembler_template: "band #{bit3}, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff80"
+      match: "0x7600"
+      fields:
+        bit3: "word[6:4]"
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_BAND_IMM3_R8
+      execute: h8_exec_band_imm3
+    effects: [pc, ccr_hnzvc]
+
+  - id: h8_biand_imm3_r8
+    assembler_template: "biand #{bit3}, {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xff80"
+      match: "0x7680"
+      fields:
+        bit3: "word[6:4]"
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_BIAND_IMM3_R8
+      execute: h8_exec_biand_imm3
+    effects: [pc, ccr_hnzvc]
+
   - id: h8_or8_imm_r8
     assembler_template: "or.b #{imm8}, {rd8}"
     length_bytes: 2
@@ -3551,6 +3635,558 @@ cases:
       pc: "0x0002"
       regs: {}
       ccr_hnzvc: "10000"
+      trap: false
+
+  - id: h8_bor_imm3_r0l_set
+    instruction: h8_bor_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "bor #2, r0l"
+    words:
+      - "0x7428"
+    decode_keys: ["7", "4"]
+    sail:
+      decode: H8_BOR_IMM3_R8
+      execute: h8_exec_bor_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x04"
+      ccr_hnzvc: "10000"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10001"
+      trap: false
+
+  - id: h8_bor_imm3_r0l_clear
+    instruction: h8_bor_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "bor #2, r0l"
+    words:
+      - "0x7428"
+    decode_keys: ["7", "4"]
+    sail:
+      decode: H8_BOR_IMM3_R8
+      execute: h8_exec_bor_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r0l: "0x00"
+      ccr_hnzvc: "10000"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10000"
+      trap: false
+
+  - id: h8_bior_imm3_r1h_set
+    instruction: h8_bior_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "bior #5, r1h"
+    words:
+      - "0x74d1"
+    decode_keys: ["7", "4"]
+    sail:
+      decode: H8_BIOR_IMM3_R8
+      execute: h8_exec_bior_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r1h: "0x00"
+      ccr_hnzvc: "10000"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10001"
+      trap: false
+
+  - id: h8_bior_imm3_r1h_clear
+    instruction: h8_bior_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "bior #5, r1h"
+    words:
+      - "0x74d1"
+    decode_keys: ["7", "4"]
+    sail:
+      decode: H8_BIOR_IMM3_R8
+      execute: h8_exec_bior_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r1h: "0x20"
+      ccr_hnzvc: "10000"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10000"
+      trap: false
+
+  - id: h8_bxor_imm3_r2l_set
+    instruction: h8_bxor_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "bxor #3, r2l"
+    words:
+      - "0x753a"
+    decode_keys: ["7", "5"]
+    sail:
+      decode: H8_BXOR_IMM3_R8
+      execute: h8_exec_bxor_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r2l: "0x08"
+      ccr_hnzvc: "10000"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10001"
+      trap: false
+
+  - id: h8_bxor_imm3_r2l_clear
+    instruction: h8_bxor_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "bxor #3, r2l"
+    words:
+      - "0x753a"
+    decode_keys: ["7", "5"]
+    sail:
+      decode: H8_BXOR_IMM3_R8
+      execute: h8_exec_bxor_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r2l: "0x08"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10000"
+      trap: false
+
+  - id: h8_bixor_imm3_r3h_set
+    instruction: h8_bixor_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "bixor #7, r3h"
+    words:
+      - "0x75f3"
+    decode_keys: ["7", "5"]
+    sail:
+      decode: H8_BIXOR_IMM3_R8
+      execute: h8_exec_bixor_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r3h: "0x00"
+      ccr_hnzvc: "10000"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10001"
+      trap: false
+
+  - id: h8_bixor_imm3_r3h_clear
+    instruction: h8_bixor_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "bixor #7, r3h"
+    words:
+      - "0x75f3"
+    decode_keys: ["7", "5"]
+    sail:
+      decode: H8_BIXOR_IMM3_R8
+      execute: h8_exec_bixor_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r3h: "0x00"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10000"
+      trap: false
+
+  - id: h8_band_imm3_r4l_keep
+    instruction: h8_band_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "band #1, r4l"
+    words:
+      - "0x761c"
+    decode_keys: ["7", "6"]
+    sail:
+      decode: H8_BAND_IMM3_R8
+      execute: h8_exec_band_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r4l: "0x02"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10001"
+      trap: false
+
+  - id: h8_band_imm3_r4l_clear
+    instruction: h8_band_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "band #1, r4l"
+    words:
+      - "0x761c"
+    decode_keys: ["7", "6"]
+    sail:
+      decode: H8_BAND_IMM3_R8
+      execute: h8_exec_band_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r4l: "0x00"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10000"
+      trap: false
+
+  - id: h8_biand_imm3_r5h_keep
+    instruction: h8_biand_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "biand #6, r5h"
+    words:
+      - "0x76e5"
+    decode_keys: ["7", "6"]
+    sail:
+      decode: H8_BIAND_IMM3_R8
+      execute: h8_exec_biand_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r5h: "0x00"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10001"
+      trap: false
+
+  - id: h8_biand_imm3_r5h_clear
+    instruction: h8_biand_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "biand #6, r5h"
+    words:
+      - "0x76e5"
+    decode_keys: ["7", "6"]
+    sail:
+      decode: H8_BIAND_IMM3_R8
+      execute: h8_exec_biand_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r5h: "0x40"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10000"
+      trap: false
+
+  - id: h8_bor_imm3_r0h_carry_set_bit_set
+    instruction: h8_bor_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "bor #0, r0h"
+    words:
+      - "0x7400"
+    decode_keys: ["7", "4"]
+    sail:
+      decode: H8_BOR_IMM3_R8
+      execute: h8_exec_bor_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r0h: "0x01"
+      ccr_hnzvc: "10111"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10111"
+      trap: false
+
+  - id: h8_bor_imm3_r0h_carry_set_bit_clear
+    instruction: h8_bor_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "bor #0, r0h"
+    words:
+      - "0x7400"
+    decode_keys: ["7", "4"]
+    sail:
+      decode: H8_BOR_IMM3_R8
+      execute: h8_exec_bor_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r0h: "0x00"
+      ccr_hnzvc: "10111"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10111"
+      trap: false
+
+  - id: h8_bior_imm3_r1h_carry_set_bit_clear
+    instruction: h8_bior_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "bior #1, r1h"
+    words:
+      - "0x7491"
+    decode_keys: ["7", "4"]
+    sail:
+      decode: H8_BIOR_IMM3_R8
+      execute: h8_exec_bior_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r1h: "0x00"
+      ccr_hnzvc: "10111"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10111"
+      trap: false
+
+  - id: h8_bior_imm3_r1h_carry_set_bit_set
+    instruction: h8_bior_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "bior #1, r1h"
+    words:
+      - "0x7491"
+    decode_keys: ["7", "4"]
+    sail:
+      decode: H8_BIOR_IMM3_R8
+      execute: h8_exec_bior_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r1h: "0x02"
+      ccr_hnzvc: "10111"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10111"
+      trap: false
+
+  - id: h8_bxor_imm3_r2l_carry_clear_bit_clear
+    instruction: h8_bxor_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "bxor #0, r2l"
+    words:
+      - "0x750a"
+    decode_keys: ["7", "5"]
+    sail:
+      decode: H8_BXOR_IMM3_R8
+      execute: h8_exec_bxor_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r2l: "0x00"
+      ccr_hnzvc: "10110"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10110"
+      trap: false
+
+  - id: h8_bxor_imm3_r2l_carry_set_bit_clear
+    instruction: h8_bxor_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "bxor #0, r2l"
+    words:
+      - "0x750a"
+    decode_keys: ["7", "5"]
+    sail:
+      decode: H8_BXOR_IMM3_R8
+      execute: h8_exec_bxor_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r2l: "0x00"
+      ccr_hnzvc: "10111"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10111"
+      trap: false
+
+  - id: h8_bixor_imm3_r3h_carry_clear_bit_set
+    instruction: h8_bixor_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "bixor #7, r3h"
+    words:
+      - "0x75f3"
+    decode_keys: ["7", "5"]
+    sail:
+      decode: H8_BIXOR_IMM3_R8
+      execute: h8_exec_bixor_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r3h: "0x80"
+      ccr_hnzvc: "10110"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10110"
+      trap: false
+
+  - id: h8_bixor_imm3_r3h_carry_set_bit_set
+    instruction: h8_bixor_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "bixor #7, r3h"
+    words:
+      - "0x75f3"
+    decode_keys: ["7", "5"]
+    sail:
+      decode: H8_BIXOR_IMM3_R8
+      execute: h8_exec_bixor_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r3h: "0x80"
+      ccr_hnzvc: "10111"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10111"
+      trap: false
+
+  - id: h8_band_imm3_r4l_carry_clear_bit_set
+    instruction: h8_band_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "band #0, r4l"
+    words:
+      - "0x760c"
+    decode_keys: ["7", "6"]
+    sail:
+      decode: H8_BAND_IMM3_R8
+      execute: h8_exec_band_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r4l: "0x01"
+      ccr_hnzvc: "10110"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10110"
+      trap: false
+
+  - id: h8_band_imm3_r4l_carry_clear_bit_clear
+    instruction: h8_band_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "band #0, r4l"
+    words:
+      - "0x760c"
+    decode_keys: ["7", "6"]
+    sail:
+      decode: H8_BAND_IMM3_R8
+      execute: h8_exec_band_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r4l: "0x00"
+      ccr_hnzvc: "10110"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10110"
+      trap: false
+
+  - id: h8_biand_imm3_r5h_carry_clear_bit_clear
+    instruction: h8_biand_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "biand #5, r5h"
+    words:
+      - "0x76d5"
+    decode_keys: ["7", "6"]
+    sail:
+      decode: H8_BIAND_IMM3_R8
+      execute: h8_exec_biand_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r5h: "0x00"
+      ccr_hnzvc: "10110"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10110"
+      trap: false
+
+  - id: h8_biand_imm3_r5h_carry_clear_bit_set
+    instruction: h8_biand_imm3_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "biand #5, r5h"
+    words:
+      - "0x76d5"
+    decode_keys: ["7", "6"]
+    sail:
+      decode: H8_BIAND_IMM3_R8
+      execute: h8_exec_biand_imm3
+    initial:
+      pc: "0x0000"
+      regs:
+        r5h: "0x20"
+      ccr_hnzvc: "10110"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: "10110"
       trap: false
 
   - id: h8_bset_r8_r8_low3

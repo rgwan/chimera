@@ -52,6 +52,7 @@ struct H8State = {
 
 union H8Inst = {
   H8_NOP : unit,
+  H8_SLEEP : unit,
   H8_BRANCH : (H8BranchCond, byte),
   H8_JMP_R16I : h8_r16,
   H8_JMP_ABS16 : word,
@@ -237,6 +238,9 @@ function h8_ccr_to_byte(ccr : H8CCR) -> byte =
 
 function h8_exec_nop(st : H8State) -> H8State =
   {st with pc = st.pc + 0x0002}
+
+function h8_exec_sleep(st : H8State) -> H8State =
+  h8_exec_nop(st)
 
 function h8_exec_stc_ccr(st : H8State, rd : H8R8) -> H8State = {
   let st1 = write_r8(st, rd, h8_ccr_to_byte(st.ccr));
@@ -1175,6 +1179,8 @@ function h8_decode_profile(profile : H8Profile, first : word, ext : word) -> opt
   match op0[7 .. 4] {
     0x0 => if op0 == 0x00 & op1 == 0x00 then
              Some(H8_NOP())
+           else if op0 == 0x01 & op1 == 0x80 then
+             Some(H8_SLEEP())
            else if op0 == 0x02 & op1[7 .. 4] == 0b0000 then
              Some(H8_STC_CCR_R8(rr8_rd))
            else if op0 == 0x03 & op1[7 .. 4] == 0b0000 then
@@ -1385,6 +1391,7 @@ function h8_decode(first : word, ext : word) -> option(H8Inst) =
 function h8_execute(st : H8State, inst : H8Inst) -> H8ExecResult =
   match inst {
     H8_NOP() => struct {st = h8_exec_nop(st), trap = false},
+    H8_SLEEP() => struct {st = h8_exec_sleep(st), trap = true},
     H8_BRANCH(cond, disp) => struct {st = h8_exec_branch(st, cond, disp), trap = false},
     H8_JMP_R16I(rs_addr) => struct {st = h8_exec_jmp_r16_ind(st, rs_addr), trap = false},
     H8_JMP_ABS16(target) => struct {st = h8_exec_jmp_abs16(st, target), trap = false},
@@ -1884,6 +1891,9 @@ function h8_memory_selftest() -> bool = {
   let branch_base = {h8_reset_machine() with st = {h8_reset() with pc = 0x000E, ccr = h8_test_ccr(0b0, 0b0, 0b0, 0b0)}};
   let branch_prog = h8_load_program(branch_base, 0x000E, [0x46, 0xFE]);
   let branch_done = h8_run(branch_prog, 3);
+  let sleep_prog = h8_load_program(h8_reset_machine(), 0x0000, [0x01, 0x80, 0x00, 0x00]);
+  let sleep_done = h8_step(sleep_prog);
+  let sleep_still = h8_run(sleep_done, 1);
   let bad_prog = h8_load_program(h8_reset_machine(), 0x0000, [0x01, 0x00]);
   let bad_done = h8_step(bad_prog);
   h8_fetch16(mem_fetch, 0x0000) == 0xF012
@@ -1902,6 +1912,10 @@ function h8_memory_selftest() -> bool = {
     & not_bool(seq_done.trap)
     & branch_done.st.pc == 0x000E
     & not_bool(branch_done.trap)
+    & sleep_done.st.pc == 0x0002
+    & sleep_done.trap
+    & sleep_still.st.pc == 0x0002
+    & sleep_still.trap
     & bad_done.trap
     & bad_done.st.pc == 0x0000
 }

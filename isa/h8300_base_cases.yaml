@@ -150,6 +150,18 @@ instructions:
       execute: h8_exec_nop
     effects: [pc]
 
+  - id: h8_sleep
+    assembler_template: sleep
+    length_bytes: 2
+    encoding:
+      mask: "0xffff"
+      match: "0x0180"
+      fields: {}
+    sail:
+      decode: H8_SLEEP
+      execute: h8_exec_sleep
+    effects: [pc]
+
   - id: h8_stc_ccr_r8
     assembler_template: "stc ccr, {rd8}"
     length_bytes: 2
@@ -1518,6 +1530,28 @@ cases:
       regs: {}
       ccr_hnzvc: preserve
       trap: false
+
+  - id: h8_sleep
+    instruction: h8_sleep
+    status: supported
+    check_area: trap
+    assembler:
+      - sleep
+    words:
+      - "0x0180"
+    decode_keys: ["0", "1"]
+    sail:
+      decode: H8_SLEEP
+      execute: h8_exec_sleep
+    initial:
+      pc: "0x0000"
+      regs: {}
+      ccr_hnzvc: "10101"
+    expected:
+      pc: "0x0002"
+      regs: {}
+      ccr_hnzvc: preserve
+      trap: true
 
   - id: h8_stc_ccr_r0l
     instruction: h8_stc_ccr_r8

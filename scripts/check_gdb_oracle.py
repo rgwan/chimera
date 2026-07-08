@@ -39,6 +39,9 @@ DIVERGENT_FLAGS = {
     "h8_neg8_r8": frozenset("V"),
 }
 DIVERGENT_FLAG_REASON = "gdb_sim_divergent_flag"
+EXPECTED_TRAP_REASON = "expected_trap_no_sim_semantics"
+REJECTED_ENCODING_REASON = "rejected_encoding_no_sim_semantics"
+MIN_COMPARED_CASES = 231
 
 # The sim resolves @aa:8 to 0x00aa instead of the datasheet 0xFFaa page;
 # for these ops the case memory address is remapped down so the data-path
@@ -56,17 +59,24 @@ SIM_DIVERGENT = {
     "h8_daa8_r8": "decimal adjust carry and result differ from datasheet",
     "h8_das8_r8": "decimal adjust carry and result differ from datasheet",
     "h8_divxu_r8_r16": "divide-by-zero result differs from datasheet",
-    "h8_mov16_r16_pr16": "self-referential pre-decrement store differs",
-    "h8_mov8_r8_pr16": "self-referential pre-decrement store differs",
     "h8_subx8_r8_r8": "subx does not model sticky zero",
     "h8_rte": "rte restores ccr differently from datasheet",
 }
 SIM_DIVERGENT_REASON = "gdb_sim_divergent_instruction"
-
+SIM_DIVERGENT_CASES = {
+    "h8_mov16_r1_pr1": "self-referential pre-decrement store differs",
+    "h8_mov8_r1l_pr1": "self-referential pre-decrement store differs",
+}
 # The sim reads word/long memory at the literal address; the H8/300 forces
 # even alignment by clearing bit0. Cases whose pointer register is odd are
 # abstained rather than compared.
 UNALIGNED_WORD_REASON = "gdb_sim_unaligned_word_access"
+ABSTAIN_REASON_LIMITS = {
+    EXPECTED_TRAP_REASON: 1,
+    REJECTED_ENCODING_REASON: 4,
+    SIM_DIVERGENT_REASON: 18,
+    UNALIGNED_WORD_REASON: 1,
+}
 
 # CCR bit position of each flag in the HNZVC string order.
 CCR_BITS = (5, 3, 2, 1, 0)
@@ -116,11 +126,13 @@ def unaligned_word_access(case: dict[str, object]) -> bool:
 
 def applicability(case: dict[str, object]) -> str | None:
     if str(case.get("status")) == "rejected":
-        return "rejected_encoding_no_sim_semantics"
+        return REJECTED_ENCODING_REASON
     if case["expected"].get("trap"):
-        return "expected_trap_no_sim_semantics"
+        return EXPECTED_TRAP_REASON
     if any(initial_reg_values(case)[8:]) or any(expected_regs(case)[8:]):
         return "extended_registers_absent"
+    if str(case.get("id")) in SIM_DIVERGENT_CASES:
+        return SIM_DIVERGENT_REASON
     if str(case.get("instruction")) in SIM_DIVERGENT:
         return SIM_DIVERGENT_REASON
     if unaligned_word_access(case):
@@ -130,11 +142,14 @@ def applicability(case: dict[str, object]) -> str | None:
 
 def abstain_reason_text(case: dict[str, object], reason_code: str) -> str:
     if reason_code == SIM_DIVERGENT_REASON:
+        case_id = str(case.get("id"))
+        if case_id in SIM_DIVERGENT_CASES:
+            return SIM_DIVERGENT_CASES[case_id]
         return SIM_DIVERGENT[str(case.get("instruction"))]
     return {
-        "expected_trap_no_sim_semantics": "expected trap has no sim semantics",
+        EXPECTED_TRAP_REASON: "expected trap has no sim semantics",
         "extended_registers_absent": "extended registers absent from H8/300 sim",
-        "rejected_encoding_no_sim_semantics": "rejected encoding has no sim trap semantics",
+        REJECTED_ENCODING_REASON: "rejected encoding has no sim trap semantics",
         UNALIGNED_WORD_REASON: "sim does not force even alignment on word access",
     }[reason_code]
 
@@ -301,6 +316,7 @@ def check_case(case: dict[str, object], work: Path) -> dict[str, object]:
 
 def exception_coverage(results: list[dict[str, object]]) -> dict[str, object]:
     sim_hits = {name: [] for name in sorted(SIM_DIVERGENT)}
+    case_hits = {name: [] for name in sorted(SIM_DIVERGENT_CASES)}
     unmodeled_hits = {flag: [] for flag in sorted(UNMODELED_FLAGS)}
     flag_hits = {
         name: {flag: [] for flag in sorted(flags)}
@@ -313,7 +329,9 @@ def exception_coverage(results: list[dict[str, object]]) -> dict[str, object]:
             result.get("status") == "abstain"
             and result.get("reason_code") == SIM_DIVERGENT_REASON
         ):
-            if instruction in sim_hits:
+            if case_id in case_hits:
+                case_hits[case_id].append(case_id)
+            elif instruction in sim_hits:
                 sim_hits[instruction].append(case_id)
         scope = result.get("comparison_scope")
         if not isinstance(scope, dict):
@@ -333,6 +351,9 @@ def exception_coverage(results: list[dict[str, object]]) -> dict[str, object]:
                     flag_hits[instruction][str(flag)].append(case_id)
 
     unused_sim = sorted(name for name, case_ids in sim_hits.items() if not case_ids)
+    unused_cases = sorted(
+        name for name, case_ids in case_hits.items() if not case_ids
+    )
     unused_unmodeled = sorted(
         flag for flag, case_ids in unmodeled_hits.items() if not case_ids
     )
@@ -343,11 +364,31 @@ def exception_coverage(results: list[dict[str, object]]) -> dict[str, object]:
     unused_flags = {name: flags for name, flags in unused_flags.items() if flags}
     return {
         "divergent_flag_hits": flag_hits,
+        "sim_divergent_case_hits": case_hits,
         "sim_divergent_hits": sim_hits,
         "unused_divergent_flag_exceptions": unused_flags,
+        "unused_sim_divergent_case_exceptions": unused_cases,
         "unused_sim_divergent_exceptions": unused_sim,
         "unused_unmodeled_flag_exceptions": unused_unmodeled,
         "unmodeled_flag_hits": unmodeled_hits,
+    }
+
+
+def abstain_policy(
+    skip_reasons: dict[str, int], compared_count: int
+) -> dict[str, object]:
+    unexpected = sorted(set(skip_reasons) - set(ABSTAIN_REASON_LIMITS))
+    over_limit = {
+        reason: {"count": count, "limit": ABSTAIN_REASON_LIMITS[reason]}
+        for reason, count in sorted(skip_reasons.items())
+        if reason in ABSTAIN_REASON_LIMITS and count > ABSTAIN_REASON_LIMITS[reason]
+    }
+    return {
+        "compared_case_count": compared_count,
+        "expected_reason_max_counts": dict(sorted(ABSTAIN_REASON_LIMITS.items())),
+        "min_compared_case_count": MIN_COMPARED_CASES,
+        "reason_over_limit": over_limit,
+        "unexpected_reason_codes": unexpected,
     }
 
 
@@ -391,13 +432,36 @@ def main() -> int:
     for result in skipped:
         reason = str(result.get("reason_code", "unknown"))
         skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
+    policy = abstain_policy(skip_reasons, len(passed))
     if not passed:
         blocking_errors.append("no comparable GDB oracle cases")
+    if len(passed) < MIN_COMPARED_CASES:
+        blocking_errors.append(
+            f"GDB oracle compared cases below floor: {len(passed)} < {MIN_COMPARED_CASES}"
+        )
+    if policy["unexpected_reason_codes"]:
+        blocking_errors.append(
+            "unexpected GDB abstain reasons: "
+            + ", ".join(policy["unexpected_reason_codes"])
+        )
+    if policy["reason_over_limit"]:
+        items = [
+            f"{reason}:{entry['count']}>{entry['limit']}"
+            for reason, entry in sorted(policy["reason_over_limit"].items())
+        ]
+        blocking_errors.append(
+            "GDB abstain reason count over limit: " + "; ".join(items)
+        )
     exceptions = exception_coverage(results)
     if exceptions["unused_sim_divergent_exceptions"]:
         names = ", ".join(exceptions["unused_sim_divergent_exceptions"])
         blocking_errors.append(
             f"unused GDB simulator divergent instruction exceptions: {names}"
+        )
+    if exceptions["unused_sim_divergent_case_exceptions"]:
+        names = ", ".join(exceptions["unused_sim_divergent_case_exceptions"])
+        blocking_errors.append(
+            f"unused GDB simulator divergent case exceptions: {names}"
         )
     if exceptions["unused_unmodeled_flag_exceptions"]:
         flags = ", ".join(exceptions["unused_unmodeled_flag_exceptions"])
@@ -416,6 +480,7 @@ def main() -> int:
     report = {
         "abstained_case_count": len(skipped),
         "abstained_cases": skipped,
+        "abstain_policy": policy,
         "abstain_status": "non_blocking",
         "blocking_errors": blocking_errors,
         "case_input_count": len(results),
@@ -445,6 +510,7 @@ def main() -> int:
         ],
         "report_schema": 2,
         "sim_divergent_instructions": dict(sorted(SIM_DIVERGENT.items())),
+        "sim_divergent_cases": dict(sorted(SIM_DIVERGENT_CASES.items())),
         "skip_count": len(skipped),
         "skip_reason_counts": dict(sorted(skip_reasons.items())),
         "status": status,

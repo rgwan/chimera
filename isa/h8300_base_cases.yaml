@@ -1344,6 +1344,18 @@ instructions:
       execute: h8_exec_rts
     effects: [pc, addr_update, mem_read]
 
+  - id: h8_rte
+    assembler_template: rte
+    length_bytes: 2
+    encoding:
+      mask: "0xffff"
+      match: "0x5670"
+      fields: {}
+    sail:
+      decode: H8_RTE
+      execute: h8_exec_rte
+    effects: [pc, addr_update, ccr_hnzvc, mem_read]
+
   - id: h8_bsr_rel8
     assembler_template: "bsr {rel8}"
     length_bytes: 2
@@ -2251,6 +2263,52 @@ cases:
         addr: "0x01fe"
         wmask: "00"
         rdata: "0x1234"
+
+  - id: h8_rte_1234_ccr_restore
+    instruction: h8_rte
+    status: supported
+    check_area: memory
+    assembler:
+      - rte
+    words:
+      - "0x5670"
+    decode_keys: ["5", "6", "7", "0"]
+    sail:
+      decode: H8_RTE
+      execute: h8_exec_rte
+    initial:
+      pc: "0x0100"
+      regs:
+        r7: "0x01fc"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x1234"
+      regs:
+        r7: "0x0200"
+      ccr_hnzvc: "11011"
+      trap: false
+    memory:
+      initial:
+        "0x01fc": "0xab"
+        "0x01fd": "0xcd"
+        "0x01fe": "0x12"
+        "0x01ff": "0x34"
+      expected:
+        "0x01fc": "0xab"
+        "0x01fd": "0xcd"
+        "0x01fe": "0x12"
+        "0x01ff": "0x34"
+      accesses:
+        - kind: read
+          width: word
+          addr: "0x01fc"
+          wmask: "00"
+          rdata: "0xabcd"
+        - kind: read
+          width: word
+          addr: "0x01fe"
+          wmask: "00"
+          rdata: "0x1234"
 
   - id: h8_bsr_rel8_forward
     instruction: h8_bsr_rel8

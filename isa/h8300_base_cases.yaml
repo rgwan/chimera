@@ -312,6 +312,32 @@ instructions:
       execute: h8_exec_subx8
     effects: [pc, rd8, ccr_hnzvc]
 
+  - id: h8_daa8_r8
+    assembler_template: "daa {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xfff0"
+      match: "0x0f00"
+      fields:
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_DAA8_R8
+      execute: h8_exec_daa8
+    effects: [pc, rd8, ccr_hnzvc]
+
+  - id: h8_das8_r8
+    assembler_template: "das {rd8}"
+    length_bytes: 2
+    encoding:
+      mask: "0xfff0"
+      match: "0x1f00"
+      fields:
+        rd8: "word[3:0]"
+    sail:
+      decode: H8_DAS8_R8
+      execute: h8_exec_das8
+    effects: [pc, rd8, ccr_hnzvc]
+
   - id: h8_add8_r8_r8
     assembler_template: "add.b {rs8}, {rd8}"
     length_bytes: 2
@@ -2922,6 +2948,126 @@ cases:
       ccr_hnzvc: "11010"
       trap: false
 
+  - id: h8_daa8_r0h_no_adjust
+    instruction: h8_daa8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "daa r0h"
+    words:
+      - "0x0f00"
+    decode_keys: ["0", "f"]
+    sail:
+      decode: H8_DAA8_R8
+      execute: h8_exec_daa8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0h: "0x09"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0h: "0x09"
+      ccr_hnzvc: "x00x0"
+      trap: false
+
+  - id: h8_daa8_r1l_low_adjust
+    instruction: h8_daa8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "daa r1l"
+    words:
+      - "0x0f09"
+    decode_keys: ["0", "f"]
+    sail:
+      decode: H8_DAA8_R8
+      execute: h8_exec_daa8
+    initial:
+      pc: "0x0000"
+      regs:
+        r1l: "0x0a"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1l: "0x10"
+      ccr_hnzvc: "x00x0"
+      trap: false
+
+  - id: h8_daa8_r2h_high_carry
+    instruction: h8_daa8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "daa r2h"
+    words:
+      - "0x0f02"
+    decode_keys: ["0", "f"]
+    sail:
+      decode: H8_DAA8_R8
+      execute: h8_exec_daa8
+    initial:
+      pc: "0x0000"
+      regs:
+        r2h: "0xa0"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r2h: "0x00"
+      ccr_hnzvc: "x01x1"
+      trap: false
+
+  - id: h8_daa8_r3l_both_carry
+    instruction: h8_daa8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "daa r3l"
+    words:
+      - "0x0f0b"
+    decode_keys: ["0", "f"]
+    sail:
+      decode: H8_DAA8_R8
+      execute: h8_exec_daa8
+    initial:
+      pc: "0x0000"
+      regs:
+        r3l: "0x9a"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r3l: "0x00"
+      ccr_hnzvc: "x01x1"
+      trap: false
+
+  - id: h8_daa8_r7l_carry_preserve
+    instruction: h8_daa8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "daa r7l"
+    words:
+      - "0x0f0f"
+    decode_keys: ["0", "f"]
+    sail:
+      decode: H8_DAA8_R8
+      execute: h8_exec_daa8
+    initial:
+      pc: "0x0000"
+      regs:
+        r7l: "0x33"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0002"
+      regs:
+        r7l: "0x99"
+      ccr_hnzvc: "x10x1"
+      trap: false
+
   - id: h8_mov8_r1h_r0l
     instruction: h8_mov8_r8_r8
     status: supported
@@ -4770,6 +4916,102 @@ cases:
       regs:
         r0l: "0x00"
       ccr_hnzvc: "10010"
+      trap: false
+
+  - id: h8_das8_r0h_no_adjust
+    instruction: h8_das8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "das r0h"
+    words:
+      - "0x1f00"
+    decode_keys: ["1", "f"]
+    sail:
+      decode: H8_DAS8_R8
+      execute: h8_exec_das8
+    initial:
+      pc: "0x0000"
+      regs:
+        r0h: "0x99"
+      ccr_hnzvc: "00000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r0h: "0x99"
+      ccr_hnzvc: "x10x0"
+      trap: false
+
+  - id: h8_das8_r1l_low_adjust
+    instruction: h8_das8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "das r1l"
+    words:
+      - "0x1f09"
+    decode_keys: ["1", "f"]
+    sail:
+      decode: H8_DAS8_R8
+      execute: h8_exec_das8
+    initial:
+      pc: "0x0000"
+      regs:
+        r1l: "0x06"
+      ccr_hnzvc: "10000"
+    expected:
+      pc: "0x0002"
+      regs:
+        r1l: "0x00"
+      ccr_hnzvc: "x01x0"
+      trap: false
+
+  - id: h8_das8_r2h_high_adjust
+    instruction: h8_das8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "das r2h"
+    words:
+      - "0x1f02"
+    decode_keys: ["1", "f"]
+    sail:
+      decode: H8_DAS8_R8
+      execute: h8_exec_das8
+    initial:
+      pc: "0x0000"
+      regs:
+        r2h: "0x70"
+      ccr_hnzvc: "00001"
+    expected:
+      pc: "0x0002"
+      regs:
+        r2h: "0x10"
+      ccr_hnzvc: "x00x1"
+      trap: false
+
+  - id: h8_das8_r7l_both_adjust
+    instruction: h8_das8_r8
+    status: supported
+    check_area: flags
+    assembler:
+      - "das r7l"
+    words:
+      - "0x1f0f"
+    decode_keys: ["1", "f"]
+    sail:
+      decode: H8_DAS8_R8
+      execute: h8_exec_das8
+    initial:
+      pc: "0x0000"
+      regs:
+        r7l: "0x66"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0002"
+      regs:
+        r7l: "0x00"
+      ccr_hnzvc: "x01x1"
       trap: false
 
   - id: h8_sub8_r1h_r0l

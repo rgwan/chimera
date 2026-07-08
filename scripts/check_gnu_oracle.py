@@ -173,6 +173,15 @@ def combine_bool_expr(checks: list[str]) -> str:
     return expr
 
 
+def sail_ccr_checks(hnzvc: str) -> list[str]:
+    fields = ("h", "n", "z", "v", "c")
+    return [
+        f"(res.st.ccr.{field} == 0b{value})"
+        for field, value in zip(fields, hnzvc)
+        if value != "x"
+    ]
+
+
 def sail_case_body(case: dict[str, object]) -> str:
     initial = case["initial"]
     expected = case["expected"]
@@ -203,8 +212,8 @@ def sail_case_body(case: dict[str, object]) -> str:
     checks = [
         f"(res.st.pc == {expected['pc']})",
         "(res.trap)" if expected["trap"] else "(not_bool(res.trap))",
-        f"(h8_ccr_hnzvc(res.st.ccr) == 0b{expected_hnzvc})",
     ]
+    checks.extend(sail_ccr_checks(expected_hnzvc))
     for index, value in enumerate(expected_regs(case)):
         checks.append(f"(read_r16(res.st, {index}) == 0x{value:04X})")
     for addr, value in sorted_memory_items(memory_map(case, "expected")):

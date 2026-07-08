@@ -26,7 +26,8 @@ BYTE_RE = re.compile(r"^0x[0-9a-f]{2}$")
 WMASK_RE = re.compile(r"^[01]{2}$")
 BYTE_REG_RE = re.compile(r"^r[0-7][hl]$")
 WORD_REG_RE = re.compile(r"^[re][0-7]$")
-HNZVC_RE = re.compile(r"^[01]{5}$")
+HNZVC_INITIAL_RE = re.compile(r"^[01]{5}$")
+HNZVC_EXPECTED_RE = re.compile(r"^[01x]{5}$")
 TRACE_KINDS = {"bits", "bool", "enum", "uint"}
 TRACE_REQUIRED_FIELDS = {
     "valid",
@@ -299,7 +300,7 @@ def validate_branch_case(
     initial = expect_dict(errors, case.get("initial"), f"{path}.initial")
     expected = expect_dict(errors, case.get("expected"), f"{path}.expected")
     hnzvc = initial.get("ccr_hnzvc")
-    if not isinstance(hnzvc, str) or HNZVC_RE.fullmatch(hnzvc) is None:
+    if not isinstance(hnzvc, str) or HNZVC_INITIAL_RE.fullmatch(hnzvc) is None:
         return
     actual_taken = branch_taken(name, hnzvc)
     if (outcome == "taken") != actual_taken:
@@ -553,10 +554,16 @@ def validate_case(
     validate_regs(initial.get("regs", {}), f"{path}.initial.regs", errors)
     validate_regs(expected.get("regs", {}), f"{path}.expected.regs", errors)
 
-    for state_name, state in (("initial", initial), ("expected", expected)):
-        hnzvc = state.get("ccr_hnzvc")
-        if hnzvc != "preserve" and (not isinstance(hnzvc, str) or HNZVC_RE.fullmatch(hnzvc) is None):
-            fail(errors, f"{path}.{state_name}.ccr_hnzvc", "bad HNZVC value")
+    initial_hnzvc = initial.get("ccr_hnzvc")
+    if not isinstance(initial_hnzvc, str) or HNZVC_INITIAL_RE.fullmatch(initial_hnzvc) is None:
+        fail(errors, f"{path}.initial.ccr_hnzvc", "bad HNZVC value")
+
+    expected_hnzvc = expected.get("ccr_hnzvc")
+    if (
+        expected_hnzvc != "preserve"
+        and (not isinstance(expected_hnzvc, str) or HNZVC_EXPECTED_RE.fullmatch(expected_hnzvc) is None)
+    ):
+        fail(errors, f"{path}.expected.ccr_hnzvc", "bad HNZVC value")
 
     if not isinstance(expected.get("trap"), bool):
         fail(errors, f"{path}.expected.trap", "expected bool")

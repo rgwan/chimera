@@ -118,6 +118,8 @@ union H8Inst = {
   H8_BIAND_IMM3_R8 : (bits(3), H8R8),
   H8_NOT8_R8 : H8R8,
   H8_NEG8_R8 : H8R8,
+  H8_DAA8_R8 : H8R8,
+  H8_DAS8_R8 : H8R8,
   H8_DEC8_R8 : H8R8,
   H8_SUBS16_R16 : (h8_r16, word),
   H8_SUB8_R8_R8 : (H8R8, H8R8),
@@ -523,6 +525,69 @@ function h8_exec_cmp16(st : H8State, rd : h8_r16, value : word) -> H8State = {
   {st with ccr = h8_sub_flags(H8_WORD, lhs, value, result, st.ccr), pc = st.pc + 0x0002}
 }
 
+function h8_daa_adjust(value : byte, ccr : H8CCR) -> byte = {
+  let upper = unsigned(value[7 .. 4]);
+  let lower = unsigned(value[3 .. 0]);
+  if ccr.c == 0b1 then {
+    if ccr.h == 0b1 then {
+      if upper <= 3 & lower <= 3 then 0x66 else 0x00
+    } else {
+      if upper <= 2 then
+        if lower <= 9 then 0x60 else 0x66
+      else 0x00
+    }
+  } else {
+    if ccr.h == 0b1 then {
+      if lower <= 3 then
+        if upper <= 9 then 0x06 else 0x66
+      else 0x00
+    } else {
+      if lower <= 9 then
+        if upper <= 9 then 0x00 else 0x60
+      else
+        if upper <= 8 then 0x06 else 0x66
+    }
+  }
+}
+
+function h8_das_adjust(value : byte, ccr : H8CCR) -> byte = {
+  let upper = unsigned(value[7 .. 4]);
+  let lower = unsigned(value[3 .. 0]);
+  if ccr.c == 0b1 then {
+    if ccr.h == 0b1 then {
+      if upper >= 6 & lower >= 6 then 0x9A else 0x00
+    } else {
+      if upper >= 7 & lower <= 9 then 0xA0 else 0x00
+    }
+  } else {
+    if ccr.h == 0b1 then {
+      if upper <= 8 & lower >= 6 then 0xFA else 0x00
+    } else {
+      0x00
+    }
+  }
+}
+
+function h8_exec_daa8(st : H8State, rd : H8R8) -> H8State = {
+  let value : byte = read_r8(st, rd);
+  let adjust : byte = h8_daa_adjust(value, st.ccr);
+  let result : byte = value + adjust;
+  let carry : bit = bool_to_bit(unsigned(value) + unsigned(adjust) > 255);
+  let c : bit = if carry == 0b1 then 0b1 else st.ccr.c;
+  let st1 = write_r8(st, rd, result);
+  {st1 with ccr = {st.ccr with n = result[7], z = bool_to_bit(result == 0x00), c = c},
+            pc = st.pc + 0x0002}
+}
+
+function h8_exec_das8(st : H8State, rd : H8R8) -> H8State = {
+  let value : byte = read_r8(st, rd);
+  let adjust : byte = h8_das_adjust(value, st.ccr);
+  let result : byte = value + adjust;
+  let st1 = write_r8(st, rd, result);
+  {st1 with ccr = {st.ccr with n = result[7], z = bool_to_bit(result == 0x00)},
+            pc = st.pc + 0x0002}
+}
+
 function h8_exec_inc8(st : H8State, rd : H8R8) -> H8State = {
   let value : byte = read_r8(st, rd);
   let result : byte = value + 0x01;
@@ -895,6 +960,8 @@ function h8_decode_profile(profile : H8Profile, first : word, ext : word) -> opt
              Some(H8_MOV16_R16_R16(rr16_rd, rr16_rs))
            else if op0 == 0x0E then
              Some(H8_ADDX8_R8_R8(rr8_rd, rr8_rs))
+           else if op0 == 0x0F & op1[7 .. 4] == 0b0000 then
+             Some(H8_DAA8_R8(rr8_rd))
            else
              None(),
     0x1 => if op0 == 0x10 & op1[7 .. 4] == 0b0000 then
@@ -938,6 +1005,8 @@ function h8_decode_profile(profile : H8Profile, first : word, ext : word) -> opt
              Some(H8_CMP8_R8_R8(rr8_rd, rr8_rs))
            else if op0 == 0x1D & h8_word_rr_allowed(profile, op1) then
              Some(H8_CMP16_R16_R16(rr16_rd, rr16_rs))
+           else if op0 == 0x1F & op1[7 .. 4] == 0b0000 then
+             Some(H8_DAS8_R8(rr8_rd))
            else
              None(),
     0x2 => Some(H8_MOV8_ABS8_R8(h8_r8_from_code(op0[3 .. 0]), op1)),
@@ -1133,6 +1202,8 @@ function h8_execute(st : H8State, inst : H8Inst) -> H8ExecResult =
     H8_BIAND_IMM3_R8(bit, rd) => struct {st = h8_exec_biand_imm3(st, bit, rd), trap = false},
     H8_NOT8_R8(rd) => struct {st = h8_exec_not8(st, rd), trap = false},
     H8_NEG8_R8(rd) => struct {st = h8_exec_neg8(st, rd), trap = false},
+    H8_DAA8_R8(rd) => struct {st = h8_exec_daa8(st, rd), trap = false},
+    H8_DAS8_R8(rd) => struct {st = h8_exec_das8(st, rd), trap = false},
     H8_DEC8_R8(rd) => struct {st = h8_exec_dec8(st, rd), trap = false},
     H8_SUBS16_R16(rd, value) => struct {st = h8_exec_subs16(st, rd, value), trap = false},
     H8_SUB8_R8_R8(rd, rs) => struct {st = h8_exec_sub8(st, rd, read_r8(st, rs)), trap = false},

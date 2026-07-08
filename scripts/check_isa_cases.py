@@ -215,6 +215,56 @@ def validate_word_memory_access(
             fail(errors, f"{path}.access.wdata", f"expected {word}")
 
 
+def byte_write_lane_advisories(case: dict[str, object], path: str) -> list[dict[str, object]]:
+    memory = case.get("memory")
+    if not isinstance(memory, dict):
+        return []
+    expected = memory.get("expected")
+    if not isinstance(expected, dict):
+        return []
+
+    raw_accesses = memory.get("accesses")
+    if isinstance(raw_accesses, list):
+        accesses = [
+            (f"{path}.memory.accesses[{index}]", access)
+            for index, access in enumerate(raw_accesses)
+            if isinstance(access, dict)
+        ]
+    else:
+        access = memory.get("access")
+        accesses = [(f"{path}.memory.access", access)] if isinstance(access, dict) else []
+
+    advisories = []
+    for access_path, access in accesses:
+        if access.get("kind") != "write" or access.get("width") != "byte":
+            continue
+        addr_text = access.get("addr")
+        if not isinstance(addr_text, str) or WORD_RE.fullmatch(addr_text) is None:
+            continue
+        byte_text = expected.get(addr_text)
+        if not isinstance(byte_text, str) or BYTE_RE.fullmatch(byte_text) is None:
+            continue
+
+        addr = int(addr_text, 16)
+        byte = int(byte_text, 16)
+        expected_wmask = "10" if addr & 1 == 0 else "01"
+        expected_wdata = f"0x{byte << 8:04x}" if addr & 1 == 0 else f"0x{byte:04x}"
+        got_wmask = access.get("wmask")
+        got_wdata = access.get("wdata")
+        if got_wmask != expected_wmask or got_wdata != expected_wdata:
+            advisories.append({
+                "addr": addr_text,
+                "case_id": case.get("id"),
+                "expected_wdata": expected_wdata,
+                "expected_wmask": expected_wmask,
+                "got_wdata": got_wdata,
+                "got_wmask": got_wmask,
+                "path": access_path,
+                "type": "byte_write_lane",
+            })
+    return advisories
+
+
 def validate_case_memory(memory: object, path: str, errors: list[str]) -> dict[str, object]:
     item = expect_dict(errors, memory, path)
     initial = expect_dict(errors, item.get("initial", {}), f"{path}.initial")
@@ -684,11 +734,13 @@ def validate_table(table: object, sail_text: str) -> tuple[list[str], dict[str, 
 
     case_ids: set[str] = set()
     branch_coverage: dict[str, set[str]] = {}
+    byte_lane_advisories: list[dict[str, object]] = []
     trace_expectations: list[dict[str, object]] = []
     cases = expect_list(errors, root.get("cases"), "cases")
     for index, case in enumerate(cases):
         if isinstance(case, dict):
             validate_branch_case(case, f"cases[{index}]", branch_coverage, errors)
+            byte_lane_advisories.extend(byte_write_lane_advisories(case, f"cases[{index}]"))
         trace_expectations.append(validate_case(case, index, sail_text, case_ids, instructions, errors))
     if profile == "h8300_base":
         validate_branch_coverage(branch_coverage, errors)
@@ -700,6 +752,8 @@ def validate_table(table: object, sail_text: str) -> tuple[list[str], dict[str, 
         validate_reject_case(case, index, case_ids, errors)
 
     summary = {
+        "advisories": byte_lane_advisories,
+        "advisory_count": len(byte_lane_advisories),
         "case_count": len(cases),
         "decode_key_bits_max": root.get("decode_key_bits_max"),
         "fetch_word_bits": root.get("fetch_word_bits"),

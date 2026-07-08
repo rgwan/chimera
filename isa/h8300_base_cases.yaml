@@ -1382,9 +1382,8 @@ instructions:
     assembler_template: "{cond} {rel8}"
     length_bytes: 2
     encoding:
-      mask: "0xf001"
+      mask: "0xf000"
       match: "0x4000"
-      guard: disp8_bit0_zero
       fields:
         cond: "word[11:8]"
         rel8: "word[7:0]"
@@ -1460,9 +1459,8 @@ instructions:
     assembler_template: "bsr {rel8}"
     length_bytes: 2
     encoding:
-      mask: "0xff01"
+      mask: "0xff00"
       match: "0x5500"
-      guard: disp8_bit0_zero
       fields:
         rel8: "word[7:0]"
     sail:

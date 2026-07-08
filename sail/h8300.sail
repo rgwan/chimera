@@ -983,7 +983,7 @@ function sign_extend8_to16(value : byte) -> word =
 function h8_exec_branch(st : H8State, cond : H8BranchCond, disp : byte) -> H8State = {
   let next_pc : word = st.pc + 0x0002;
   if h8_branch_taken(cond, st.ccr) then
-    {st with pc = next_pc + sign_extend8_to16(disp)}
+    {st with pc = align_word_addr(next_pc + sign_extend8_to16(disp))}
   else
     {st with pc = next_pc}
 }
@@ -1024,7 +1024,7 @@ function h8_exec_rte(m : H8Machine) -> H8Machine = {
 
 function h8_exec_bsr_rel8(m : H8Machine, disp : byte) -> H8Machine = {
   let return_pc : word = m.st.pc + 0x0002;
-  h8_exec_call16(m, return_pc + sign_extend8_to16(disp), return_pc)
+  h8_exec_call16(m, align_word_addr(return_pc + sign_extend8_to16(disp)), return_pc)
 }
 
 function h8_exec_jsr_r16_ind(m : H8Machine, rs_addr : h8_r16) -> H8Machine =
@@ -1259,10 +1259,7 @@ function h8_decode_profile(profile : H8Profile, first : word, ext : word) -> opt
              None(),
     0x2 => Some(H8_MOV8_ABS8_R8(h8_r8_from_code(op0[3 .. 0]), op1)),
     0x3 => Some(H8_MOV8_R8_ABS8(op1, h8_r8_from_code(op0[3 .. 0]))),
-    0x4 => if op1[0] == 0b0 then
-             Some(H8_BRANCH(h8_branch_cond_from_code(op0[3 .. 0]), op1))
-           else
-             None(),
+    0x4 => Some(H8_BRANCH(h8_branch_cond_from_code(op0[3 .. 0]), op1)),
     0x5 => if op0 == 0x50 & op1[3] == 0b0 then
              Some(H8_MULXU_R8_R16(h8_r16_from_code(op1[2 .. 0]), rr8_rs))
            else if op0 == 0x51 & op1[3] == 0b0 then
@@ -1271,7 +1268,7 @@ function h8_decode_profile(profile : H8Profile, first : word, ext : word) -> opt
              Some(H8_RTS())
            else if op0 == 0x56 & op1 == 0x70 then
              Some(H8_RTE())
-           else if op0 == 0x55 & op1[0] == 0b0 then
+           else if op0 == 0x55 then
              Some(H8_BSR_REL8(op1))
            else if op0 == 0x59 & op1[7] == 0b0 & op1[3 .. 0] == 0x0 then
              Some(H8_JMP_R16I(h8_r16_from_code(op1[6 .. 4])))
@@ -1750,9 +1747,9 @@ function h8_decode_selftest() -> bool = {
   let legacy_to = h8_decode_execute_machine_profile(legacy_from, H8_LEGACY, 0x6AC8, 0x1236);
   let base_from = h8_decode_execute_machine(legacy_base, 0x6A48, 0x1234);
   let base_to = h8_decode_execute_machine(legacy_base, 0x6AC8, 0x1236);
-  let bad_branch_decode : option(H8Inst) = h8_decode(0x4601, 0x0000);
+  let odd_branch_decode : option(H8Inst) = h8_decode(0x4601, 0x0000);
   let bad_opcode_decode : option(H8Inst) = h8_decode(0x0100, 0x0000);
-  let bad_branch = is_none(bad_branch_decode);
+  let odd_branch = not_bool(is_none(odd_branch_decode));
   let bad_opcode = is_none(bad_opcode_decode);
   s0.st.pc == 0x0002
     & read_r8(s1.st, r0h) == 0x12
@@ -1763,7 +1760,7 @@ function h8_decode_selftest() -> bool = {
     & read_r16(s5.st, 2) == 0xABCD
     & s5.st.pc == 0x000E
     & s6.st.pc == s5.st.pc
-    & bad_branch
+    & odd_branch
     & bad_opcode
     & read_r8(legacy_from.st, r0l) == 0x80
     & h8_mem_read8(legacy_to.mem, 0x1236) == 0x80
@@ -1771,7 +1768,8 @@ function h8_decode_selftest() -> bool = {
     & not_bool(legacy_to.trap)
     & base_from.trap
     & base_to.trap
-    & s7.trap
+    & s7.st.pc == 0x0010
+    & not_bool(s7.trap)
     & s8.trap
 }
 

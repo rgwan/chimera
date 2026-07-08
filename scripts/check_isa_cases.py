@@ -273,7 +273,7 @@ def branch_target(pc: int, disp8: int, taken: bool) -> int:
     if not taken:
         return next_pc
     signed_disp = disp8 - 0x100 if disp8 & 0x80 else disp8
-    return (next_pc + signed_disp) & 0xFFFF
+    return (next_pc + signed_disp) & 0xFFFE
 
 
 def validate_branch_case(
@@ -301,9 +301,6 @@ def validate_branch_case(
     expected_word = 0x4000 | (BRANCH_CODES[name] << 8) | (word & 0xFF)
     if word != expected_word:
         fail(errors, f"{path}.words[0]", "branch condition does not match case id")
-    if word & 0x1:
-        fail(errors, f"{path}.words[0]", "branch displacement must be even")
-
     initial = expect_dict(errors, case.get("initial"), f"{path}.initial")
     expected = expect_dict(errors, case.get("expected"), f"{path}.expected")
     hnzvc = initial.get("ccr_hnzvc")

@@ -40,13 +40,19 @@ DIVERGENT_FLAGS = {
 }
 DIVERGENT_FLAG_REASON = "gdb_sim_divergent_flag"
 
+# The sim resolves @aa:8 to 0x00aa instead of the datasheet 0xFFaa page;
+# for these ops the case memory address is remapped down so the data-path
+# result is still compared.
+ABS8_INSTRUCTIONS = frozenset({
+    "h8_mov8_abs8_r8",
+    "h8_mov8_r8_abs8",
+    "h8_bit_abs8_read",
+    "h8_bit_abs8_write",
+})
+
 # Instructions the simulator executes with datasheet-divergent addressing
 # or results; abstained from rather than compared.
 SIM_DIVERGENT = {
-    "h8_mov8_abs8_r8": "8-bit absolute @aa:8 maps to 0x00xx, not 0xFFxx",
-    "h8_mov8_r8_abs8": "8-bit absolute @aa:8 maps to 0x00xx, not 0xFFxx",
-    "h8_bit_abs8_read": "8-bit absolute @aa:8 maps to 0x00xx, not 0xFFxx",
-    "h8_bit_abs8_write": "8-bit absolute @aa:8 maps to 0x00xx, not 0xFFxx",
     "h8_daa8_r8": "decimal adjust carry and result differ from datasheet",
     "h8_das8_r8": "decimal adjust carry and result differ from datasheet",
     "h8_divxu_r8_r16": "divide-by-zero result differs from datasheet",
@@ -66,6 +72,13 @@ LINE_RE = re.compile(r"^(PC|CCR|R[0-7]|MEM) (?:(0x[0-9a-f]+) )?([0-9a-f]+)$", re
 def gdb_reg(index: int) -> str:
     # The H8/300 sim names general register 7 as sp.
     return "$sp" if index == 7 else f"$r{index}"
+
+
+def sim_mem_addr(instruction: str, addr: str) -> str:
+    value = int(addr, 16)
+    if instruction in ABS8_INSTRUCTIONS:
+        value &= 0x00FF  # sim resolves @aa:8 to the zero page, not 0xFFaa.
+    return f"0x{value:04x}"
 
 
 def ccr_byte(hnzvc: str) -> int:
@@ -148,6 +161,7 @@ def build_elf(case: dict[str, object], work: Path) -> list[dict[str, object]]:
 def gdb_command(case: dict[str, object], work: Path) -> list[str]:
     initial = case["initial"]
     pc = str(initial["pc"])
+    instruction = str(case.get("instruction"))
     regs = initial_reg_values(case)
     cmd = [
         GDB,
@@ -170,14 +184,15 @@ def gdb_command(case: dict[str, object], work: Path) -> list[str]:
         cmd += ["-ex", f"set {gdb_reg(index)} = 0x{regs[index]:04x}"]
     cmd += ["-ex", f"set $ccr = 0x{ccr_byte(str(initial['ccr_hnzvc'])):02x}"]
     for addr, value in sorted_memory_items(memory_map(case, "initial")):
-        cmd += ["-ex", f"set {{char}}{addr} = {value}"]
+        cmd += ["-ex", f"set {{char}}{sim_mem_addr(instruction, addr)} = {value}"]
     cmd += ["-ex", "stepi"]
     cmd += ["-ex", 'printf "PC %x\\n", $pc']
     cmd += ["-ex", 'printf "CCR %x\\n", $ccr']
     for index in range(8):
         cmd += ["-ex", f'printf "R{index} %x\\n", {gdb_reg(index)}']
     for addr, _value in sorted_memory_items(memory_map(case, "expected")):
-        cmd += ["-ex", f'printf "MEM {addr} %x\\n", *(unsigned char*){addr}']
+        target = sim_mem_addr(instruction, addr)
+        cmd += ["-ex", f'printf "MEM {addr} %x\\n", *(unsigned char*){target}']
     return cmd
 
 

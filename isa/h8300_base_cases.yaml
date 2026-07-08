@@ -5562,6 +5562,40 @@ cases:
         wmask: "00"
         rdata: "0x0004"
 
+  - id: h8_bixor_imm3_abs8_set
+    instruction: h8_bit_abs8_read
+    status: supported
+    check_area: memory
+    assembler:
+      - "bixor #3, @0x40:8"
+    words:
+      - "0x7e40"
+      - "0x75b0"
+    decode_keys: ["7", "e", "7", "5"]
+    sail:
+      decode: H8_BIT_ABS8_READ
+      execute: h8_exec_bit_abs8_read
+    initial:
+      pc: "0x0000"
+      regs: {}
+      ccr_hnzvc: "10000"
+    expected:
+      pc: "0x0004"
+      regs: {}
+      ccr_hnzvc: "10001"
+      trap: false
+    memory:
+      initial:
+        "0xff40": "0x00"
+      expected:
+        "0xff40": "0x00"
+      access:
+        kind: read
+        width: byte
+        addr: "0xff40"
+        wmask: "00"
+        rdata: "0x0000"
+
   - id: h8_band_imm3_abs8_keep
     instruction: h8_bit_abs8_read
     status: supported
@@ -6001,6 +6035,181 @@ cases:
         addr: "0x0140"
         wmask: "00"
         rdata: "0x0004"
+
+  - id: h8_band_imm3_r16i_clear
+    instruction: h8_bit_r16i_read
+    status: supported
+    check_area: memory
+    assembler:
+      - "band #4, @r1"
+    words:
+      - "0x7c10"
+      - "0x7640"
+    decode_keys: ["7", "c", "7", "6"]
+    sail:
+      decode: H8_BIT_R16I_READ
+      execute: h8_exec_bit_r16i_read
+    initial:
+      pc: "0x0000"
+      regs:
+        r1: "0x0140"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0004"
+      regs: {}
+      ccr_hnzvc: "10000"
+      trap: false
+    memory:
+      initial:
+        "0x0140": "0x00"
+      expected:
+        "0x0140": "0x00"
+      access:
+        kind: read
+        width: byte
+        addr: "0x0140"
+        wmask: "00"
+        rdata: "0x0000"
+
+  - id: h8_biand_imm3_r16i_clear
+    instruction: h8_bit_r16i_read
+    status: supported
+    check_area: memory
+    assembler:
+      - "biand #2, @r1"
+    words:
+      - "0x7c10"
+      - "0x76a0"
+    decode_keys: ["7", "c", "7", "6"]
+    sail:
+      decode: H8_BIT_R16I_READ
+      execute: h8_exec_bit_r16i_read
+    initial:
+      pc: "0x0000"
+      regs:
+        r1: "0x0140"
+      ccr_hnzvc: "10001"
+    expected:
+      pc: "0x0004"
+      regs: {}
+      ccr_hnzvc: "10000"
+      trap: false
+    memory:
+      initial:
+        "0x0140": "0x04"
+      expected:
+        "0x0140": "0x04"
+      access:
+        kind: read
+        width: byte
+        addr: "0x0140"
+        wmask: "00"
+        rdata: "0x0004"
+
+  - id: h8_bild_imm3_r16i_set
+    instruction: h8_bit_r16i_read
+    status: supported
+    check_area: memory
+    assembler:
+      - "bild #7, @r1"
+    words:
+      - "0x7c10"
+      - "0x77f0"
+    decode_keys: ["7", "c", "7", "7"]
+    sail:
+      decode: H8_BIT_R16I_READ
+      execute: h8_exec_bit_r16i_read
+    initial:
+      pc: "0x0000"
+      regs:
+        r1: "0x0140"
+      ccr_hnzvc: "10000"
+    expected:
+      pc: "0x0004"
+      regs: {}
+      ccr_hnzvc: "10001"
+      trap: false
+    memory:
+      initial:
+        "0x0140": "0x00"
+      expected:
+        "0x0140": "0x00"
+      access:
+        kind: read
+        width: byte
+        addr: "0x0140"
+        wmask: "00"
+        rdata: "0x0000"
+
+  - id: h8_bixor_imm3_r16i_set
+    instruction: h8_bit_r16i_read
+    status: supported
+    check_area: memory
+    assembler:
+      - "bixor #6, @r1"
+    words:
+      - "0x7c10"
+      - "0x75e0"
+    decode_keys: ["7", "c", "7", "5"]
+    sail:
+      decode: H8_BIT_R16I_READ
+      execute: h8_exec_bit_r16i_read
+    initial:
+      pc: "0x0000"
+      regs:
+        r1: "0x0140"
+      ccr_hnzvc: "10000"
+    expected:
+      pc: "0x0004"
+      regs: {}
+      ccr_hnzvc: "10001"
+      trap: false
+    memory:
+      initial:
+        "0x0140": "0x00"
+      expected:
+        "0x0140": "0x00"
+      access:
+        kind: read
+        width: byte
+        addr: "0x0140"
+        wmask: "00"
+        rdata: "0x0000"
+
+  - id: h8_bor_imm3_r16i_set
+    instruction: h8_bit_r16i_read
+    status: supported
+    check_area: memory
+    assembler:
+      - "bor #0, @r1"
+    words:
+      - "0x7c10"
+      - "0x7400"
+    decode_keys: ["7", "c", "7", "4"]
+    sail:
+      decode: H8_BIT_R16I_READ
+      execute: h8_exec_bit_r16i_read
+    initial:
+      pc: "0x0000"
+      regs:
+        r1: "0x0140"
+      ccr_hnzvc: "10000"
+    expected:
+      pc: "0x0004"
+      regs: {}
+      ccr_hnzvc: "10001"
+      trap: false
+    memory:
+      initial:
+        "0x0140": "0x01"
+      expected:
+        "0x0140": "0x01"
+      access:
+        kind: read
+        width: byte
+        addr: "0x0140"
+        wmask: "00"
+        rdata: "0x0001"
 
   - id: h8_bset_imm3_r16i
     instruction: h8_bit_r16i_write

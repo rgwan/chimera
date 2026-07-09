@@ -91,6 +91,14 @@ object MicrocodeImage:
     0x80 -> MW(aSel = ASel.H8, bSel = BSel.Imm8, h8Idx = H8Idx.RdImm, alu = AluOp.Add,
                flag = FlagCtl.AddSub, wsel = WSel.H8, we = true,
                seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    // addx.b #imm,Rd: Rd = Rd + imm + C (normal Z)
+    0x81 -> MW(aSel = ASel.H8, bSel = BSel.Imm8, h8Idx = H8Idx.RdImm, alu = AluOp.Adc,
+               flag = FlagCtl.AddSub, wsel = WSel.H8, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    // subx.b #imm,Rd: Rd = Rd - imm - C (sticky Z)
+    0x83 -> MW(aSel = ASel.H8, bSel = BSel.Imm8, h8Idx = H8Idx.RdImm, alu = AluOp.Sbc,
+               flag = FlagCtl.StickyZ, wsel = WSel.H8, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
     // cmp.b #imm,Rd (flags only, no writeback)
     0x82 -> MW(aSel = ASel.H8, bSel = BSel.Imm8, h8Idx = H8Idx.RdImm, alu = AluOp.Cmp,
                flag = FlagCtl.AddSub, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),

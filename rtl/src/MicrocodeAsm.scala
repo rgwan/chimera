@@ -69,6 +69,16 @@ object MicrocodeImage:
                   intIdx = IntIdx.Temp, alu = op, flag = flag, wsel = WSel.H8,
                   we = writes, seq = SeqSrc.Literal, lit = Ucode.FetchEntry))
 
+  /** Single-operand +/-1 (INC/DEC): needs a Lit const, so it cannot also branch
+    * in the same word. Jump to an upper routine: op with seq=Next, then a pure
+    * jump back to fetch. */
+  private def unary1(disp: Int, routine: Int, op: Int): Seq[(Int, MW)] =
+    Seq(disp -> MW(seq = SeqSrc.Literal, lit = routine),
+        routine -> MW(aSel = ASel.H8, bSel = BSel.Lit, lit = 1, h8Idx = H8Idx.RdReg,
+                      alu = op, flag = FlagCtl.Nzv, wsel = WSel.H8, we = true,
+                      seq = SeqSrc.Next),
+        (routine + 1) -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry))
+
   /** Routines by ROM address. Instruction routines sit at ROM[dispatch]; the
     * fetch mainloop and multi-step tails live in upper ROM (>= FetchEntry).
     * Unlisted addresses read as the all-zero word (SeqSrc.Next no-op).
@@ -86,6 +96,14 @@ object MicrocodeImage:
 
     // ldc #imm8,ccr (dispatch 0x07): CCR := imm8 (I UI H U N Z V C)
     0x07 -> MW(flag = FlagCtl.LoadCcr, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+
+    // not.b Rd (0x17): Rd = ~Rd, set N/Z clear V
+    0x17 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.Not, flag = FlagCtl.Nz,
+               wsel = WSel.H8, we = true, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    // neg.b Rd (m-class 0xD7): Rd = 0 - Rd
+    0xd7 -> MW(aSel = ASel.Zero, bSel = BSel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.Sub,
+               flag = FlagCtl.AddSub, wsel = WSel.H8, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
 
     // Immediate-ALU page (dispatch 0x80|ooo). rd is instr[3:0]; imm8 the 2nd byte.
     // add.b #imm,Rd
@@ -169,7 +187,10 @@ object MicrocodeImage:
     // reg-reg mov/addx (ooo=0, single dispatch) and subx (m-class)
     regReg2(0x0c, Ucode.FetchEntry + 0x17, AluOp.Pass, FlagCtl.Nz, true, false).toMap ++
     regReg2(0x0e, Ucode.FetchEntry + 0x18, AluOp.Adc, FlagCtl.AddSub, true, false).toMap ++
-    regReg2(0x1e, Ucode.FetchEntry + 0x19, AluOp.Sbc, FlagCtl.StickyZ, true).toMap
+    regReg2(0x1e, Ucode.FetchEntry + 0x19, AluOp.Sbc, FlagCtl.StickyZ, true).toMap ++
+    // inc.b / dec.b (N,Z,V; C,H preserved)
+    unary1(0x0a, Ucode.FetchEntry + 0x1a, AluOp.Add).toMap ++
+    unary1(0x1a, Ucode.FetchEntry + 0x1c, AluOp.Sub).toMap
 
   /** Sparse image: only authored addresses; the ROM defaults the rest to zero. */
   val sparse: Seq[(Int, BigInt)] =

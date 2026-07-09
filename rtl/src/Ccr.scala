@@ -47,14 +47,15 @@ object Ccr extends Generator[ChimeraParameter, ChimeraLayers, CcrIO, ChimeraProb
 
     def fc(code: Int) = io.flagCtl === code.U(3)
 
-    when(fc(FlagCtl.Nz) | fc(FlagCtl.AddSub) | fc(FlagCtl.Shift) | fc(FlagCtl.StickyZ)) {
+    when(fc(FlagCtl.Nz) | fc(FlagCtl.AddSub) | fc(FlagCtl.Shift) | fc(FlagCtl.StickyZ) |
+      fc(FlagCtl.Nzv)) {
       n := io.resN
     }
     when(fc(FlagCtl.Nz))(z := io.resZ)
-    when(fc(FlagCtl.AddSub) | fc(FlagCtl.Shift))(z := io.resZ)
+    when(fc(FlagCtl.AddSub) | fc(FlagCtl.Shift) | fc(FlagCtl.Nzv))(z := io.resZ)
     when(fc(FlagCtl.StickyZ))(z := io.resZ.?(z, false.B)) // SUBX sticky Z
     when(fc(FlagCtl.Nz))(v := false.B)
-    when(fc(FlagCtl.AddSub) | fc(FlagCtl.Shift) | fc(FlagCtl.StickyZ))(v := io.hwV)
+    when(fc(FlagCtl.AddSub) | fc(FlagCtl.Shift) | fc(FlagCtl.StickyZ) | fc(FlagCtl.Nzv))(v := io.hwV)
     when(fc(FlagCtl.AddSub) | fc(FlagCtl.Shift) | fc(FlagCtl.StickyZ))(c := io.hwC)
     when(fc(FlagCtl.AddSub) | fc(FlagCtl.StickyZ))(h := io.resH)
     when(fc(FlagCtl.Bit))(z := io.resZ)

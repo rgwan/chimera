@@ -122,6 +122,57 @@ EOF
           doInstallCheck = false;
         });
 
+        # C-only bare-metal cross compiler (install-gcc: no libgcc/newlib needed
+        # to emit and disassemble code). Modern gcc/binutils only target H8/300H
+        # and up; the base-H8/300 encodings are the assembled subset.
+        h8300Gcc = pkgs.stdenv.mkDerivation {
+          pname = "h8300-elf-gcc";
+          version = pkgs.gcc-unwrapped.version;
+          src = pkgs.gcc-unwrapped.src;
+          nativeBuildInputs = [ h8300Binutils pkgs.perl pkgs.texinfo pkgs.flex pkgs.bison ];
+          buildInputs = [ pkgs.gmp.dev pkgs.mpfr.dev pkgs.libmpc pkgs.isl pkgs.zlib ];
+          hardeningDisable = [ "format" ];
+          configureFlags = [
+            "--target=h8300-elf"
+            "--program-prefix=h8300-elf-"
+            "--enable-languages=c"
+            "--without-headers"
+            "--with-newlib"
+            "--disable-shared"
+            "--disable-threads"
+            "--disable-nls"
+            "--disable-libssp"
+            "--disable-libgomp"
+            "--disable-libquadmath"
+            "--disable-libatomic"
+            "--disable-decimal-float"
+            "--disable-libffi"
+            "--disable-bootstrap"
+            "--with-gmp=${pkgs.gmp.dev}"
+            "--with-mpfr=${pkgs.mpfr.dev}"
+            "--with-mpc=${pkgs.libmpc}"
+            "--with-isl=${pkgs.isl}"
+          ];
+          buildFlags = [ "all-gcc" ];
+          installTargets = [ "install-gcc" ];
+          enableParallelBuilding = true;
+          dontDisableStatic = true;
+        };
+
+        gccFootprintCheck = pkgs.runCommand "chimera-gcc-footprint-smoke" {
+          nativeBuildInputs = [
+            h8300Binutils
+            h8300Gcc
+            pythonEnv
+          ];
+        } ''
+          cp -R ${self} src
+          chmod -R u+w src
+          cd src
+          python3 scripts/check_gcc_footprint.py
+          touch $out
+        '';
+
         gdbOracleCheck = pkgs.runCommand "chimera-gdb-oracle-smoke" {
           nativeBuildInputs = [
             h8300Binutils
@@ -231,6 +282,7 @@ EOF
           pkgs.gnumake
           h8300Binutils
           h8300Gdb
+          h8300Gcc
           pkgs.ocamlPackages.sail
           pkgs.reuse
           pkgs.scala-cli
@@ -249,6 +301,7 @@ EOF
         packages.default = smokeCheck;
         packages.h8300-binutils = h8300Binutils;
         packages.h8300-gdb = h8300Gdb;
+        packages.h8300-gcc = h8300Gcc;
         packages.isa-cases = isaCasesCheck;
         packages.sail-coverage = sailCoverageCheck;
         packages.sail-model = sailModelCheck;
@@ -268,6 +321,7 @@ EOF
         checks = {
           build-smoke = smokeCheck;
           decode-dispatch = decodeDispatchCheck;
+          gcc-footprint-smoke = gccFootprintCheck;
           gdb-oracle-smoke = gdbOracleCheck;
           gnu-oracle-smoke = gnuOracleCheck;
           isa-cases = isaCasesCheck;

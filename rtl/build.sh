@@ -16,13 +16,15 @@ top="com.vowstar.chimera.$mod"
 : "${ZAOZI_JAR:?set ZAOZI_JAR to the zaozi elaborator.jar}"
 : "${CIRCT_INSTALL_PATH:?set CIRCT_INSTALL_PATH}"
 : "${MLIR_INSTALL_PATH:?set MLIR_INSTALL_PATH}"
+: "${JAVA_HOME:?set JAVA_HOME to JDK 25}"
 
 mkdir -p "$out"
 
 scala_args=(
   --server=false
   --extra-jars "$ZAOZI_JAR"
-  --scala-version 3.6.2
+  --scala-version 3.7.4
+  --java-home "$JAVA_HOME"
   -O=-experimental
   --java-opt --enable-native-access=ALL-UNNAMED
   --java-opt --enable-preview

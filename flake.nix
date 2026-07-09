@@ -200,6 +200,20 @@ EOF
           touch $out
         '';
 
+        zaoziIvyLock = pkgs.writeText "chimera-zaozi-lock.nix" ''
+          { fetchurl }:
+          (import ${zaozi.outPath}/nix/zaozi/zaozi-lock.nix { inherit fetchurl; })
+          // (import ${./nix/zaozi-extra-lock.nix} { inherit fetchurl; })
+        '';
+
+        zaoziAssembly = zaozi.packages.${system}.zaozi-assembly.overrideAttrs (_old: {
+          buildInputs = [
+            (pkgs.ivy-gather zaoziIvyLock)
+          ];
+        });
+
+        zaoziJar = "${zaoziAssembly}/share/java/elaborator.jar";
+
         shellHook = ''
           echo "========================================"
           echo "Chimera Zaozi Development Environment"
@@ -226,7 +240,9 @@ EOF
 
         fullBuildInputs = smokeBuildInputs ++ [
           pkgs.circt-install
+          pkgs.jdk25
           pkgs.mlir-install
+          zaoziAssembly
         ];
       in
       {
@@ -285,6 +301,7 @@ EOF
           env = {
             CHIMERA_PROJECT_NAME = "chimera";
             ZAOZI_SRC = zaozi.outPath;
+            ZAOZI_JAR = zaoziJar;
             CIRCT_INSTALL_PATH = pkgs.circt-install;
             MLIR_INSTALL_PATH = pkgs.mlir-install;
             JAVA_TOOL_OPTIONS = "--enable-preview";

@@ -106,6 +106,12 @@ check-mem:
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_mem
 
+check-stack:
+	bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_stack test/core/tb_core_stack.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_stack
+
 check-exec-sail:
 	bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/sim_isa test/isa/tb_isa_case.v \

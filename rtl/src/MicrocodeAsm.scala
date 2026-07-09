@@ -223,6 +223,31 @@ object MicrocodeImage:
          alu = AluOp.PassA, flag = FlagCtl.Nz, size = 1,
          seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
 
+    // mov.w @Rn+,Rd (post-inc load 0x6D): addr = Rn (into IREG); Rn += 2; Rd = mem.
+    0x6d -> MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, alu = AluOp.PassA, size = 1,
+               wsel = WSel.Int, intIdx = IntIdx.IReg, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x52),
+    (Ucode.FetchEntry + 0x52) ->               // Rn += 2
+      MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, bSel = BSel.Lit, lit = 2, alu = AluOp.Add,
+         size = 1, wsel = WSel.H8, we = true),
+    (Ucode.FetchEntry + 0x53) ->               // Rd = mem[IREG]
+      MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, aSel = ASel.Mem, alu = AluOp.PassA,
+         flag = FlagCtl.Nz, wsel = WSel.H8, h8Idx = H8Idx.RdReg, size = 1, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+
+    // mov.w Rs,@-Rn (pre-dec store, m-class 0xED): Rn -= 2; mem[Rn] = Rs.
+    0xed -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x54),
+    (Ucode.FetchEntry + 0x54) ->               // TEMP = Rn - 2 (decremented address)
+      MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, bSel = BSel.Lit, lit = 2, alu = AluOp.Sub,
+         size = 1, wsel = WSel.Int, intIdx = IntIdx.Temp, we = true),
+    (Ucode.FetchEntry + 0x55) ->               // Rn = TEMP
+      MW(aSel = ASel.Int, intIdx = IntIdx.Temp, alu = AluOp.PassA, size = 1,
+         wsel = WSel.H8, h8Idx = H8Idx.Ptr, we = true),
+    (Ucode.FetchEntry + 0x56) ->               // mem[TEMP] = Rs (flags from Rs)
+      MW(bus = BusCtl.Write, intIdx = IntIdx.Temp, aSel = ASel.H8, h8Idx = H8Idx.RdReg,
+         alu = AluOp.PassA, flag = FlagCtl.Nz, size = 1,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+
     // Bcc shared routine: taken -> PC += signext(disp8); not taken -> fetch.
     // cond nibble drives the CcInstr predicate (evaluated in Core).
     (Ucode.FetchEntry + 0x20) ->

@@ -186,7 +186,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
 
     // SP stack bus ops address R7 while write data can come from the internal file.
     biu.io.addr   := busAddr
-    biu.io.wdata  := sizeWord.?(alu.io.y, (h8Byte ## h8Byte).asUInt)
+    biu.io.wdata  := sizeWord.?(alu.io.y, (yByte ## yByte).asUInt)
     biu.io.busCtl := udec.io.busCtl
     biu.io.word   := sizeWord
 

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
 
-.PHONY: build smoke rtl-verilog check-decode-table check-decode check-biu check-adds-subs gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model verify-smoke check clean
+.PHONY: build smoke rtl-verilog check-decode-table check-decode check-biu check-adds-subs check-stack-byte gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model verify-smoke check clean
 
 build: smoke
 
@@ -153,6 +153,12 @@ check-stack:
 	iverilog -g2012 -o rtl/generated/sim_stack test/core/tb_core_stack.v \
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_stack
+
+check-stack-byte:
+	bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_stack_byte test/core/tb_core_stack_byte.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_stack_byte
 
 check-jsr:
 	bash rtl/build.sh

@@ -326,6 +326,30 @@ object MicrocodeImage:
          alu = AluOp.PassA, flag = FlagCtl.Nz, size = 1,
          seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
 
+    // mov.b @Rn+,Rd (0x6C): addr = Rn; Rn += 1; Rd = mem[old Rn].
+    0x6c -> MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, alu = AluOp.PassA, size = 1,
+               wsel = WSel.Int, intIdx = IntIdx.IReg, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0xa7),
+    (Ucode.FetchEntry + 0xa7) ->
+      MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, bSel = BSel.Lit, lit = 1,
+         alu = AluOp.Add, size = 1, wsel = WSel.H8, we = true),
+    (Ucode.FetchEntry + 0xa8) ->
+      MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, aSel = ASel.Mem, alu = AluOp.PassA,
+         flag = FlagCtl.Nz, wsel = WSel.H8, h8Idx = H8Idx.RdReg, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+
+    // mov.b Rs,@-Rn (m-class 0xEC): stage old Rs, then Rn -= 1.
+    0xec -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.PassA,
+               wsel = WSel.Int, intIdx = IntIdx.Temp, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0xa9),
+    (Ucode.FetchEntry + 0xa9) ->
+      MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, bSel = BSel.Lit, lit = 1,
+         alu = AluOp.Sub, size = 1, wsel = WSel.H8, we = true),
+    (Ucode.FetchEntry + 0xaa) ->
+      MW(bus = BusCtl.Write, h8Idx = H8Idx.Ptr, aSel = ASel.Int, intIdx = IntIdx.Temp,
+         alu = AluOp.PassA, flag = FlagCtl.Nz,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+
     // mov.b/w @(d16,Rn),Rd: IREG = ext@PC + Rn; then load through IREG.
     0x6e -> MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, aSel = ASel.Mem,
                h8Idx = H8Idx.Ptr, alu = AluOp.Add, size = 1,

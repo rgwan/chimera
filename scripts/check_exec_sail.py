@@ -37,6 +37,7 @@ IMPLEMENTED = {
     "h8_rotxl8_r8", "h8_rotl8_r8", "h8_rotxr8_r8", "h8_rotr8_r8",
     "h8_mov8_r16i_r8", "h8_mov8_r8_r16i",
     "h8_mov16_r16i_r16", "h8_mov16_r16_r16i",
+    "h8_mov8_r16p_r8", "h8_mov8_r8_pr16",
     "h8_mov16_r16p_r16", "h8_mov16_r16_pr16",
     "h8_mov8_r16d16_r8", "h8_mov16_r16d16_r16",
     "h8_mov8_r8_r16d16", "h8_mov16_r16_r16d16",

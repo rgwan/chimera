@@ -99,8 +99,14 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       ((udec.io.aluOp === AluOp.Add.U(4)) | (udec.io.aluOp === AluOp.Sub.U(4)))
     val addsSubsConst = ir.asBits.bit(15).?(2.U(parameter.dataWidth),
       1.U(parameter.dataWidth))
+    val irqVectorAddr = RegInit(8.U(parameter.dataWidth))
+    val irqVectorLit = (udec.io.aSel === ASel.Zero.U(2)) &
+      (udec.io.bSel === BSel.Lit.U(2)) &
+      (udec.io.aluOp === AluOp.Pass.U(4)) & udec.io.wsel & udec.io.regWe &
+      (udec.io.intIdx === IntIdx.PC.U(2)) &
+      (udec.io.literal === 8.U(parameter.upcBits))
     val litConst = addsSubsLit.?(addsSubsConst,
-      (0.B(8) ## udec.io.literal.asBits.bits(7, 0)).asUInt)
+      irqVectorLit.?(irqVectorAddr, (0.B(8) ## udec.io.literal.asBits.bits(7, 0)).asUInt))
 
     // register-file reads (single port each)
     h8rf.io.raddr  := h8Idx
@@ -247,9 +253,13 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     // IRQ is maskable by CCR.I; NMI is not. Entry acks the latch and sets I.
     val irqLatch = RegInit(false.B)
     val nmiLatch = RegInit(false.B)
-    when(useq.io.irqAck)(irqLatch := false.B) // ack clears; set below is dominant
+    val nmiAck = useq.io.irqAck & nmiLatch
+    val irqAck = useq.io.irqAck & (!nmiLatch)
+    when(useq.io.irqAck)(
+      irqVectorAddr := nmiLatch.?(6.U(parameter.dataWidth), 8.U(parameter.dataWidth)))
+    when(irqAck)(irqLatch := false.B) // ack clears; set below is dominant
     when(io.irq)(irqLatch := true.B)
-    when(useq.io.irqAck)(nmiLatch := false.B)
+    when(nmiAck)(nmiLatch := false.B)
     when(io.nmi)(nmiLatch := true.B)
     useq.io.irqPend := (irqLatch & (!ccr.io.iFlag)) | nmiLatch
     ccr.io.setI     := useq.io.irqAck

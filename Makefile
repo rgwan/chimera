@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
 
-.PHONY: build smoke rtl-verilog check-decode-table check-decode check-biu check-adds-subs check-stack-byte gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model verify-smoke check clean
+.PHONY: build smoke rtl-verilog check-decode-table check-decode check-biu check-adds-subs check-stack-byte check-irq-vector gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model verify-smoke check clean
 
 build: smoke
 
@@ -105,6 +105,12 @@ check-irq-entry:
 	iverilog -g2012 -o rtl/generated_irq_entry/sim_irq_entry test/core/tb_core_irq_entry.v \
 	  $$(ls rtl/generated_irq_entry/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated_irq_entry/sim_irq_entry
+
+check-irq-vector:
+	RESET_VECTOR=256 CHIMERA_RTL_OUT=$$PWD/rtl/generated_irq_vector bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated_irq_vector/sim_irq_vector test/core/tb_core_irq_vector.v \
+	  $$(ls rtl/generated_irq_vector/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated_irq_vector/sim_irq_vector
 
 check-movw:
 	bash rtl/build.sh

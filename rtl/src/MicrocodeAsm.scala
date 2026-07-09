@@ -121,7 +121,7 @@ object MicrocodeImage:
     (Ucode.FetchEntry + 2) ->                 // PC += 2, then dispatch on the opcode
       MW(aSel = ASel.Int, bSel = BSel.Lit, lit = 2, alu = AluOp.Add,
          wsel = WSel.Int, intIdx = IntIdx.PC, we = true, seq = SeqSrc.Dispatch),
-    // irq_proc: push PC and saved CCR, then load the IRQ0 vector at address 8.
+    // irq_proc: push PC and saved CCR, then load the latched NMI/IRQ vector.
     (Ucode.FetchEntry + 0x30) ->               // SP -= 2
       MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, vclr = true, bSel = BSel.Lit, lit = 2,
          alu = AluOp.Sub, size = 1, wsel = WSel.H8, we = true),
@@ -134,7 +134,7 @@ object MicrocodeImage:
     (Ucode.FetchEntry + 0x33) ->               // mem[SP] = saved CCR in high byte
       MW(bus = BusCtl.Write, h8Idx = H8Idx.Ptr, vclr = true,
          aSel = ASel.Int, intIdx = IntIdx.CcrSrc, alu = AluOp.PassA, size = 1),
-    (Ucode.FetchEntry + 0x34) ->               // PC = 8
+    (Ucode.FetchEntry + 0x34) ->               // PC = latched vector address
       MW(aSel = ASel.Zero, bSel = BSel.Lit, lit = 8, alu = AluOp.Pass,
          wsel = WSel.Int, intIdx = IntIdx.PC, we = true),
     (Ucode.FetchEntry + 0x35) ->               // PC = mem[PC]

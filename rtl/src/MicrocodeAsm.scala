@@ -88,12 +88,19 @@ object MicrocodeImage:
     * Unlisted addresses read as the all-zero word (SeqSrc.Next no-op).
     */
   val program: Map[Int, MW] = Map(
-    // fetch mainloop
-    Ucode.FetchEntry ->                       // issue fetch at PC
+    // fetch mainloop. Every instruction returns here, so the interrupt poll sits
+    // between retires: if a (maskable-or-NMI) interrupt is pending, call irq_proc.
+    Ucode.FetchEntry ->                       // poll: if(irq) call irq_proc
+      MW(cond = Cond.Irq, seq = SeqSrc.Literal, call = true,
+         lit = Ucode.FetchEntry + 0x30),
+    (Ucode.FetchEntry + 1) ->                 // issue fetch at PC
       MW(bus = BusCtl.Fetch, intIdx = IntIdx.PC),
-    (Ucode.FetchEntry + 1) ->                 // PC += 2, then dispatch on the opcode
+    (Ucode.FetchEntry + 2) ->                 // PC += 2, then dispatch on the opcode
       MW(aSel = ASel.Int, bSel = BSel.Lit, lit = 2, alu = AluOp.Add,
          wsel = WSel.Int, intIdx = IntIdx.PC, we = true, seq = SeqSrc.Dispatch),
+    // irq_proc: entry acked the latch and set I in hardware; minimal handler just
+    // returns to fetch (architectural push/vector/RTE land with the stack).
+    (Ucode.FetchEntry + 0x30) -> MW(seq = SeqSrc.Return),
 
     // NOP (dispatch 0x00): return to fetch
     0x00 -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry),

@@ -77,6 +77,12 @@ check-sub:
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_sub
 
+check-irq:
+	bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_irq test/core/tb_core_irq.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_irq
+
 check-movw:
 	bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/sim_movw test/core/tb_core_movw.v \

@@ -24,6 +24,7 @@ class CcrIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val hwC     = Flipped(Bool())
   val ldWe    = Flipped(Bool())      // direct CCR write (LDC/logic-on-CCR)
   val ldVal   = Flipped(UInt(8))     // I UI H U N Z V C
+  val setI    = Flipped(Bool())      // interrupt entry masks further IRQ
   val hnzvc   = Aligned(UInt(5))     // H N Z V C, model order
   val zFlag   = Aligned(Bool())
   val cFlag   = Aligned(Bool())
@@ -65,6 +66,7 @@ object Ccr extends Generator[ChimeraParameter, ChimeraLayers, CcrIO, ChimeraProb
       i := lv.bit(7); h := lv.bit(5); n := lv.bit(3)
       z := lv.bit(2); v := lv.bit(1); c := lv.bit(0)
     }
+    when(io.setI)(i := true.B)
 
     io.hnzvc := (h.asBits ## n.asBits ## z.asBits ## v.asBits ## c.asBits).asUInt
     io.zFlag := z

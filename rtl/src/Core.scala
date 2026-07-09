@@ -174,10 +174,16 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     when(cc === 0xf.U(4))(taken := fZ | (fN ^ fV))        // BLE
     useq.io.ccTaken := taken
 
-    // irq latch (polled by microcode)
+    // Interrupt latches, polled by the fetch mainloop (no async hardware entry).
+    // IRQ is maskable by CCR.I; NMI is not. Entry acks the latch and sets I.
     val irqLatch = RegInit(false.B)
-    when(io.irq | io.nmi)(irqLatch := true.B)
-    useq.io.irqPend := irqLatch
+    val nmiLatch = RegInit(false.B)
+    when(useq.io.irqAck)(irqLatch := false.B) // ack clears; set below is dominant
+    when(io.irq)(irqLatch := true.B)
+    when(useq.io.irqAck)(nmiLatch := false.B)
+    when(io.nmi)(nmiLatch := true.B)
+    useq.io.irqPend := (irqLatch & (!ccr.io.iFlag)) | nmiLatch
+    ccr.io.setI     := useq.io.irqAck
 
     // external SRAM bus <-> BIU
     io.bus.addr  := biu.io.bus.addr

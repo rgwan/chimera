@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 // SPDX-License-Identifier: MIT
 //
-// Displacement load check: byte positive offset, word negative offset.
+// Displacement load/store check: byte positive offset, word negative offset.
 `timescale 1ns / 1ps
 module tb_core_mem_disp;
   reg         clock, reset, irq, nmi;
@@ -42,7 +42,9 @@ module tb_core_mem_disp;
     mem[8] =8'h07; mem[9] =8'h23;                              // ldc #0x23,ccr
     mem[10]=8'h6e; mem[11]=8'h18; mem[12]=8'h00; mem[13]=8'h40; // mov.b @(0x40,R1),R0L
     mem[14]=8'h6f; mem[15]=8'h23; mem[16]=8'hff; mem[17]=8'hfc; // mov.w @(-4,R2),R3
-    mem[18]=8'hf4; mem[19]=8'h55;                              // mov.b #0x55,R4H
+    mem[18]=8'h6e; mem[19]=8'h98; mem[20]=8'h00; mem[21]=8'h42; // mov.b R0L,@(0x42,R1)
+    mem[22]=8'h6f; mem[23]=8'h93; mem[24]=8'h00; mem[25]=8'h44; // mov.w R3,@(0x44,R1)
+    mem[26]=8'hf4; mem[27]=8'h55;                              // mov.b #0x55,R4H
     mem[16'h0140] = 8'h80;
     mem[16'h0141] = 8'h00;
 
@@ -57,8 +59,11 @@ module tb_core_mem_disp;
     if (r3 !== 16'h8000) begin $display("FAIL R3=%h exp 8000", r3); fails=fails+1; end
     if (r4 !== 16'h5500) begin $display("FAIL R4=%h exp 5500", r4); fails=fails+1; end
     if (ccr !== 5'b10001) begin $display("FAIL CCR=%b exp 10001", ccr); fails=fails+1; end
+    if (mem[16'h0142] !== 8'h80) begin $display("FAIL M0142=%h exp 80", mem[16'h0142]); fails=fails+1; end
+    if (mem[16'h0144] !== 8'h80) begin $display("FAIL M0144=%h exp 80", mem[16'h0144]); fails=fails+1; end
+    if (mem[16'h0145] !== 8'h00) begin $display("FAIL M0145=%h exp 00", mem[16'h0145]); fails=fails+1; end
 
-    if (fails == 0) $display("CORE-MEM-DISP PASS: displacement loads and PC advance");
+    if (fails == 0) $display("CORE-MEM-DISP PASS: displacement load/store and PC advance");
     else            $display("CORE-MEM-DISP FAIL: %0d", fails);
     $finish;
   end

@@ -179,6 +179,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     useq.io.condC    := ccr.io.cFlag
     useq.io.busRdy   := biu.io.rdy
     useq.io.wordRegBad := ir.asBits.bit(15) | ir.asBits.bit(11)
+    useq.io.wordBit3Bad := ir.asBits.bit(11)
 
     // Bcc condition evaluator: cond nibble = instr[3:0], flags from CCR.
     val fN = ccr.io.hnzvc.asBits.bit(3)

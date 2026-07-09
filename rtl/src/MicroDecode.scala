@@ -27,7 +27,6 @@ class MicroDecodeIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val size    = Aligned(Bool())
   val call    = Aligned(Bool())
   val vclr    = Aligned(Bool())
-  val addrH8  = Aligned(Bool())
 
 @generator
 object MicroDecode
@@ -54,4 +53,3 @@ object MicroDecode
     io.size    := w.bit(MicroWord.SIZE._1)
     io.call    := w.bit(MicroWord.CALL._1)
     io.vclr    := w.bit(MicroWord.VCLEAR._1)
-    io.addrH8  := w.bit(MicroWord.ADDR_H8._1)

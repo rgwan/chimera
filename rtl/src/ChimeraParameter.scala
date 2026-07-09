@@ -22,7 +22,7 @@ case class ChimeraParameter(
   val regIndexBits: Int = 3
   val uromDepth:    Int = 512
   val upcBits:      Int = 9
-  val uromWidth:    Int = 37
+  val uromWidth:    Int = 36
   val dispatchBits: Int = 8
 
 given upickle.default.ReadWriter[ChimeraParameter] = upickle.default.macroRW

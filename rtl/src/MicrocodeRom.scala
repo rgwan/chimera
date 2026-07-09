@@ -9,10 +9,9 @@ import me.jiuyang.zaozi.valuetpe.*
 import org.llvm.mlir.scalalib.capi.ir.{Block, Context}
 import java.lang.foreign.Arena
 
-/** Combinational 512 x 36 ROM. Backed by a mux over the image; when the image
-  * grows, revisit as a PLA/truth-table for area.
-  */
 class MicrocodeRomIO(parameter: ChimeraParameter) extends HWBundle(parameter):
+  val clock = Flipped(Clock())
+  val reset = Flipped(Reset())
   val addr = Flipped(UInt(parameter.upcBits))
   val data = Aligned(UInt(parameter.uromWidth))
 
@@ -23,9 +22,15 @@ object MicrocodeRom
 
   def architecture(parameter: ChimeraParameter) =
     val io = summon[Interface[MicrocodeRomIO]]
-    val d  = Wire(UInt(parameter.uromWidth))
+    given Ref[Clock] = io.clock
+    given Ref[Reset] = io.reset
+
+    val d = Wire(UInt(parameter.uromWidth))
     d := 0.U(parameter.uromWidth)
     MicrocodeImage.sparse.foreach { case (addr, w) =>
       when(io.addr === addr.U(parameter.upcBits))(d := w.U(parameter.uromWidth))
     }
-    io.data := d
+    val resetWord = MicrocodeImage.program(Ucode.FetchEntry).encode
+    val q = RegInit(resetWord.U(parameter.uromWidth))
+    q := d
+    io.data := q

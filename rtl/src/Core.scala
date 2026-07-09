@@ -48,6 +48,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     intrf.io.clock := io.clock; intrf.io.reset := io.reset
     ccr.io.clock   := io.clock; ccr.io.reset   := io.reset
     useq.io.clock  := io.clock; useq.io.reset  := io.reset
+    urom.io.clock  := io.clock; urom.io.reset  := io.reset
 
     // microcode fetch/decode loop
     urom.io.addr := useq.io.upc
@@ -138,11 +139,10 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       alu.io.y)
     intrf.io.we    := udec.io.regWe & toInternal
 
-    // BIU: address from the internal read (PC/IREG); or the H8 read port (SP/Rn)
-    // when addrH8 is set, so a push can take addr=SP while data (PC) comes from the
-    // internal file. Word write data = ALU result (source-selectable); byte writes
-    // replicate the low byte and let wmask pick the lane.
-    biu.io.addr   := udec.io.addrH8.?(h8rf.io.rdata, intrf.io.rdata)
+    // SP stack bus ops address R7 while write data can come from the internal file.
+    val stackBus = (udec.io.h8Idx === H8Idx.Ptr.U(2)) & udec.io.vclr &
+      ((udec.io.busCtl === BusCtl.Read.U(2)) | (udec.io.busCtl === BusCtl.Write.U(2)))
+    biu.io.addr   := stackBus.?(h8rf.io.rdata, intrf.io.rdata)
     biu.io.wdata  := sizeWord.?(alu.io.y, (h8Byte ## h8Byte).asUInt)
     biu.io.busCtl := udec.io.busCtl
     biu.io.word   := sizeWord

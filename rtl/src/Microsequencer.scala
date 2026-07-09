@@ -10,7 +10,8 @@ import org.llvm.mlir.scalalib.capi.ir.{Block, Context}
 import java.lang.foreign.Arena
 
 /** µPC, next-µPC mux (seq+1 / literal / dispatch / return) and a one-level
-  * call/return stack. Reset enters the fetch routine at address 0.
+  * call/return stack. The ROM address is the next µPC because the ROM data is
+  * registered; the internal `cur` register tracks the word being executed.
   */
 class MicrosequencerIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val clock    = Flipped(Clock())
@@ -38,10 +39,10 @@ object Microsequencer
     given Ref[Clock] = io.clock
     given Ref[Reset] = io.reset
 
-    val upc = RegInit(Ucode.FetchEntry.U(parameter.upcBits))
+    val cur = RegInit(Ucode.FetchEntry.U(parameter.upcBits))
     val ret = RegInit(0.U(parameter.upcBits))
 
-    val seqNext = (upc + 1.U(parameter.upcBits)).asBits.bits(parameter.upcBits - 1, 0).asUInt
+    val seqNext = (cur + 1.U(parameter.upcBits)).asBits.bits(parameter.upcBits - 1, 0).asUInt
     val dispatchTarget = (0.B(1) ## io.dispatch.asBits).asUInt
 
     val pred = Wire(Bool())
@@ -57,12 +58,12 @@ object Microsequencer
     when(io.seqSrc === SeqSrc.Literal.U(2))(nxt := pred.?(io.literal, seqNext))
     when(io.seqSrc === SeqSrc.Dispatch.U(2))(nxt := dispatchTarget)
     when(io.seqSrc === SeqSrc.Return.U(2))(nxt := ret)
-    upc := nxt
+    cur := nxt
 
     val doCall = (io.seqSrc === SeqSrc.Literal.U(2)) & io.call & pred
     when(doCall)(ret := seqNext)
 
-    io.upc := upc
+    io.upc := nxt
     // Interrupt entry is a conditional JUMP (not a call): the fixed return point
     // lets irq_proc use the call/return stack for register push/pop. Ack fires
     // when that jump is taken.

@@ -41,6 +41,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     val bitop  = BitOperand.instantiate(parameter)
     val bcd    = BcdAdjust.instantiate(parameter)
     val bcond  = BranchCond.instantiate(parameter)
+    val preds  = CorePredicates.instantiate(parameter)
     val biu    = Biu.instantiate(parameter)
 
     // instruction register (holds the fetched word microcode reads)
@@ -148,6 +149,16 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     bitop.io.vclr := udec.io.vclr
     val bitMemStore = bitMemActive & bitMemWrite & bitop.io.operandSel &
       bitop.io.ctlRegWe & (!udec.io.wsel) & (!sizeWord)
+
+    preds.io.firstOp := firstOp.asUInt
+    preds.io.ir := ir
+    preds.io.seqSrc := udec.io.seqSrc
+    preds.io.cond := udec.io.cond
+    preds.io.intIdx := udec.io.intIdx
+    preds.io.intRead := intRead
+    preds.io.cFlag := ccr.io.cFlag
+    preds.io.bitMemActive := bitMemActive
+    preds.io.bitMemWrite := bitMemWrite
 
     val daaFinal = (firstOp === 0x0f.B(8)) & (udec.io.flagCtl === FlagCtl.LoadCcr.U(3)) &
       udec.io.regWe & (!udec.io.wsel)
@@ -288,38 +299,13 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     when(bitPrefixOp & firstOp.bit(1))(bitDispatch := 0x7e.U(parameter.dispatchBits))
     useq.io.dispatch := bitDispatch
     useq.io.condZ    := ccr.io.zFlag
-    useq.io.condC    := ccr.io.cFlag
+    useq.io.condC    := preds.io.condC
     useq.io.busRdy   := biu.io.rdy
-    val wordRegPage = (firstOp === 0x09.B(8)) | (firstOp === 0x0d.B(8)) |
-      (firstOp === 0x19.B(8)) | (firstOp === 0x1d.B(8))
-    useq.io.wordBad := wordRegPage.?(ir.asBits.bit(15) | ir.asBits.bit(11),
-      ir.asBits.bit(11))
-    val secondHigh = ir.asBits.bits(15, 12)
-    val byteCcrPage = (firstOp === 0x02.B(8)) | (firstOp === 0x03.B(8))
-    val addsSubsPage = (firstOp === 0x0b.B(8)) | (firstOp === 0x1b.B(8))
-    val daaDasPage = (firstOp === 0x0f.B(8)) | (firstOp === 0x1f.B(8))
-    val normalNibbleBad = byteCcrPage.?(
-      secondHigh =/= 0.B(4),
-      daaDasPage.?(secondHigh =/= 0.B(4),
-        addsSubsPage.?(ir.asBits.bits(14, 11) =/= 0.B(4),
-          ir.asBits.bits(14, 12) =/= 0.B(3))))
-    val bitPrefixR16 = (!bitMemActive) & bitPrefixOp & (!firstOp.bit(1))
-    val bitPrefixR16Bad = ir.asBits.bit(15) | (ir.asBits.bits(11, 8) =/= 0.B(4))
-    val bitMemExtLowBad = ir.asBits.bits(11, 8) =/= 0.B(4)
-    val bitRegReadOp = bitRegIndexOp & (firstOp.bits(1, 0) === 3.B(2))
-    val bitRegWriteOp = bitRegIndexOp & (firstOp.bits(1, 0) =/= 3.B(2))
-    val bitImmBaseOp = bitImmOp & (!firstOp.bit(2))
-    val bitMemReadOp = bitRegReadOp |
-      (bitImmBaseOp & (firstOp.bits(1, 0) === 3.B(2)) & (!bitExtInv)) |
-      (bitImmOp & firstOp.bit(2))
-    val bitMemWriteOp = bitRegWriteOp | bitBstOp |
-      (bitImmBaseOp & (firstOp.bits(1, 0) =/= 3.B(2)) & (!bitExtInv))
-    val bitMemExtBad = bitMemExtLowBad | bitMemWrite.?((!bitMemWriteOp), (!bitMemReadOp))
-    useq.io.nibbleBad := bitMemActive.?(bitMemExtBad,
-      bitPrefixR16.?(bitPrefixR16Bad, normalNibbleBad))
+    useq.io.wordBad := preds.io.wordBad
+    useq.io.nibbleBad := preds.io.nibbleBad
     val bitMemReturn = bitMemActive & (udec.io.seqSrc === SeqSrc.Literal.U(2)) &
       (udec.io.literal === Ucode.FetchEntry.U(parameter.upcBits)) &
-      ((udec.io.cond =/= Cond.NibbleBad.U(3)) | bitMemExtBad)
+      ((udec.io.cond =/= Cond.NibbleBad.U(3)) | preds.io.bitMemExtBad)
     when(bitMemReturn) {
       bitMemActive := false.B
       bitMemWrite := false.B

@@ -107,6 +107,45 @@ object MicrocodeImage:
                       wsel = WSel.H8, we = true, seq = SeqSrc.Next),
         (routine + 2) -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry))
 
+  private def mulxu(base: Int): Seq[(Int, MW)] =
+    val init = Seq(
+      0x50 -> MW(seq = SeqSrc.Literal, lit = base),
+      base -> MW(cond = Cond.WordBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+      (base + 1) -> MW(bSel = BSel.H8, h8Idx = H8Idx.RsReg, alu = AluOp.Pass,
+                       wsel = WSel.Int, intIdx = IntIdx.Temp, we = true),
+      (base + 2) -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, bSel = BSel.Lit,
+                       lit = 0xff, alu = AluOp.And, size = 1,
+                       wsel = WSel.Int, intIdx = IntIdx.IReg, we = true),
+      (base + 3) -> MW(bSel = BSel.Lit, lit = 0, alu = AluOp.Pass,
+                       h8Idx = H8Idx.RdReg, size = 1, wsel = WSel.H8, we = true)
+    )
+    val body = (0 until 7).flatMap { i =>
+      val t = base + 4 + i * 4
+      Seq(
+        t -> MW(cond = Cond.C, intIdx = IntIdx.Temp,
+                seq = SeqSrc.Literal, lit = t + 3),
+        (t + 1) -> MW(aSel = ASel.Int, bSel = BSel.Int, intIdx = IntIdx.IReg,
+                      alu = AluOp.Add, size = 1, wsel = WSel.Int, we = true),
+        (t + 2) -> MW(aSel = ASel.Int, intIdx = IntIdx.Temp, alu = AluOp.Shr1,
+                      wsel = WSel.Int, we = true,
+                      seq = SeqSrc.Literal, lit = t + 4),
+        (t + 3) -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, bSel = BSel.Int,
+                      intIdx = IntIdx.IReg, alu = AluOp.Add, size = 1,
+                      wsel = WSel.H8, we = true,
+                      seq = SeqSrc.Literal, lit = t + 1)
+      )
+    }
+    val last = base + 4 + 7 * 4
+    init ++ body ++ Seq(
+      last -> MW(cond = Cond.C, intIdx = IntIdx.Temp,
+                 seq = SeqSrc.Literal, lit = last + 2),
+      (last + 1) -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+      (last + 2) -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, bSel = BSel.Int,
+                       intIdx = IntIdx.IReg, alu = AluOp.Add, size = 1,
+                       wsel = WSel.H8, we = true,
+                       seq = SeqSrc.Literal, lit = Ucode.FetchEntry)
+    )
+
   /** Routines by ROM address. Instruction routines sit at ROM[dispatch]; the
     * fetch mainloop and multi-step tails live in upper ROM (>= FetchEntry).
     * Unlisted addresses read as the all-zero word (SeqSrc.Next no-op).
@@ -623,6 +662,7 @@ object MicrocodeImage:
     regReg2Word(0x0d, Ucode.FetchEntry + 0x75, AluOp.Pass, FlagCtl.Nz, true).toMap ++
     regReg2Word(0x19, Ucode.FetchEntry + 0x78, AluOp.Sub, FlagCtl.AddSub, true).toMap ++
     regReg2Word(0x1d, Ucode.FetchEntry + 0x7b, AluOp.Cmp, FlagCtl.AddSub, false).toMap ++
+    mulxu(Ucode.Mulxu).toMap ++
     // inc.b / dec.b (N,Z,V; C,H preserved)
     unary1(0x0a, Ucode.FetchEntry + 0x1a, AluOp.Add).toMap ++
     unary1(0x1a, Ucode.FetchEntry + 0x1c, AluOp.Sub).toMap ++

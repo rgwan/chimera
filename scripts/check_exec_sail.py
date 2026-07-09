@@ -60,6 +60,7 @@ IMPLEMENTED = {
     "h8_bit_abs8_read", "h8_bit_abs8_write",
     "h8_bit_r16i_read", "h8_bit_r16i_write",
     "h8_daa8_r8", "h8_das8_r8",
+    "h8_mulxu_r8_r16",
     "h8_branch_rel8", "h8_bsr_rel8",
     "h8_jmp_r16i", "h8_jmp_abs16", "h8_jmp_abs8i",
     "h8_jsr_r16i", "h8_jsr_abs16", "h8_jsr_abs8i",

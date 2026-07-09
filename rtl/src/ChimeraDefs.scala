@@ -132,3 +132,4 @@ object Ucode:
   val BitRegIndex = FetchEntry + 0xb5
   val Daa = FetchEntry + 0xc0
   val Das = FetchEntry + 0xc2
+  val Mulxu = FetchEntry + 0xc4

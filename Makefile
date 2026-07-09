@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
 
-.PHONY: build smoke rtl-verilog check-decode-table check-decode check-biu check-bit-reg check-bit-mem check-daa-das check-adds-subs check-stack-byte check-irq-vector gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model verify-smoke check clean
+.PHONY: build smoke rtl-verilog check-decode-table check-decode check-biu check-bit-reg check-bit-mem check-daa-das check-adds-subs check-mulxu check-stack-byte check-irq-vector gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model verify-smoke check clean
 
 build: smoke
 
@@ -171,6 +171,12 @@ check-daa-das:
 	iverilog -g2012 -o rtl/generated/sim_daa_das test/core/tb_core_daa_das.v \
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_daa_das
+
+check-mulxu:
+	bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_mulxu test/core/tb_core_mulxu.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_mulxu
 
 check-stack:
 	bash rtl/build.sh

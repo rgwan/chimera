@@ -117,7 +117,9 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     ccr.io.hwV     := udec.io.vclr.?(false.B, alu.io.vout) // SHLL/SHLR/SHAR/ROT* force V=0
     ccr.io.hwC     := alu.io.cout
     ccr.io.ldWe    := udec.io.flagCtl === FlagCtl.LoadCcr.U(3)
-    ccr.io.ldVal   := opx.io.imm8
+    // LDC #imm loads from imm8; RTE pops CCR from the high byte of mem[SP] (aSel=Mem)
+    ccr.io.ldVal   := (udec.io.aSel === ASel.Mem.U(2)).?(
+      biu.io.rdata.asBits.bits(15, 8).asUInt, opx.io.imm8)
 
     // writeback: WSel picks the H8 or internal file (shared index/data). Byte ops
     // replicate the result byte and let wmask place it into the selected half.

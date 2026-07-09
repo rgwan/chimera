@@ -118,6 +118,12 @@ check-jsr:
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_jsr
 
+check-rte:
+	bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_rte test/core/tb_core_rte.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_rte
+
 check-exec-sail:
 	bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/sim_isa test/isa/tb_isa_case.v \

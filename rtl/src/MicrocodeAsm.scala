@@ -291,6 +291,23 @@ object MicrocodeImage:
          wsel = WSel.Int, intIdx = IntIdx.PC, we = true,
          seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
 
+    // rte (0x56): pop CCR (high byte of mem[SP]) then PC; SP += 4.
+    0x56 -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x69),
+    (Ucode.FetchEntry + 0x69) ->               // CCR = mem[SP][15:8]
+      MW(bus = BusCtl.Read, h8Idx = H8Idx.Ptr, vclr = true, addrH8 = true,
+         aSel = ASel.Mem, flag = FlagCtl.LoadCcr),
+    (Ucode.FetchEntry + 0x6a) ->               // SP += 2
+      MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, vclr = true, bSel = BSel.Lit, lit = 2,
+         alu = AluOp.Add, size = 1, wsel = WSel.H8, we = true),
+    (Ucode.FetchEntry + 0x6b) ->               // PC = mem[SP]
+      MW(bus = BusCtl.Read, h8Idx = H8Idx.Ptr, vclr = true, addrH8 = true,
+         aSel = ASel.Mem, alu = AluOp.PassA, size = 1, wsel = WSel.Int,
+         intIdx = IntIdx.PC, we = true),
+    (Ucode.FetchEntry + 0x6c) ->               // SP += 2
+      MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, vclr = true, bSel = BSel.Lit, lit = 2,
+         alu = AluOp.Add, size = 1, wsel = WSel.H8, we = true),
+    (Ucode.FetchEntry + 0x6d) -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+
     // Bcc shared routine: taken -> PC += signext(disp8); not taken -> fetch.
     // cond nibble drives the CcInstr predicate (evaluated in Core).
     (Ucode.FetchEntry + 0x20) ->

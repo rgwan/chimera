@@ -18,6 +18,7 @@ class IntRegFileIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val waddr = Flipped(UInt(2))
   val wdata = Flipped(UInt(parameter.dataWidth))
   val we    = Flipped(Bool())
+  val pcData = Aligned(UInt(parameter.dataWidth))
   val dbgPc = Aligned(UInt(parameter.dataWidth)) // verify tap
 
 @generator
@@ -43,4 +44,5 @@ object IntRegFile
     when(io.raddr === 1.U(2))(rd := ireg)
     when(io.raddr === 2.U(2))(rd := temp)
     io.rdata := rd
+    io.pcData := pc
     io.dbgPc := pc

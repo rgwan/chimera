@@ -279,6 +279,24 @@ object MicrocodeImage:
          alu = AluOp.PassA, flag = FlagCtl.Nz, size = 1,
          seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
 
+    // mov.b/w @(d16,Rn),Rd: IREG = ext@PC + Rn; then load through IREG.
+    0x6e -> MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, aSel = ASel.Mem,
+               h8Idx = H8Idx.Ptr, alu = AluOp.Add, size = 1,
+               wsel = WSel.Int, we = true, seq = SeqSrc.Literal,
+               lit = Ucode.FetchEntry + 0x70),
+    0x6f -> MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, aSel = ASel.Mem,
+               h8Idx = H8Idx.Ptr, alu = AluOp.Add, size = 1,
+               wsel = WSel.Int, we = true, seq = SeqSrc.Literal,
+               lit = Ucode.FetchEntry + 0x71),
+    (Ucode.FetchEntry + 0x70) ->
+      MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, aSel = ASel.Mem, alu = AluOp.PassA,
+         flag = FlagCtl.Nz, wsel = WSel.H8, h8Idx = H8Idx.RdReg, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x40),
+    (Ucode.FetchEntry + 0x71) ->
+      MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, aSel = ASel.Mem, alu = AluOp.PassA,
+         flag = FlagCtl.Nz, wsel = WSel.H8, h8Idx = H8Idx.RdReg, size = 1, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x40),
+
     // Control transfer + stack. Bus ops using H8Idx.Ptr + vclr address SP directly.
     // jmp @Rn (0x59): PC = Rn.
     0x59 -> MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, alu = AluOp.PassA, size = 1,

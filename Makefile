@@ -118,6 +118,12 @@ check-mem-byte:
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_mem_byte
 
+check-mem-disp:
+	bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_mem_disp test/core/tb_core_mem_disp.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_mem_disp
+
 check-stack:
 	bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/sim_stack test/core/tb_core_stack.v \

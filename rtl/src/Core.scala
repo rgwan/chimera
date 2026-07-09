@@ -98,7 +98,11 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       ((udec.io.busCtl === BusCtl.Read.U(2)) | (udec.io.busCtl === BusCtl.Write.U(2)))
     val h8BusAddr = (udec.io.busCtl === BusCtl.Write.U(2)) & (!udec.io.vclr) &
       (udec.io.h8Idx === H8Idx.Ptr.U(2)) & (udec.io.aSel === ASel.Int.U(2))
-    val busAddr = (stackBus | h8BusAddr).?(h8rf.io.rdata, intrf.io.rdata)
+    val dispExtBus = (udec.io.busCtl === BusCtl.Read.U(2)) &
+      (udec.io.aSel === ASel.Mem.U(2)) & udec.io.wsel & udec.io.regWe &
+      (udec.io.intIdx === IntIdx.IReg.U(2)) & (udec.io.h8Idx === H8Idx.Ptr.U(2))
+    val busAddr = dispExtBus.?(intrf.io.pcData,
+      (stackBus | h8BusAddr).?(h8rf.io.rdata, intrf.io.rdata))
     val memByte = busAddr.asBits.bit(0).?(
       biu.io.rdata.asBits.bits(7, 0), biu.io.rdata.asBits.bits(15, 8))
     val memRead = sizeWord.?(biu.io.rdata, (0.B(8) ## memByte).asUInt)

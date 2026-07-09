@@ -13,6 +13,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import yaml
@@ -35,6 +36,7 @@ IMPLEMENTED = {
     "h8_mov8_r16i_r8", "h8_mov8_r8_r16i",
     "h8_mov16_r16i_r16", "h8_mov16_r16_r16i",
     "h8_mov16_r16p_r16", "h8_mov16_r16_pr16",
+    "h8_mov8_r16d16_r8", "h8_mov16_r16d16_r16",
 }
 
 MEM_PROBE_LIMIT = 16
@@ -150,12 +152,39 @@ def expected_state(initial, expected):
     return words, exp_ccr
 
 
+def check_case(sim, case):
+    try:
+        exp_mem = memory_expected(case)
+        image = image_memory(case)
+        regs, ccr, mem = run(sim, image, sorted(exp_mem))
+        exp_regs, exp_ccr = expected_state(case["initial"], case["expected"])
+        ok = regs is not None and ccr == exp_ccr \
+            and all(regs[n] == exp_regs[n] for n in range(8)) \
+            and all(mem.get(a) == v for a, v in exp_mem.items())
+        if ok:
+            return True, None
+        return False, (f"{case['id']}: regs={regs} ccr={ccr} "
+                       f"mem={mem} exp_regs={[exp_regs[n] for n in range(8)]} "
+                       f"exp_ccr={exp_ccr} exp_mem={exp_mem}")
+    except Exception as exc:
+        return False, f"{case['id']}: {type(exc).__name__}: {exc}"
+
+
+def job_count():
+    default = min(os.cpu_count() or 1, 8)
+    try:
+        return max(1, int(os.environ.get("CHECK_EXEC_SAIL_JOBS", default)))
+    except ValueError:
+        return default
+
+
 def main():
     sim = os.environ.get("SIM_BIN")
     if not sim or not Path(sim).exists():
         sys.exit("SIM_BIN not set to a compiled tb_isa_case runner")
     passed = failed = skipped = 0
     fails = []
+    work = []
     for cf in CASE_FILES:
         doc = yaml.safe_load(cf.read_text())
         for case in doc.get("cases", []):
@@ -164,20 +193,14 @@ def main():
                     or case.get("expected", {}).get("trap"):
                 skipped += 1
                 continue
-            exp_mem = memory_expected(case)
-            image = image_memory(case)
-            regs, ccr, mem = run(sim, image, sorted(exp_mem))
-            exp_regs, exp_ccr = expected_state(case["initial"], case["expected"])
-            ok = regs is not None and ccr == exp_ccr \
-                and all(regs[n] == exp_regs[n] for n in range(8)) \
-                and all(mem.get(a) == v for a, v in exp_mem.items())
+            work.append(case)
+    with ThreadPoolExecutor(max_workers=job_count()) as pool:
+        for ok, fail in pool.map(lambda case: check_case(sim, case), work):
             if ok:
                 passed += 1
             else:
                 failed += 1
-                fails.append(f"{case['id']}: regs={regs} ccr={ccr} "
-                             f"mem={mem} exp_regs={[exp_regs[n] for n in range(8)]} "
-                             f"exp_ccr={exp_ccr} exp_mem={exp_mem}")
+                fails.append(fail)
     for f in fails:
         print("  FAIL", f)
     tag = "EXEC-SAIL PASS" if failed == 0 else "EXEC-SAIL FAIL"

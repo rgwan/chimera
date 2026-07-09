@@ -73,6 +73,19 @@ object MicrocodeImage:
                   intIdx = IntIdx.Temp, alu = op, flag = flag, wsel = WSel.H8,
                   we = writes, seq = SeqSrc.Literal, lit = Ucode.FetchEntry))
 
+  /** Word reg-reg op: guard bit7/bit3, then stage rs16 and operate on rd16. */
+  private def regReg2Word(disp: Int, guard: Int, op: Int, flag: Int,
+                          writes: Boolean): Seq[(Int, MW)] =
+    Seq(disp -> MW(seq = SeqSrc.Literal, lit = guard),
+        guard -> MW(cond = Cond.WordRegBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+        (guard + 1) -> MW(bSel = BSel.H8, h8Idx = H8Idx.Ptr, alu = AluOp.Pass, size = 1,
+                   wsel = WSel.Int, intIdx = IntIdx.Temp, we = true,
+                   seq = SeqSrc.Literal, lit = guard + 2),
+        (guard + 2) -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, bSel = BSel.Int,
+                   intIdx = IntIdx.Temp, alu = op, flag = flag, size = 1,
+                   wsel = WSel.H8, we = writes, seq = SeqSrc.Literal,
+                   lit = Ucode.FetchEntry))
+
   /** Single-operand +/-1 (INC/DEC): needs a Lit const, so it cannot also branch
     * in the same word. Jump to an upper routine: op with seq=Next, then a pure
     * jump back to fetch. */
@@ -373,6 +386,11 @@ object MicrocodeImage:
     regReg2(0x0c, Ucode.FetchEntry + 0x17, AluOp.Pass, FlagCtl.Nz, true, false).toMap ++
     regReg2(0x0e, Ucode.FetchEntry + 0x18, AluOp.Adc, FlagCtl.AddSub, true, false).toMap ++
     regReg2(0x1e, Ucode.FetchEntry + 0x19, AluOp.Sbc, FlagCtl.StickyZ, true).toMap ++
+    // word reg-reg ops use rd16=word[2:0], rs16=word[6:4].
+    regReg2Word(0x09, Ucode.FetchEntry + 0x72, AluOp.Add, FlagCtl.AddSub, true).toMap ++
+    regReg2Word(0x0d, Ucode.FetchEntry + 0x75, AluOp.Pass, FlagCtl.Nz, true).toMap ++
+    regReg2Word(0x19, Ucode.FetchEntry + 0x78, AluOp.Sub, FlagCtl.AddSub, true).toMap ++
+    regReg2Word(0x1d, Ucode.FetchEntry + 0x7b, AluOp.Cmp, FlagCtl.AddSub, false).toMap ++
     // inc.b / dec.b (N,Z,V; C,H preserved)
     unary1(0x0a, Ucode.FetchEntry + 0x1a, AluOp.Add).toMap ++
     unary1(0x1a, Ucode.FetchEntry + 0x1c, AluOp.Sub).toMap

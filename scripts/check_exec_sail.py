@@ -37,6 +37,8 @@ IMPLEMENTED = {
     "h8_mov16_r16i_r16", "h8_mov16_r16_r16i",
     "h8_mov16_r16p_r16", "h8_mov16_r16_pr16",
     "h8_mov8_r16d16_r8", "h8_mov16_r16d16_r16",
+    "h8_add16_r16_r16", "h8_sub16_r16_r16",
+    "h8_cmp16_r16_r16", "h8_mov16_r16_r16",
 }
 
 MEM_PROBE_LIMIT = 16

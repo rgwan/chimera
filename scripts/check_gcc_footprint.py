@@ -43,6 +43,7 @@ OBJDUMP_RE = re.compile(r"^\s*[0-9a-f]+:\s+([0-9a-f]{2}(?: [0-9a-f]{2})*)\s+(\S+
 DISPATCH_KEY_RE = re.compile(r"^\s*(0x[0-9a-f]{2}) ->", re.M)
 DISPATCH_RANGE_RE = re.compile(r"\((0x[0-9a-f]+) to (0x[0-9a-f]+)\)\.map")
 REGREG_RE = re.compile(r"regReg2\(\s*(0x[0-9a-f]+)")
+WORD_REGREG_RE = re.compile(r"regReg2Word\(\s*(0x[0-9a-f]+)")
 FORBIDDEN_RE = re.compile(r"(movfpe|movtpe|eepmov|mul|div)", re.I)
 
 
@@ -80,6 +81,8 @@ def rtl_dispatch_set():
     for base in (int(v, 16) for v in REGREG_RE.findall(text)):
         values.add(base)
         values.add(0xC0 | (base & 0x3F))
+    for base in (int(v, 16) for v in WORD_REGREG_RE.findall(text)):
+        values.add(base)
     return values
 
 

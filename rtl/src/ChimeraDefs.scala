@@ -38,6 +38,7 @@ object Cond:
   val BusRdy   = 3
   val CcInstr  = 4 // branch condition selected from instr[11:8]
   val Irq      = 5 // pending interrupt latched
+  val WordRegBad = 6 // word reg-reg guard: second-byte bit7 or bit3 is set
 
 /** ALU operation. No barrel shift, no multiply/divide. Left shift (SHLL/SHAL)
   * and ROTXL reuse the adder (`r+r`, `adc r,r`); only right shift/rotate and the

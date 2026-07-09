@@ -27,7 +27,8 @@ IMPLEMENTED = {
     "h8_nop", "h8_mov8_imm_r8", "h8_add8_imm_r8", "h8_cmp8_imm_r8",
     "h8_or8_imm_r8", "h8_xor8_imm_r8", "h8_and8_imm_r8",
     "h8_add8_r8_r8", "h8_sub8_r8_r8", "h8_mov16_imm_r16",
-    "h8_ldc_imm_ccr", "h8_ldc_r8_ccr",
+    "h8_stc_ccr_r8", "h8_ldc_imm_ccr", "h8_ldc_r8_ccr",
+    "h8_orc_imm_ccr", "h8_xorc_imm_ccr", "h8_andc_imm_ccr",
     "h8_or8_r8_r8", "h8_xor8_r8_r8", "h8_and8_r8_r8", "h8_cmp8_r8_r8",
     "h8_addx8_imm_r8", "h8_subx8_imm_r8",
     "h8_mov8_r8_r8", "h8_addx8_r8_r8", "h8_subx8_r8_r8",
@@ -72,7 +73,7 @@ def reg_word(regs):
 
 def ccr_imm8(hnzvc):
     h, n, z, v, c = (int(x) for x in hnzvc)
-    return (h << 5) | (n << 3) | (z << 2) | (v << 1) | c
+    return 0x80 | (h << 5) | (n << 3) | (z << 2) | (v << 1) | c
 
 
 def prologue(initial):

@@ -137,12 +137,28 @@ object MicrocodeImage:
     // ldc #imm8,ccr (dispatch 0x07): CCR := imm8 (I UI H U N Z V C)
     0x07 -> MW(aSel = ASel.Zero, flag = FlagCtl.LoadCcr,
                seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    0x02 -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x9f),
+    (Ucode.FetchEntry + 0x9f) ->
+      MW(cond = Cond.NibbleBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    (Ucode.FetchEntry + 0xa0) ->
+      MW(aSel = ASel.Int, intIdx = IntIdx.CcrSrc, alu = AluOp.PassA,
+         h8Idx = H8Idx.RdReg, wsel = WSel.H8, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
     0x03 -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x9d),
     (Ucode.FetchEntry + 0x9d) ->
       MW(cond = Cond.NibbleBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
     (Ucode.FetchEntry + 0x9e) ->
       MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, flag = FlagCtl.LoadCcr,
          seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    0x04 -> MW(aSel = ASel.Int, intIdx = IntIdx.CcrSrc, bSel = BSel.Imm8,
+               alu = AluOp.Or, flag = FlagCtl.LoadCcr,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    0x05 -> MW(aSel = ASel.Int, intIdx = IntIdx.CcrSrc, bSel = BSel.Imm8,
+               alu = AluOp.Xor, flag = FlagCtl.LoadCcr,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    0x06 -> MW(aSel = ASel.Int, intIdx = IntIdx.CcrSrc, bSel = BSel.Imm8,
+               alu = AluOp.And, flag = FlagCtl.LoadCcr,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
 
     // not.b Rd (0x17): Rd = ~Rd, set N/Z clear V
     0x17 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.Not, flag = FlagCtl.Nz,

@@ -71,7 +71,7 @@ object FlagCtl:
   val Shift   = 3 // N,Z + shift V,C
   val StickyZ = 4 // SUBX: keep Z when result is zero
   val Bit     = 5 // BTST/BLD/Bxx C or Z only
-  val LoadCcr = 6 // LDC #imm / STC: CCR := imm8 directly
+  val LoadCcr = 6 // direct CCR write
   val Nzv     = 7 // INC/DEC: N,Z + hardware V; preserve C,H
 
 /** Bus transaction (2-bit). RMW is a Read then Write in microcode. */

@@ -100,7 +100,8 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
 
     val savedCcr = RegInit(0.U(parameter.byteWidth))
     when(useq.io.irqAck)(savedCcr := ccr.io.ccrByte)
-    val ccrWord = (savedCcr.asBits ## 0.B(8)).asUInt
+    val ccrWord = sizeWord.?((savedCcr.asBits ## 0.B(8)).asUInt,
+      (0.B(8) ## ccr.io.ccrByte.asBits).asUInt)
     val intRead = (udec.io.intIdx === IntIdx.CcrSrc.U(2)).?(ccrWord, intrf.io.rdata)
 
     val stackBus = (udec.io.h8Idx === H8Idx.Ptr.U(2)) & udec.io.vclr &
@@ -146,7 +147,9 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     ccr.io.hwC     := alu.io.cout
     ccr.io.ldWe    := udec.io.flagCtl === FlagCtl.LoadCcr.U(3)
     val ccrRegByte = h8Read.asBits.bits(7, 0).asUInt
-    val ccrImmByte = (udec.io.aSel === ASel.H8.U(2)).?(ccrRegByte, opx.io.imm8)
+    val ccrLogicByte = alu.io.y.asBits.bits(7, 0).asUInt
+    val ccrImmByte = (udec.io.aSel === ASel.Int.U(2)).?(ccrLogicByte,
+      (udec.io.aSel === ASel.H8.U(2)).?(ccrRegByte, opx.io.imm8))
     // RTE pops CCR from the high byte of mem[SP].
     ccr.io.ldVal   := (udec.io.aSel === ASel.Mem.U(2)).?(
       biu.io.rdata.asBits.bits(15, 8).asUInt, ccrImmByte)
@@ -200,7 +203,8 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     useq.io.wordBad := wordRegPage.?(ir.asBits.bit(15) | ir.asBits.bit(11),
       ir.asBits.bit(11))
     val secondHigh = ir.asBits.bits(15, 12)
-    useq.io.nibbleBad := (firstOp === 0x03.B(8)).?(
+    val byteCcrPage = (firstOp === 0x02.B(8)) | (firstOp === 0x03.B(8))
+    useq.io.nibbleBad := byteCcrPage.?(
       secondHigh =/= 0.B(4), ir.asBits.bits(14, 12) =/= 0.B(3))
 
     // Bcc condition evaluator: cond nibble = instr[3:0], flags from CCR.

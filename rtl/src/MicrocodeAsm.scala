@@ -97,10 +97,26 @@ object MicrocodeImage:
     (Ucode.FetchEntry + 2) ->                 // PC += 2, then dispatch on the opcode
       MW(aSel = ASel.Int, bSel = BSel.Lit, lit = 2, alu = AluOp.Add,
          wsel = WSel.Int, intIdx = IntIdx.PC, we = true, seq = SeqSrc.Dispatch),
-    // irq_proc: entry acked the latch and set I in hardware. Returns by a fixed
-    // JUMP to the fetch step (not a micro-return) so register push/pop inside the
-    // handler can use the call/return stack. Architectural push/vector/RTE later.
-    (Ucode.FetchEntry + 0x30) -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 1),
+    // irq_proc: push PC and saved CCR, then load the IRQ0 vector at address 8.
+    (Ucode.FetchEntry + 0x30) ->               // SP -= 2
+      MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, vclr = true, bSel = BSel.Lit, lit = 2,
+         alu = AluOp.Sub, size = 1, wsel = WSel.H8, we = true),
+    (Ucode.FetchEntry + 0x31) ->               // mem[SP] = PC
+      MW(bus = BusCtl.Write, h8Idx = H8Idx.Ptr, vclr = true,
+         aSel = ASel.Int, intIdx = IntIdx.PC, alu = AluOp.PassA, size = 1),
+    (Ucode.FetchEntry + 0x32) ->               // SP -= 2
+      MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, vclr = true, bSel = BSel.Lit, lit = 2,
+         alu = AluOp.Sub, size = 1, wsel = WSel.H8, we = true),
+    (Ucode.FetchEntry + 0x33) ->               // mem[SP] = saved CCR in high byte
+      MW(bus = BusCtl.Write, h8Idx = H8Idx.Ptr, vclr = true,
+         aSel = ASel.Int, intIdx = IntIdx.CcrSrc, alu = AluOp.PassA, size = 1),
+    (Ucode.FetchEntry + 0x34) ->               // PC = 8
+      MW(aSel = ASel.Zero, bSel = BSel.Lit, lit = 8, alu = AluOp.Pass,
+         wsel = WSel.Int, intIdx = IntIdx.PC, we = true),
+    (Ucode.FetchEntry + 0x35) ->               // PC = mem[PC]
+      MW(bus = BusCtl.Read, intIdx = IntIdx.PC, aSel = ASel.Mem, alu = AluOp.PassA,
+         size = 1, wsel = WSel.Int, we = true, seq = SeqSrc.Literal,
+         lit = Ucode.FetchEntry),
 
     // NOP (dispatch 0x00): return to fetch
     0x00 -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry),

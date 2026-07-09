@@ -105,6 +105,7 @@ object IntIdx:
   val PC   = 0
   val IReg = 1
   val Temp = 2
+  val CcrSrc = 3 // saved interrupt CCR source, not stored in IntRegFile
 
 /** Writeback target. */
 object WSel:

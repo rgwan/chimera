@@ -1,10 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 // SPDX-License-Identifier: MIT
 //
-// Microcode-poll interrupt: the fetch mainloop polls between retires and calls
-// irq_proc when an interrupt is pending. Entry acks the latch and sets CCR.I,
-// so a first IRQ is taken (once) and a second is masked. The interrupted NOP
-// stream keeps running (PC advances).
+// Microcode-poll interrupt: the fetch mainloop polls between retires and enters
+// irq_proc when an interrupt is pending. Entry acks the latch and sets CCR.I.
 `timescale 1ns / 1ps
 module tb_core_irq;
   reg         clock, reset, irq, nmi;
@@ -26,6 +24,10 @@ module tb_core_irq;
     bus_rdy   = 1'b1;
     bus_rdata = {mem[bus_addr], mem[(bus_addr + 16'd1) & 16'hFFFF]};
   end
+  always @(posedge clock) if (bus_req && bus_we) begin
+    if (bus_wmask[1]) mem[bus_addr]                      <= bus_wdata[15:8];
+    if (bus_wmask[0]) mem[(bus_addr + 16'd1) & 16'hFFFF] <= bus_wdata[7:0];
+  end
   initial clock = 0;
   always #5 clock = ~clock;
 
@@ -38,11 +40,11 @@ module tb_core_irq;
     repeat (4) @(posedge clock);
     reset = 0;
     repeat (16) @(posedge clock);
-    irq = 1; repeat (2) @(posedge clock); irq = 0;   // pulse 1: I=0, taken
+    irq = 1; repeat (2) @(posedge clock); irq = 0;
     repeat (20) @(posedge clock);
-    irq = 1; repeat (2) @(posedge clock); irq = 0;   // pulse 2: I=1, masked
+    irq = 1; repeat (2) @(posedge clock); irq = 0;
     repeat (20) @(posedge clock); #1;
-    if (handler_count == 1 && dut.ccr.iFlag === 1'b1 && dut.intrf.dbgPc > 16'h0010)
+    if (handler_count == 1 && dut.ccr.iFlag === 1'b1 && dut.intrf.dbgPc >= 16'h0010)
       $display("CORE-IRQ PASS: handler entered once, I set, program continued (pc=%h)",
                dut.intrf.dbgPc);
     else

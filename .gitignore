@@ -5,6 +5,7 @@
 /*.sv
 /*.v
 /rtl/generated/
+/rtl/generated_*/
 /rtl/**/*.mlirbc
 
 # Diagram render products (SVG is the committed source; generator lives in the skill)

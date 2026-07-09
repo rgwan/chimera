@@ -89,10 +89,15 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     h8rf.io.raddr  := h8Idx
     intrf.io.raddr := udec.io.intIdx
 
+    val savedCcr = RegInit(0.U(parameter.byteWidth))
+    when(useq.io.irqAck)(savedCcr := ccr.io.ccrByte)
+    val ccrWord = (savedCcr.asBits ## 0.B(8)).asUInt
+    val intRead = (udec.io.intIdx === IntIdx.CcrSrc.U(2)).?(ccrWord, intrf.io.rdata)
+
     // ALU A mux
     val aMux = Wire(UInt(parameter.dataWidth))
     aMux := h8Read
-    when(udec.io.aSel === ASel.Int.U(2))(aMux := intrf.io.rdata)
+    when(udec.io.aSel === ASel.Int.U(2))(aMux := intRead)
     when(udec.io.aSel === ASel.Zero.U(2))(aMux := 0.U(parameter.dataWidth))
     when(udec.io.aSel === ASel.Mem.U(2))(aMux := biu.io.rdata) // load data (BE)
 
@@ -100,7 +105,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     val bMux = Wire(UInt(parameter.dataWidth))
     bMux := h8Read
     when(udec.io.bSel === BSel.Imm8.U(2))(bMux := imm8ext)
-    when(udec.io.bSel === BSel.Int.U(2))(bMux := intrf.io.rdata)
+    when(udec.io.bSel === BSel.Int.U(2))(bMux := intRead)
     when(udec.io.bSel === BSel.Lit.U(2))(bMux := litConst)
 
     alu.io.a    := aMux

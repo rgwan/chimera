@@ -94,6 +94,12 @@ check-irq:
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_irq
 
+check-irq-entry:
+	RESET_VECTOR=256 CHIMERA_RTL_OUT=$$PWD/rtl/generated_irq_entry bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated_irq_entry/sim_irq_entry test/core/tb_core_irq_entry.v \
+	  $$(ls rtl/generated_irq_entry/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated_irq_entry/sim_irq_entry
+
 check-movw:
 	bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/sim_movw test/core/tb_core_movw.v \

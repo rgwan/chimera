@@ -77,7 +77,7 @@ object MicrocodeImage:
   private def regReg2Word(disp: Int, guard: Int, op: Int, flag: Int,
                           writes: Boolean): Seq[(Int, MW)] =
     Seq(disp -> MW(seq = SeqSrc.Literal, lit = guard),
-        guard -> MW(cond = Cond.WordRegBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+        guard -> MW(cond = Cond.WordBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
         (guard + 1) -> MW(bSel = BSel.H8, h8Idx = H8Idx.Ptr, alu = AluOp.Pass, size = 1,
                    wsel = WSel.Int, intIdx = IntIdx.Temp, we = true,
                    seq = SeqSrc.Literal, lit = guard + 2),
@@ -297,10 +297,7 @@ object MicrocodeImage:
                h8Idx = H8Idx.Ptr, alu = AluOp.Add, size = 1,
                wsel = WSel.Int, we = true, seq = SeqSrc.Literal,
                lit = Ucode.FetchEntry + 0x70),
-    0x6f -> MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, aSel = ASel.Mem,
-               h8Idx = H8Idx.Ptr, alu = AluOp.Add, size = 1,
-               wsel = WSel.Int, we = true, seq = SeqSrc.Literal,
-               lit = Ucode.FetchEntry + 0x71),
+    0x6f -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x82),
     (Ucode.FetchEntry + 0x70) ->
       MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, aSel = ASel.Mem, alu = AluOp.PassA,
          flag = FlagCtl.Nz, wsel = WSel.H8, h8Idx = H8Idx.RdReg, we = true,
@@ -319,13 +316,73 @@ object MicrocodeImage:
          h8Idx = H8Idx.RdReg, alu = AluOp.PassA, flag = FlagCtl.Nz,
          seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x40),
     (Ucode.FetchEntry + 0x7f) ->
-      MW(cond = Cond.WordBit3Bad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+      MW(cond = Cond.WordBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x40),
     (Ucode.FetchEntry + 0x80) ->
       MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, aSel = ASel.Mem,
          h8Idx = H8Idx.Ptr, alu = AluOp.Add, size = 1,
          wsel = WSel.Int, we = true, seq = SeqSrc.Literal,
          lit = Ucode.FetchEntry + 0x81),
     (Ucode.FetchEntry + 0x81) ->
+      MW(bus = BusCtl.Write, intIdx = IntIdx.IReg, aSel = ASel.H8,
+         h8Idx = H8Idx.RdReg, alu = AluOp.PassA, flag = FlagCtl.Nz, size = 1,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x40),
+    (Ucode.FetchEntry + 0x82) ->
+      MW(cond = Cond.WordBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x40),
+    (Ucode.FetchEntry + 0x83) ->
+      MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, aSel = ASel.Mem,
+         h8Idx = H8Idx.Ptr, alu = AluOp.Add, size = 1,
+         wsel = WSel.Int, we = true, seq = SeqSrc.Literal,
+         lit = Ucode.FetchEntry + 0x71),
+
+    (Ucode.FetchEntry + 0x84) ->
+      MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, aSel = ASel.Mem,
+         alu = AluOp.PassA, flag = FlagCtl.Nz, h8Idx = H8Idx.RdImm, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    (Ucode.FetchEntry + 0x85) ->
+      MW(bus = BusCtl.Write, intIdx = IntIdx.IReg, aSel = ASel.H8,
+         h8Idx = H8Idx.RdImm, alu = AluOp.PassA, flag = FlagCtl.Nz,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    0x6a -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x86),
+    0xea -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x89),
+    0x6b -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x8c),
+    0xeb -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x8f),
+    (Ucode.FetchEntry + 0x86) ->
+      MW(cond = Cond.Abs16ByteBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x40),
+    (Ucode.FetchEntry + 0x87) ->
+      MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, aSel = ASel.Mem,
+         alu = AluOp.PassA, size = 1, wsel = WSel.Int, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x88),
+    (Ucode.FetchEntry + 0x88) ->
+      MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, aSel = ASel.Mem,
+         alu = AluOp.PassA, flag = FlagCtl.Nz, h8Idx = H8Idx.RdReg, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x40),
+    (Ucode.FetchEntry + 0x89) ->
+      MW(cond = Cond.Abs16ByteBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x40),
+    (Ucode.FetchEntry + 0x8a) ->
+      MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, aSel = ASel.Mem,
+         alu = AluOp.PassA, size = 1, wsel = WSel.Int, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x8b),
+    (Ucode.FetchEntry + 0x8b) ->
+      MW(bus = BusCtl.Write, intIdx = IntIdx.IReg, aSel = ASel.H8,
+         h8Idx = H8Idx.RdReg, alu = AluOp.PassA, flag = FlagCtl.Nz,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x40),
+    (Ucode.FetchEntry + 0x8c) ->
+      MW(cond = Cond.WordBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x40),
+    (Ucode.FetchEntry + 0x8d) ->
+      MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, aSel = ASel.Mem,
+         alu = AluOp.PassA, size = 1, wsel = WSel.Int, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x8e),
+    (Ucode.FetchEntry + 0x8e) ->
+      MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, aSel = ASel.Mem,
+         alu = AluOp.PassA, flag = FlagCtl.Nz, h8Idx = H8Idx.RdReg, size = 1, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x40),
+    (Ucode.FetchEntry + 0x8f) ->
+      MW(cond = Cond.WordBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x40),
+    (Ucode.FetchEntry + 0x90) ->
+      MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, aSel = ASel.Mem,
+         alu = AluOp.PassA, size = 1, wsel = WSel.Int, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x91),
+    (Ucode.FetchEntry + 0x91) ->
       MW(bus = BusCtl.Write, intIdx = IntIdx.IReg, aSel = ASel.H8,
          h8Idx = H8Idx.RdReg, alu = AluOp.PassA, flag = FlagCtl.Nz, size = 1,
          seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x40),
@@ -397,6 +454,14 @@ object MicrocodeImage:
          wsel = WSel.Int, we = true, seq = SeqSrc.Literal, lit = Ucode.FetchEntry)
   ) ++ (0x40 to 0x4f).map(a =>
     a -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x20)).toMap ++
+    (0x20 to 0x2f).map(a =>
+      a -> MW(aSel = ASel.Zero, bSel = BSel.Imm8, alu = AluOp.Pass,
+              wsel = WSel.Int, intIdx = IntIdx.IReg, we = true,
+              seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x84)).toMap ++
+    (0x30 to 0x3f).map(a =>
+      a -> MW(aSel = ASel.Zero, bSel = BSel.Imm8, alu = AluOp.Pass,
+              wsel = WSel.Int, intIdx = IntIdx.IReg, we = true,
+              seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x85)).toMap ++
     // reg-reg logical/compare (m-class): or/xor/and set N,Z clear V; cmp no write
     regReg2(0x14, Ucode.FetchEntry + 0x13, AluOp.Or,  FlagCtl.Nz,     true).toMap ++
     regReg2(0x15, Ucode.FetchEntry + 0x14, AluOp.Xor, FlagCtl.Nz,     true).toMap ++

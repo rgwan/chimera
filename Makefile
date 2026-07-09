@@ -124,6 +124,12 @@ check-mem-disp:
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_mem_disp
 
+check-mem-abs:
+	bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_mem_abs test/core/tb_core_mem_abs.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_mem_abs
+
 check-word-reg:
 	bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/sim_word_reg test/core/tb_core_word_reg.v \

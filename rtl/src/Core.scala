@@ -81,8 +81,12 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
 
     // imm8 sign-extended: correct for branch disp8 (16-bit PC add) and harmless
     // for byte ALU ops (which use only [7:0]).
+    val abs8Addr = (udec.io.aSel === ASel.Zero.U(2)) & (udec.io.bSel === BSel.Imm8.U(2)) &
+      (udec.io.aluOp === AluOp.Pass.U(4)) & udec.io.wsel & udec.io.regWe &
+      (udec.io.intIdx === IntIdx.IReg.U(2))
     val imm8sign = opx.io.imm8.asBits.bit(7).?(0xff.B(8), 0.B(8))
-    val imm8ext  = (imm8sign ## opx.io.imm8.asBits).asUInt
+    val imm8top  = (0xff.B(8) ## opx.io.imm8.asBits).asUInt
+    val imm8ext  = abs8Addr.?(imm8top, (imm8sign ## opx.io.imm8.asBits).asUInt)
     val litConst = (0.B(8) ## udec.io.literal.asBits.bits(7, 0)).asUInt
 
     // register-file reads (single port each)
@@ -98,10 +102,10 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       ((udec.io.busCtl === BusCtl.Read.U(2)) | (udec.io.busCtl === BusCtl.Write.U(2)))
     val h8BusAddr = (udec.io.busCtl === BusCtl.Write.U(2)) & (!udec.io.vclr) &
       (udec.io.h8Idx === H8Idx.Ptr.U(2)) & (udec.io.aSel === ASel.Int.U(2))
-    val dispExtBus = (udec.io.busCtl === BusCtl.Read.U(2)) &
+    val extIRegBus = (udec.io.busCtl === BusCtl.Read.U(2)) &
       (udec.io.aSel === ASel.Mem.U(2)) & udec.io.wsel & udec.io.regWe &
-      (udec.io.intIdx === IntIdx.IReg.U(2)) & (udec.io.h8Idx === H8Idx.Ptr.U(2))
-    val busAddr = dispExtBus.?(intrf.io.pcData,
+      (udec.io.intIdx === IntIdx.IReg.U(2))
+    val busAddr = extIRegBus.?(intrf.io.pcData,
       (stackBus | h8BusAddr).?(h8rf.io.rdata, intrf.io.rdata))
     val memByte = busAddr.asBits.bit(0).?(
       biu.io.rdata.asBits.bits(7, 0), biu.io.rdata.asBits.bits(15, 8))
@@ -178,8 +182,12 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     useq.io.condZ    := ccr.io.zFlag
     useq.io.condC    := ccr.io.cFlag
     useq.io.busRdy   := biu.io.rdy
-    useq.io.wordRegBad := ir.asBits.bit(15) | ir.asBits.bit(11)
-    useq.io.wordBit3Bad := ir.asBits.bit(11)
+    val firstOp = ir.asBits.bits(7, 0)
+    val wordRegPage = (firstOp === 0x09.B(8)) | (firstOp === 0x0d.B(8)) |
+      (firstOp === 0x19.B(8)) | (firstOp === 0x1d.B(8))
+    useq.io.wordBad := wordRegPage.?(ir.asBits.bit(15) | ir.asBits.bit(11),
+      ir.asBits.bit(11))
+    useq.io.abs16ByteBad := ir.asBits.bits(14, 12) =/= 0.B(3)
 
     // Bcc condition evaluator: cond nibble = instr[3:0], flags from CCR.
     val fN = ccr.io.hnzvc.asBits.bit(3)

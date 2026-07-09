@@ -3,7 +3,7 @@
 //
 // Generic ISA-case runner: loads a memory image (+hex=<file>) built by
 // check_exec_sail.py (state-preload prologue + the case instruction + NOPs),
-// runs, and dumps the final register file and CCR for retire comparison.
+// runs, and dumps architectural state for retire comparison.
 `timescale 1ns / 1ps
 module tb_isa_case;
   reg         clock, reset, irq, nmi;
@@ -19,6 +19,8 @@ module tb_isa_case;
   reg [15:0] mp8, mp9, mp10, mp11, mp12, mp13, mp14, mp15;
   integer     mem_probe_count;
   integer     i;
+  integer     stop_fetch;
+  integer     fetch_count;
 
   Core dut (.clock(clock), .reset(reset), .irq(irq), .nmi(nmi),
     .bus_addr(bus_addr), .bus_wdata(bus_wdata), .bus_rdata(bus_rdata),
@@ -37,9 +39,22 @@ module tb_isa_case;
   initial clock = 0;
   always #5 clock = ~clock;
 
+  task dump_state;
+    begin
+      $display("R %h %h %h %h %h %h %h %h",
+        dut.h8rf.dbg[15:0],   dut.h8rf.dbg[31:16],  dut.h8rf.dbg[47:32],  dut.h8rf.dbg[63:48],
+        dut.h8rf.dbg[79:64],  dut.h8rf.dbg[95:80],  dut.h8rf.dbg[111:96], dut.h8rf.dbg[127:112]);
+      $display("C %b", dut.ccr.hnzvc);
+      $display("P %h", dut.intrf.dbgPc);
+      for (i = 0; i < mem_probe_count; i = i + 1)
+        $display("M %04h %02h", mem_probe[i], mem[mem_probe[i]]);
+    end
+  endtask
+
   initial begin
     for (i = 0; i < 65536; i = i + 1) mem[i] = 8'h00;
     if (!$value$plusargs("hex=%s", hexpath)) begin $display("NO-HEX"); $finish; end
+    if (!$value$plusargs("stop_fetch=%d", stop_fetch)) stop_fetch = 0;
     mem_probe_count = 0;
     if ($value$plusargs("m0=%h",  mp0))  begin mem_probe[0]  = mp0;  mem_probe_count = 1;  end
     if ($value$plusargs("m1=%h",  mp1))  begin mem_probe[1]  = mp1;  mem_probe_count = 2;  end
@@ -61,13 +76,17 @@ module tb_isa_case;
     irq = 0; nmi = 0; reset = 1;
     repeat (4) @(posedge clock);
     reset = 0;
-    repeat (400) @(posedge clock); #1;
-    $display("R %h %h %h %h %h %h %h %h",
-      dut.h8rf.dbg[15:0],   dut.h8rf.dbg[31:16],  dut.h8rf.dbg[47:32],  dut.h8rf.dbg[63:48],
-      dut.h8rf.dbg[79:64],  dut.h8rf.dbg[95:80],  dut.h8rf.dbg[111:96], dut.h8rf.dbg[127:112]);
-    $display("C %b", dut.ccr.hnzvc);
-    for (i = 0; i < mem_probe_count; i = i + 1)
-      $display("M %04h %02h", mem_probe[i], mem[mem_probe[i]]);
+    fetch_count = 0;
+    for (i = 0; i < 4000; i = i + 1) begin
+      @(posedge clock);
+      if (dut.useq.upc == 9'h101) begin
+        fetch_count = fetch_count + 1;
+        if (stop_fetch != 0 && fetch_count >= stop_fetch) begin
+          #1; dump_state; $finish;
+        end
+      end
+    end
+    #1; dump_state;
     $finish;
   end
 endmodule

@@ -577,17 +577,19 @@ object MicrocodeImage:
       MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, vclr = true, bSel = BSel.Lit, lit = 2,
          alu = AluOp.Add, size = 1, wsel = WSel.H8, we = true),
     (Ucode.FetchEntry + 0x65) -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
-    // jsr @Rn (0x5D): push PC; PC = Rn.
-    0x5d -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x66),
+    // jsr @Rn (0x5D): stage target before SP changes so @SP aliases use old SP.
+    0x5d -> MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, alu = AluOp.PassA, size = 1,
+               wsel = WSel.Int, intIdx = IntIdx.IReg, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x66),
     (Ucode.FetchEntry + 0x66) ->               // SP -= 2
       MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, vclr = true, bSel = BSel.Lit, lit = 2,
          alu = AluOp.Sub, size = 1, wsel = WSel.H8, we = true),
     (Ucode.FetchEntry + 0x67) ->               // mem[SP] = PC
       MW(bus = BusCtl.Write, h8Idx = H8Idx.Ptr, vclr = true,
          aSel = ASel.Int, intIdx = IntIdx.PC, alu = AluOp.PassA, size = 1),
-    (Ucode.FetchEntry + 0x68) ->               // PC = Rn
-      MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, alu = AluOp.PassA, size = 1,
-         wsel = WSel.Int, intIdx = IntIdx.PC, we = true,
+    (Ucode.FetchEntry + 0x68) ->               // PC = staged Rn
+      MW(aSel = ASel.Int, intIdx = IntIdx.IReg, h8Idx = H8Idx.RsReg,
+         alu = AluOp.PassA, size = 1, wsel = WSel.Int, we = true,
          seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
     // jmp/jsr absolute forms.
     0x5a -> MW(bus = BusCtl.Read, intIdx = IntIdx.PC, aSel = ASel.Mem,

@@ -60,9 +60,19 @@ IMPLEMENTED = {
     "h8_bit_abs8_read", "h8_bit_abs8_write",
     "h8_bit_r16i_read", "h8_bit_r16i_write",
     "h8_daa8_r8", "h8_das8_r8",
+    "h8_branch_rel8", "h8_bsr_rel8",
+    "h8_jmp_r16i", "h8_jmp_abs16", "h8_jmp_abs8i",
+    "h8_jsr_r16i", "h8_jsr_abs16", "h8_jsr_abs8i",
+    "h8_rts", "h8_rte",
 }
 
 MEM_PROBE_LIMIT = 16
+ABSOLUTE_PC_INSTRUCTIONS = {
+    "h8_jmp_r16i", "h8_jmp_abs16", "h8_jmp_abs8i",
+    "h8_jsr_r16i", "h8_jsr_abs16", "h8_jsr_abs8i",
+    "h8_rts", "h8_rte",
+}
+CALL_INSTRUCTIONS = {"h8_bsr_rel8", "h8_jsr_r16i", "h8_jsr_abs16", "h8_jsr_abs8i"}
 
 
 def parse_hex(value):
@@ -101,6 +111,10 @@ def prologue(initial):
     return b
 
 
+def prologue_instruction_count(initial):
+    return len(reg_word(initial.get("regs", {}))) + 1
+
+
 def case_words(words):
     b = []
     for w in words:
@@ -109,21 +123,53 @@ def case_words(words):
     return b
 
 
-def memory_expected(case):
+def expected_word_register(case, name):
+    regs = reg_word(case.get("initial", {}).get("regs", {}))
+    regs.update(reg_word(case.get("expected", {}).get("regs", {})))
+    return regs[int(name[1])]
+
+
+def instruction_len(case):
+    return len(case.get("words", [])) * 2
+
+
+def case_start(case, prologue_len):
+    pc = parse_hex(case["initial"].get("pc", "0x0000"))
+    return pc if pc >= prologue_len else prologue_len
+
+
+def memory_expected(case, start):
     mem = case.get("memory", {}).get("expected", {})
-    return {parse_hex(a): parse_hex(v) & 0xFF for a, v in mem.items()}
+    out = {parse_hex(a): parse_hex(v) & 0xFF for a, v in mem.items()}
+    if case.get("instruction") in CALL_INSTRUCTIONS and out:
+        sp = expected_word_register(case, "r7")
+        ret = (start + instruction_len(case)) & 0xFFFF
+        out[sp] = (ret >> 8) & 0xFF
+        out[(sp + 1) & 0xFFFF] = ret & 0xFF
+    return out
 
 
-def image_memory(case):
-    code = prologue(case["initial"]) + case_words(case["words"])
-    image = {addr: byte for addr, byte in enumerate(code)}
+def prepared_image(case):
+    pre = prologue(case["initial"])
+    initial_pc = parse_hex(case["initial"].get("pc", "0x0000"))
+    jump_to_initial = initial_pc >= len(pre)
+    start = initial_pc if jump_to_initial else case_start(case, len(pre))
+    if start & 1:
+        raise ValueError(f"{case['id']}: odd case start 0x{start:04x}")
+    image = {addr: byte for addr, byte in enumerate(pre)}
+    if jump_to_initial:
+        for offset, byte in enumerate([0x5A, 0x00, (start >> 8) & 0xFF, start & 0xFF]):
+            image[len(pre) + offset] = byte
+    for offset, byte in enumerate(case_words(case["words"])):
+        image[start + offset] = byte
     for addr_s, val_s in case.get("memory", {}).get("initial", {}).items():
         addr = parse_hex(addr_s)
         byte = parse_hex(val_s) & 0xFF
         if addr in image and image[addr] != byte:
             raise ValueError(f"{case['id']}: memory at 0x{addr:04x} overlaps code")
         image[addr] = byte
-    return image
+    stop_fetch = prologue_instruction_count(case["initial"]) + (1 if jump_to_initial else 0) + 2
+    return image, start, stop_fetch
 
 
 def write_memh(path, image):
@@ -136,14 +182,14 @@ def write_memh(path, image):
             next_addr = addr + 1
 
 
-def run(sim_bin, image, mem_addrs):
+def run(sim_bin, image, mem_addrs, stop_fetch):
     if len(mem_addrs) > MEM_PROBE_LIMIT:
         raise ValueError(f"too many memory probes: {len(mem_addrs)}")
     with tempfile.NamedTemporaryFile("w", suffix=".hex", delete=False) as f:
         path = f.name
     write_memh(path, image)
     try:
-        args = ["vvp", sim_bin, f"+hex={path}"]
+        args = ["vvp", sim_bin, f"+hex={path}", f"+stop_fetch={stop_fetch}"]
         args += [f"+m{i}={addr:04x}" for i, addr in enumerate(mem_addrs)]
         proc = subprocess.run(args, capture_output=True, text=True, timeout=60)
         if proc.returncode:
@@ -151,17 +197,19 @@ def run(sim_bin, image, mem_addrs):
         out = proc.stdout
     finally:
         os.unlink(path)
-    regs = ccr = None
+    regs = ccr = pc = None
     mem = {}
     for line in out.splitlines():
         if line.startswith("R "):
             regs = [int(x, 16) for x in line.split()[1:9]]
         elif line.startswith("C "):
             ccr = line.split()[1]
+        elif line.startswith("P "):
+            pc = int(line.split()[1], 16)
         elif line.startswith("M "):
             _, addr, val = line.split()
             mem[int(addr, 16)] = int(val, 16)
-    return regs, ccr, mem
+    return regs, ccr, pc, mem
 
 
 def expected_state(initial, expected):
@@ -175,6 +223,13 @@ def expected_state(initial, expected):
     return words, exp_ccr
 
 
+def expected_pc(case, start):
+    pc = parse_hex(case["expected"].get("pc", "0x0000"))
+    if case.get("instruction") not in ABSOLUTE_PC_INSTRUCTIONS:
+        pc = (pc + start - parse_hex(case["initial"].get("pc", "0x0000"))) & 0xFFFF
+    return pc
+
+
 def ccr_matches(actual, expected):
     return len(actual) == len(expected) and all(
         e == "x" or a == e for a, e in zip(actual, expected)
@@ -183,18 +238,19 @@ def ccr_matches(actual, expected):
 
 def check_case(sim, case):
     try:
-        exp_mem = memory_expected(case)
-        image = image_memory(case)
-        regs, ccr, mem = run(sim, image, sorted(exp_mem))
+        image, start, stop_fetch = prepared_image(case)
+        exp_mem = memory_expected(case, start)
+        regs, ccr, pc, mem = run(sim, image, sorted(exp_mem), stop_fetch)
         exp_regs, exp_ccr = expected_state(case["initial"], case["expected"])
-        ok = regs is not None and ccr_matches(ccr, exp_ccr) \
+        exp_pc = expected_pc(case, start)
+        ok = regs is not None and pc == exp_pc and ccr_matches(ccr, exp_ccr) \
             and all(regs[n] == exp_regs[n] for n in range(8)) \
             and all(mem.get(a) == v for a, v in exp_mem.items())
         if ok:
             return True, None
-        return False, (f"{case['id']}: regs={regs} ccr={ccr} "
+        return False, (f"{case['id']}: regs={regs} ccr={ccr} pc={pc} "
                        f"mem={mem} exp_regs={[exp_regs[n] for n in range(8)]} "
-                       f"exp_ccr={exp_ccr} exp_mem={exp_mem}")
+                       f"exp_ccr={exp_ccr} exp_pc={exp_pc} exp_mem={exp_mem}")
     except Exception as exc:
         return False, f"{case['id']}: {type(exc).__name__}: {exc}"
 

@@ -119,6 +119,14 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       (0.B(8) ## ccr.io.ccrByte.asBits).asUInt)
     val intRead = (udec.io.intIdx === IntIdx.CcrSrc.U(2)).?(ccrWord, intrf.io.rdata)
 
+    val bitMemActive = RegInit(false.B)
+    val bitMemWrite = RegInit(false.B)
+    val bitMemByte = RegInit(0.U(parameter.byteWidth))
+    val bitPrefixHead = ((firstOp === 0x7c.B(8)) | (firstOp === 0x7d.B(8)) |
+      (firstOp === 0x7e.B(8)) | (firstOp === 0x7f.B(8))) &
+      (udec.io.seqSrc === SeqSrc.Literal.U(2)) &
+      (udec.io.literal === Ucode.BitPrefixExt.U(parameter.upcBits))
+
     val bitRegIndex = (firstOp === 0x60.B(8)) | (firstOp === 0x61.B(8)) |
       (firstOp === 0x62.B(8)) | (firstOp === 0x63.B(8))
     val bitIndex = bitRegIndex.?(intRead.asBits.bits(2, 0).asUInt, opx.io.bit3)
@@ -131,7 +139,8 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     when(bitIndex === 5.U(3))(bitMask8 := 32.U(parameter.byteWidth))
     when(bitIndex === 6.U(3))(bitMask8 := 64.U(parameter.byteWidth))
     when(bitIndex === 7.U(3))(bitMask8 := 128.U(parameter.byteWidth))
-    val h8ByteBits = h8Byte
+    val bitDataByte = bitMemActive.?(bitMemByte, h8Byte.asUInt)
+    val h8ByteBits = bitDataByte.asBits
     val bitMaskBits = bitMask8.asBits
     val bitSetByte = (h8ByteBits | bitMaskBits).asUInt
     val bitClearByte = (h8ByteBits & (~bitMaskBits)).asUInt
@@ -152,7 +161,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     bitValue := bitSet
     when(bitInvert)(bitValue := !bitSet)
     val bitWriteByte = Wire(UInt(parameter.byteWidth))
-    bitWriteByte := h8Byte.asUInt
+    bitWriteByte := bitDataByte
     when((firstOp === 0x60.B(8)) | (firstOp === 0x70.B(8)))(
       bitWriteByte := bitSetByte)
     when((firstOp === 0x61.B(8)) | (firstOp === 0x71.B(8)))(
@@ -168,6 +177,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
        (firstOp === 0x62.B(8)) | (firstOp === 0x67.B(8)) |
        (firstOp === 0x70.B(8)) | (firstOp === 0x71.B(8)) |
        (firstOp === 0x72.B(8)))
+    val bitMemStore = bitMemActive & bitMemWrite & bitWriteActive
     val bitCOp = (firstOp === 0x74.B(8)) | (firstOp === 0x75.B(8)) |
       (firstOp === 0x76.B(8)) | (firstOp === 0x77.B(8))
     val bitCResult = Wire(Bool())
@@ -236,7 +246,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     h8rf.io.wdata  := sizeWord.?(alu.io.y, (wbByte ## wbByte).asUInt)
     h8rf.io.wmask  := sizeWord.?(3.U(parameter.wmaskWidth),
       h8Sel3.?(1.U(parameter.wmaskWidth), 2.U(parameter.wmaskWidth)))
-    h8rf.io.we     := udec.io.regWe & (!toInternal)
+    h8rf.io.we     := udec.io.regWe & (!toInternal) & (!bitMemStore)
     // H8Idx.RsReg tags the internal move that reads IREG and writes PC.
     val pcFromIReg = toInternal & udec.io.regWe & (udec.io.aSel === ASel.Int.U(2)) &
       (udec.io.intIdx === IntIdx.IReg.U(2)) & (udec.io.aluOp === AluOp.PassA.U(4)) &
@@ -250,17 +260,23 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       alu.io.y)
     intrf.io.we    := udec.io.regWe & toInternal
 
+    val bitMemWdata = (bitWriteByte.asBits ## bitWriteByte.asBits).asUInt
+    val normalWdata = sizeWord.?(alu.io.y, (yByte ## yByte).asUInt)
     // SP stack bus ops address R7 while write data can come from the internal file.
-    biu.io.addr   := busAddr
-    biu.io.wdata  := sizeWord.?(alu.io.y, (yByte ## yByte).asUInt)
-    biu.io.busCtl := udec.io.busCtl
-    biu.io.word   := sizeWord
+    biu.io.addr   := bitMemStore.?(intrf.io.iregData, busAddr)
+    biu.io.wdata  := bitMemStore.?(bitMemWdata, normalWdata)
+    biu.io.busCtl := bitMemStore.?(BusCtl.Write.U(2), udec.io.busCtl)
+    biu.io.word   := bitMemStore.?(false.B, sizeWord)
 
     // memory is big-endian; the decoder-visible IR is byte-swapped (first byte in
     // [7:0]). Byte data reads select the lane from the requested address.
     val doFetch      = udec.io.busCtl === BusCtl.Fetch.U(2)
+    val bitMemExtLoad = bitMemActive & (udec.io.busCtl === BusCtl.Read.U(2)) &
+      (udec.io.intIdx === IntIdx.PC.U(2))
     val fetchSwapped = biu.io.rdata.asBits.bits(7, 0) ## biu.io.rdata.asBits.bits(15, 8)
-    when(doFetch & biu.io.rdy)(ir := fetchSwapped.asUInt)
+    when((doFetch | bitMemExtLoad) & biu.io.rdy)(ir := fetchSwapped.asUInt)
+    when(bitMemActive & (udec.io.busCtl === BusCtl.Read.U(2)) &
+      (udec.io.intIdx === IntIdx.IReg.U(2)) & biu.io.rdy)(bitMemByte := memByte.asUInt)
 
     // sequencer inputs
     useq.io.seqSrc   := udec.io.seqSrc
@@ -278,10 +294,37 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     val secondHigh = ir.asBits.bits(15, 12)
     val byteCcrPage = (firstOp === 0x02.B(8)) | (firstOp === 0x03.B(8))
     val addsSubsPage = (firstOp === 0x0b.B(8)) | (firstOp === 0x1b.B(8))
-    useq.io.nibbleBad := byteCcrPage.?(
+    val normalNibbleBad = byteCcrPage.?(
       secondHigh =/= 0.B(4),
       addsSubsPage.?(ir.asBits.bits(14, 11) =/= 0.B(4),
         ir.asBits.bits(14, 12) =/= 0.B(3)))
+    val bitPrefixR16 = (!bitMemActive) & ((firstOp === 0x7c.B(8)) | (firstOp === 0x7d.B(8)))
+    val bitPrefixR16Bad = ir.asBits.bit(15) | (ir.asBits.bits(11, 8) =/= 0.B(4))
+    val bitExtInv = ir.asBits.bit(15)
+    val bitMemExtLowBad = ir.asBits.bits(11, 8) =/= 0.B(4)
+    val bitMemReadOp = (firstOp === 0x63.B(8)) |
+      ((firstOp === 0x73.B(8)) & (!bitExtInv)) |
+      (firstOp === 0x74.B(8)) | (firstOp === 0x75.B(8)) |
+      (firstOp === 0x76.B(8)) | (firstOp === 0x77.B(8))
+    val bitMemWriteOp = (firstOp === 0x60.B(8)) | (firstOp === 0x61.B(8)) |
+      (firstOp === 0x62.B(8)) | (firstOp === 0x67.B(8)) |
+      ((firstOp === 0x70.B(8)) & (!bitExtInv)) |
+      ((firstOp === 0x71.B(8)) & (!bitExtInv)) |
+      ((firstOp === 0x72.B(8)) & (!bitExtInv))
+    val bitMemExtBad = bitMemExtLowBad | bitMemWrite.?((!bitMemWriteOp), (!bitMemReadOp))
+    useq.io.nibbleBad := bitMemActive.?(bitMemExtBad,
+      bitPrefixR16.?(bitPrefixR16Bad, normalNibbleBad))
+    val bitMemReturn = bitMemActive & (udec.io.seqSrc === SeqSrc.Literal.U(2)) &
+      (udec.io.literal === Ucode.FetchEntry.U(parameter.upcBits)) &
+      ((udec.io.cond =/= Cond.NibbleBad.U(3)) | bitMemExtBad)
+    when(bitMemReturn) {
+      bitMemActive := false.B
+      bitMemWrite := false.B
+    }
+    when(bitPrefixHead) {
+      bitMemActive := true.B
+      bitMemWrite := (firstOp === 0x7d.B(8)) | (firstOp === 0x7f.B(8))
+    }
 
     // Bcc condition evaluator: cond nibble = instr[3:0], flags from CCR.
     val fN = ccr.io.hnzvc.asBits.bit(3)

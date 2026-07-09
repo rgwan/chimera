@@ -57,6 +57,8 @@ IMPLEMENTED = {
     "h8_bor_imm3_r8", "h8_bior_imm3_r8",
     "h8_bxor_imm3_r8", "h8_bixor_imm3_r8",
     "h8_band_imm3_r8", "h8_biand_imm3_r8",
+    "h8_bit_abs8_read", "h8_bit_abs8_write",
+    "h8_bit_r16i_read", "h8_bit_r16i_write",
 }
 
 MEM_PROBE_LIMIT = 16

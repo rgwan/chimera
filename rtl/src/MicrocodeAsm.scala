@@ -259,6 +259,45 @@ object MicrocodeImage:
                flag = FlagCtl.Bit, seq = SeqSrc.Literal,
                lit = Ucode.FetchEntry), // bild
 
+    // Memory-bit prefixes build the byte address, read the extension word into
+    // IR, read the target byte, then dispatch into the register bit-op routines.
+    0x7c -> MW(seq = SeqSrc.Literal, lit = Ucode.BitPrefixR16Read),
+    0x7d -> MW(seq = SeqSrc.Literal, lit = Ucode.BitPrefixR16Write),
+    0x7e -> MW(aSel = ASel.Zero, bSel = BSel.Imm8, alu = AluOp.Pass,
+               wsel = WSel.Int, intIdx = IntIdx.IReg, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.BitPrefixExt),
+    0xfe -> MW(aSel = ASel.Zero, bSel = BSel.Imm8, alu = AluOp.Pass,
+               wsel = WSel.Int, intIdx = IntIdx.IReg, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.BitPrefixExt),
+    0x7f -> MW(aSel = ASel.Zero, bSel = BSel.Imm8, alu = AluOp.Pass,
+               wsel = WSel.Int, intIdx = IntIdx.IReg, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.BitPrefixExt),
+    0xff -> MW(aSel = ASel.Zero, bSel = BSel.Imm8, alu = AluOp.Pass,
+               wsel = WSel.Int, intIdx = IntIdx.IReg, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.BitPrefixExt),
+    Ucode.BitPrefixR16Read ->
+      MW(cond = Cond.NibbleBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    (Ucode.BitPrefixR16Read + 1) ->
+      MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, alu = AluOp.PassA, size = 1,
+         wsel = WSel.Int, intIdx = IntIdx.IReg, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.BitPrefixExt),
+    Ucode.BitPrefixR16Write ->
+      MW(cond = Cond.NibbleBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    (Ucode.BitPrefixR16Write + 1) ->
+      MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, alu = AluOp.PassA, size = 1,
+         wsel = WSel.Int, intIdx = IntIdx.IReg, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.BitPrefixExt),
+    Ucode.BitPrefixExt ->
+      MW(bus = BusCtl.Read, intIdx = IntIdx.PC, size = 1,
+         seq = SeqSrc.Literal, lit = Ucode.BitPrefixPc),
+    Ucode.BitPrefixPc ->
+      MW(aSel = ASel.Int, intIdx = IntIdx.PC, bSel = BSel.Lit, lit = 2,
+         alu = AluOp.Add, size = 1, wsel = WSel.Int, we = true),
+    Ucode.BitPrefixGuard ->
+      MW(cond = Cond.NibbleBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    Ucode.BitPrefixRead ->
+      MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, seq = SeqSrc.Dispatch),
+
     // Immediate-ALU page (dispatch 0x80|ooo). rd is instr[3:0]; imm8 the 2nd byte.
     // add.b #imm,Rd
     0x80 -> MW(aSel = ASel.H8, bSel = BSel.Imm8, h8Idx = H8Idx.RdImm, alu = AluOp.Add,

@@ -39,7 +39,7 @@ object Cond:
   val CcInstr  = 4 // branch condition selected from instr[11:8]
   val Irq      = 5 // pending interrupt latched
   val WordBad  = 6 // word-form guard selected from the current opcode page
-  val Abs16ByteBad = 7 // 0x6A byte absolute guard: second-byte bits[6:4] set
+  val NibbleBad = 7 // page-specific second-byte high-nibble guard
 
 /** ALU operation. No barrel shift, no multiply/divide. Left shift (SHLL/SHAL)
   * and ROTXL reuse the adder (`r+r`, `adc r,r`); only right shift/rotate and the

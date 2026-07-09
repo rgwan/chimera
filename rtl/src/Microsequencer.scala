@@ -27,7 +27,7 @@ class MicrosequencerIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val ccTaken  = Flipped(Bool())
   val irqPend  = Flipped(Bool())
   val wordBad  = Flipped(Bool())
-  val abs16ByteBad = Flipped(Bool())
+  val nibbleBad = Flipped(Bool())
   val upc      = Aligned(UInt(parameter.upcBits))
   val irqAck   = Aligned(Bool())     // interrupt call taken this cycle
 
@@ -55,7 +55,7 @@ object Microsequencer
     when(io.cond === Cond.CcInstr.U(3))(pred := io.ccTaken)
     when(io.cond === Cond.Irq.U(3))(pred := io.irqPend)
     when(io.cond === Cond.WordBad.U(3))(pred := io.wordBad)
-    when(io.cond === Cond.Abs16ByteBad.U(3))(pred := io.abs16ByteBad)
+    when(io.cond === Cond.NibbleBad.U(3))(pred := io.nibbleBad)
 
     val nxt = Wire(UInt(parameter.upcBits))
     nxt := seqNext

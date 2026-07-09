@@ -145,9 +145,11 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     ccr.io.hwV     := udec.io.vclr.?(false.B, alu.io.vout) // SHLL/SHLR/SHAR/ROT* force V=0
     ccr.io.hwC     := alu.io.cout
     ccr.io.ldWe    := udec.io.flagCtl === FlagCtl.LoadCcr.U(3)
-    // LDC #imm loads from imm8; RTE pops CCR from the high byte of mem[SP] (aSel=Mem)
+    val ccrRegByte = h8Read.asBits.bits(7, 0).asUInt
+    val ccrImmByte = (udec.io.aSel === ASel.H8.U(2)).?(ccrRegByte, opx.io.imm8)
+    // RTE pops CCR from the high byte of mem[SP].
     ccr.io.ldVal   := (udec.io.aSel === ASel.Mem.U(2)).?(
-      biu.io.rdata.asBits.bits(15, 8).asUInt, opx.io.imm8)
+      biu.io.rdata.asBits.bits(15, 8).asUInt, ccrImmByte)
 
     // writeback: WSel picks the H8 or internal file (shared index/data). Byte ops
     // replicate the result byte and let wmask place it into the selected half.
@@ -197,7 +199,9 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       (firstOp === 0x19.B(8)) | (firstOp === 0x1d.B(8))
     useq.io.wordBad := wordRegPage.?(ir.asBits.bit(15) | ir.asBits.bit(11),
       ir.asBits.bit(11))
-    useq.io.abs16ByteBad := ir.asBits.bits(14, 12) =/= 0.B(3)
+    val secondHigh = ir.asBits.bits(15, 12)
+    useq.io.nibbleBad := (firstOp === 0x03.B(8)).?(
+      secondHigh =/= 0.B(4), ir.asBits.bits(14, 12) =/= 0.B(3))
 
     // Bcc condition evaluator: cond nibble = instr[3:0], flags from CCR.
     val fN = ccr.io.hnzvc.asBits.bit(3)

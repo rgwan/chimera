@@ -135,7 +135,14 @@ object MicrocodeImage:
     0x00 -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
 
     // ldc #imm8,ccr (dispatch 0x07): CCR := imm8 (I UI H U N Z V C)
-    0x07 -> MW(flag = FlagCtl.LoadCcr, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    0x07 -> MW(aSel = ASel.Zero, flag = FlagCtl.LoadCcr,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    0x03 -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x9d),
+    (Ucode.FetchEntry + 0x9d) ->
+      MW(cond = Cond.NibbleBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    (Ucode.FetchEntry + 0x9e) ->
+      MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, flag = FlagCtl.LoadCcr,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
 
     // not.b Rd (0x17): Rd = ~Rd, set N/Z clear V
     0x17 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.Not, flag = FlagCtl.Nz,
@@ -347,7 +354,7 @@ object MicrocodeImage:
     0x6b -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x8c),
     0xeb -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x8f),
     (Ucode.FetchEntry + 0x86) ->
-      MW(cond = Cond.Abs16ByteBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x40),
+      MW(cond = Cond.NibbleBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x40),
     (Ucode.FetchEntry + 0x87) ->
       MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, aSel = ASel.Mem,
          alu = AluOp.PassA, size = 1, wsel = WSel.Int, we = true,
@@ -357,7 +364,7 @@ object MicrocodeImage:
          alu = AluOp.PassA, flag = FlagCtl.Nz, h8Idx = H8Idx.RdReg, we = true,
          seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x40),
     (Ucode.FetchEntry + 0x89) ->
-      MW(cond = Cond.Abs16ByteBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x40),
+      MW(cond = Cond.NibbleBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x40),
     (Ucode.FetchEntry + 0x8a) ->
       MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, aSel = ASel.Mem,
          alu = AluOp.PassA, size = 1, wsel = WSel.Int, we = true,

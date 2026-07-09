@@ -64,6 +64,12 @@ check-branch:
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_branch
 
+check-branch-odd:
+	bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_branch_odd test/core/tb_core_branch_odd.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_branch_odd
+
 check-bcc:
 	bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/sim_bcc test/core/tb_core_bcc.v \

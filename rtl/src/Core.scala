@@ -123,8 +123,12 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     h8rf.io.wmask  := sizeWord.?(3.U(parameter.wmaskWidth),
       h8Sel3.?(1.U(parameter.wmaskWidth), 2.U(parameter.wmaskWidth)))
     h8rf.io.we     := udec.io.regWe & (!toInternal)
+    // PC is architecturally even: clear bit0 on a PC write so an odd branch/jump
+    // displacement aligns the target down (matches the model, no trap).
+    val toPc = udec.io.intIdx === IntIdx.PC.U(2)
     intrf.io.waddr := udec.io.intIdx
-    intrf.io.wdata := alu.io.y
+    intrf.io.wdata := toPc.?((alu.io.y.asBits.bits(parameter.dataWidth - 1, 1) ## 0.B(1)).asUInt,
+      alu.io.y)
     intrf.io.we    := udec.io.regWe & toInternal
 
     // BIU: address from the internal read (PC for fetch, IREG for a data address)

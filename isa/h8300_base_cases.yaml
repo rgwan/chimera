@@ -6,10 +6,9 @@ profile: h8300_base
 fetch_word_bits: 16
 storage_word_bits: 18
 byte_order: big
-# Memory-access rdata/wdata/wmask are logical: the addressed byte sits in
-# bits [7:0] and wmask bit0 selects it, matching the byte-addressed model.
-# Mapping to the big-endian bus lane (even address -> high byte lane) is the
-# RTL bus adapter's job and is not encoded in these cases.
+# Memory expected[] holds the logical byte value per address. Byte-write access
+# wmask/wdata model the big-endian bus lane: an even-address byte write uses
+# wmask "10" with the byte on the high lane (0xNN00), odd uses "01"/0x00NN.
 ccr_order: HNZVC
 decode_key_bits_max: 4
 retire_compare:
@@ -1806,7 +1805,7 @@ cases:
         kind: write
         width: byte
         addr: "0x0140"
-        wmask: "01"
+        wmask: "10"
         wdata: "0x0000"
 
   - id: h8_mov16_r1i_r0
@@ -1996,7 +1995,7 @@ cases:
         kind: write
         width: byte
         addr: "0x0140"
-        wmask: "01"
+        wmask: "10"
         wdata: "0x0000"
 
   - id: h8_mov8_r1l_pr1
@@ -2033,8 +2032,8 @@ cases:
         kind: write
         width: byte
         addr: "0x0140"
-        wmask: "01"
-        wdata: "0x0041"
+        wmask: "10"
+        wdata: "0x4100"
 
   - id: h8_mov16_r1p_r0
     instruction: h8_mov16_r16p_r16
@@ -2226,7 +2225,7 @@ cases:
         kind: write
         width: byte
         addr: "0x0140"
-        wmask: "01"
+        wmask: "10"
         wdata: "0x0000"
 
   - id: h8_mov16_r1d16_r0_neg
@@ -2773,7 +2772,7 @@ cases:
         kind: write
         width: byte
         addr: "0xff40"
-        wmask: "01"
+        wmask: "10"
         wdata: "0x0000"
 
   - id: h8_mov8_abs16_r0l
@@ -2846,7 +2845,7 @@ cases:
         kind: write
         width: byte
         addr: "0x0140"
-        wmask: "01"
+        wmask: "10"
         wdata: "0x0000"
 
   - id: h8_mov16_abs16_r0
@@ -5740,8 +5739,8 @@ cases:
         - kind: write
           width: byte
           addr: "0xff40"
-          wmask: "01"
-          wdata: "0x0004"
+          wmask: "10"
+          wdata: "0x0400"
 
   - id: h8_bnot_r8_abs8
     instruction: h8_bit_abs8_write
@@ -5780,7 +5779,7 @@ cases:
         - kind: write
           width: byte
           addr: "0xff40"
-          wmask: "01"
+          wmask: "10"
           wdata: "0x0000"
 
   - id: h8_bclr_imm3_abs8
@@ -5819,8 +5818,8 @@ cases:
         - kind: write
           width: byte
           addr: "0xff40"
-          wmask: "01"
-          wdata: "0x0001"
+          wmask: "10"
+          wdata: "0x0100"
 
   - id: h8_bst_imm3_abs8
     instruction: h8_bit_abs8_write
@@ -5858,8 +5857,8 @@ cases:
         - kind: write
           width: byte
           addr: "0xff40"
-          wmask: "01"
-          wdata: "0x0040"
+          wmask: "10"
+          wdata: "0x4000"
 
   - id: h8_bist_imm3_abs8
     instruction: h8_bit_abs8_write
@@ -5897,8 +5896,8 @@ cases:
         - kind: write
           width: byte
           addr: "0xff40"
-          wmask: "01"
-          wdata: "0x007f"
+          wmask: "10"
+          wdata: "0x7f00"
 
   - id: h8_btst_imm3_r16i_clear
     instruction: h8_bit_r16i_read
@@ -6288,8 +6287,8 @@ cases:
         - kind: write
           width: byte
           addr: "0x0140"
-          wmask: "01"
-          wdata: "0x0004"
+          wmask: "10"
+          wdata: "0x0400"
 
   - id: h8_bnot_r8_r16i
     instruction: h8_bit_r16i_write
@@ -6329,7 +6328,7 @@ cases:
         - kind: write
           width: byte
           addr: "0x0140"
-          wmask: "01"
+          wmask: "10"
           wdata: "0x0000"
 
   - id: h8_bclr_imm3_r16i
@@ -6369,8 +6368,8 @@ cases:
         - kind: write
           width: byte
           addr: "0x0140"
-          wmask: "01"
-          wdata: "0x0001"
+          wmask: "10"
+          wdata: "0x0100"
 
   - id: h8_bst_imm3_r16i
     instruction: h8_bit_r16i_write
@@ -6409,8 +6408,8 @@ cases:
         - kind: write
           width: byte
           addr: "0x0140"
-          wmask: "01"
-          wdata: "0x0040"
+          wmask: "10"
+          wdata: "0x4000"
 
   - id: h8_bist_imm3_r16i
     instruction: h8_bit_r16i_write
@@ -6449,8 +6448,8 @@ cases:
         - kind: write
           width: byte
           addr: "0x0140"
-          wmask: "01"
-          wdata: "0x007f"
+          wmask: "10"
+          wdata: "0x7f00"
 
   - id: h8_or8_imm_r1l
     instruction: h8_or8_imm_r8

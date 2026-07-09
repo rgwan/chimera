@@ -236,7 +236,7 @@ cases:
         kind: write
         width: byte
         addr: "0x0142"
-        wmask: "01"
+        wmask: "10"
         wdata: "0x0000"
 
   - id: h8_movfpe_abs16_r7l_high_addr
@@ -309,5 +309,5 @@ cases:
         kind: write
         width: byte
         addr: "0x0140"
-        wmask: "01"
-        wdata: "0x0080"
+        wmask: "10"
+        wdata: "0x8000"

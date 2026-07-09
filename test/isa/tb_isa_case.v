@@ -14,6 +14,10 @@ module tb_isa_case;
   reg         bus_rdy;
   reg  [7:0]  mem [0:65535];
   reg [1023:0] hexpath;
+  reg [15:0] mem_probe [0:15];
+  reg [15:0] mp0, mp1, mp2, mp3, mp4, mp5, mp6, mp7;
+  reg [15:0] mp8, mp9, mp10, mp11, mp12, mp13, mp14, mp15;
+  integer     mem_probe_count;
   integer     i;
 
   Core dut (.clock(clock), .reset(reset), .irq(irq), .nmi(nmi),
@@ -36,6 +40,23 @@ module tb_isa_case;
   initial begin
     for (i = 0; i < 65536; i = i + 1) mem[i] = 8'h00;
     if (!$value$plusargs("hex=%s", hexpath)) begin $display("NO-HEX"); $finish; end
+    mem_probe_count = 0;
+    if ($value$plusargs("m0=%h",  mp0))  begin mem_probe[0]  = mp0;  mem_probe_count = 1;  end
+    if ($value$plusargs("m1=%h",  mp1))  begin mem_probe[1]  = mp1;  mem_probe_count = 2;  end
+    if ($value$plusargs("m2=%h",  mp2))  begin mem_probe[2]  = mp2;  mem_probe_count = 3;  end
+    if ($value$plusargs("m3=%h",  mp3))  begin mem_probe[3]  = mp3;  mem_probe_count = 4;  end
+    if ($value$plusargs("m4=%h",  mp4))  begin mem_probe[4]  = mp4;  mem_probe_count = 5;  end
+    if ($value$plusargs("m5=%h",  mp5))  begin mem_probe[5]  = mp5;  mem_probe_count = 6;  end
+    if ($value$plusargs("m6=%h",  mp6))  begin mem_probe[6]  = mp6;  mem_probe_count = 7;  end
+    if ($value$plusargs("m7=%h",  mp7))  begin mem_probe[7]  = mp7;  mem_probe_count = 8;  end
+    if ($value$plusargs("m8=%h",  mp8))  begin mem_probe[8]  = mp8;  mem_probe_count = 9;  end
+    if ($value$plusargs("m9=%h",  mp9))  begin mem_probe[9]  = mp9;  mem_probe_count = 10; end
+    if ($value$plusargs("m10=%h", mp10)) begin mem_probe[10] = mp10; mem_probe_count = 11; end
+    if ($value$plusargs("m11=%h", mp11)) begin mem_probe[11] = mp11; mem_probe_count = 12; end
+    if ($value$plusargs("m12=%h", mp12)) begin mem_probe[12] = mp12; mem_probe_count = 13; end
+    if ($value$plusargs("m13=%h", mp13)) begin mem_probe[13] = mp13; mem_probe_count = 14; end
+    if ($value$plusargs("m14=%h", mp14)) begin mem_probe[14] = mp14; mem_probe_count = 15; end
+    if ($value$plusargs("m15=%h", mp15)) begin mem_probe[15] = mp15; mem_probe_count = 16; end
     $readmemh(hexpath, mem);
     irq = 0; nmi = 0; reset = 1;
     repeat (4) @(posedge clock);
@@ -45,6 +66,8 @@ module tb_isa_case;
       dut.h8rf.dbg[15:0],   dut.h8rf.dbg[31:16],  dut.h8rf.dbg[47:32],  dut.h8rf.dbg[63:48],
       dut.h8rf.dbg[79:64],  dut.h8rf.dbg[95:80],  dut.h8rf.dbg[111:96], dut.h8rf.dbg[127:112]);
     $display("C %b", dut.ccr.hnzvc);
+    for (i = 0; i < mem_probe_count; i = i + 1)
+      $display("M %04h %02h", mem_probe[i], mem[mem_probe[i]]);
     $finish;
   end
 endmodule

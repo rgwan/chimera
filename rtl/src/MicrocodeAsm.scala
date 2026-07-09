@@ -222,6 +222,22 @@ object MicrocodeImage:
          wsel = WSel.Int, we = true),
     (Ucode.FetchEntry + 0x41) -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
 
+    // mov.b @Rn,Rd (load 0x68) / mov.b Rs,@Rn (store, m-class 0xE8).
+    0x68 -> MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, alu = AluOp.PassA, size = 1,
+               wsel = WSel.Int, intIdx = IntIdx.IReg, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x6e),
+    0xe8 -> MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, alu = AluOp.PassA, size = 1,
+               wsel = WSel.Int, intIdx = IntIdx.IReg, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x6f),
+    (Ucode.FetchEntry + 0x6e) ->
+      MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, aSel = ASel.Mem, alu = AluOp.PassA,
+         flag = FlagCtl.Nz, wsel = WSel.H8, h8Idx = H8Idx.RdReg, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    (Ucode.FetchEntry + 0x6f) ->
+      MW(bus = BusCtl.Write, intIdx = IntIdx.IReg, aSel = ASel.H8, h8Idx = H8Idx.RdReg,
+         alu = AluOp.PassA, flag = FlagCtl.Nz,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+
     // mov.w @Rn,Rd (load 0x69) / mov.w Rs,@Rn (store, m-class 0xE9). Rn = bit3
     // field (word[6:4]); data reg = rdReg. The first word reads Rn into IREG.
     0x69 -> MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, alu = AluOp.PassA, size = 1,
@@ -251,16 +267,15 @@ object MicrocodeImage:
          flag = FlagCtl.Nz, wsel = WSel.H8, h8Idx = H8Idx.RdReg, size = 1, we = true,
          seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
 
-    // mov.w Rs,@-Rn (pre-dec store, m-class 0xED): Rn -= 2; mem[Rn] = Rs.
-    0xed -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x54),
-    (Ucode.FetchEntry + 0x54) ->               // TEMP = Rn - 2 (decremented address)
+    // mov.w Rs,@-Rn (pre-dec store, m-class 0xED): stage old Rs, then Rn -= 2.
+    0xed -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.PassA, size = 1,
+               wsel = WSel.Int, intIdx = IntIdx.Temp, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x54),
+    (Ucode.FetchEntry + 0x54) ->
       MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, bSel = BSel.Lit, lit = 2, alu = AluOp.Sub,
-         size = 1, wsel = WSel.Int, intIdx = IntIdx.Temp, we = true),
-    (Ucode.FetchEntry + 0x55) ->               // Rn = TEMP
-      MW(aSel = ASel.Int, intIdx = IntIdx.Temp, alu = AluOp.PassA, size = 1,
-         wsel = WSel.H8, h8Idx = H8Idx.Ptr, we = true),
-    (Ucode.FetchEntry + 0x56) ->               // mem[TEMP] = Rs (flags from Rs)
-      MW(bus = BusCtl.Write, intIdx = IntIdx.Temp, aSel = ASel.H8, h8Idx = H8Idx.RdReg,
+         size = 1, wsel = WSel.H8, we = true),
+    (Ucode.FetchEntry + 0x55) ->
+      MW(bus = BusCtl.Write, h8Idx = H8Idx.Ptr, aSel = ASel.Int, intIdx = IntIdx.Temp,
          alu = AluOp.PassA, flag = FlagCtl.Nz, size = 1,
          seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
 

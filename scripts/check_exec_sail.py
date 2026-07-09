@@ -32,7 +32,16 @@ IMPLEMENTED = {
     "h8_not8_r8", "h8_neg8_r8", "h8_inc8_r8", "h8_dec8_r8",
     "h8_shll8_r8", "h8_shal8_r8", "h8_shlr8_r8", "h8_shar8_r8",
     "h8_rotxl8_r8", "h8_rotl8_r8", "h8_rotxr8_r8", "h8_rotr8_r8",
+    "h8_mov8_r16i_r8", "h8_mov8_r8_r16i",
+    "h8_mov16_r16i_r16", "h8_mov16_r16_r16i",
+    "h8_mov16_r16p_r16", "h8_mov16_r16_pr16",
 }
+
+MEM_PROBE_LIMIT = 16
+
+
+def parse_hex(value):
+    return int(str(value), 16)
 
 
 def reg_word(regs):
@@ -70,27 +79,64 @@ def prologue(initial):
 def case_words(words):
     b = []
     for w in words:
-        x = int(str(w), 16)
+        x = parse_hex(w)
         b += [(x >> 8) & 0xFF, x & 0xFF]
     return b
 
 
-def run(sim_bin, image):
+def memory_expected(case):
+    mem = case.get("memory", {}).get("expected", {})
+    return {parse_hex(a): parse_hex(v) & 0xFF for a, v in mem.items()}
+
+
+def image_memory(case):
+    code = prologue(case["initial"]) + case_words(case["words"])
+    image = {addr: byte for addr, byte in enumerate(code)}
+    for addr_s, val_s in case.get("memory", {}).get("initial", {}).items():
+        addr = parse_hex(addr_s)
+        byte = parse_hex(val_s) & 0xFF
+        if addr in image and image[addr] != byte:
+            raise ValueError(f"{case['id']}: memory at 0x{addr:04x} overlaps code")
+        image[addr] = byte
+    return image
+
+
+def write_memh(path, image):
+    next_addr = None
+    with Path(path).open("w", encoding="utf-8") as f:
+        for addr in sorted(image):
+            if next_addr != addr:
+                f.write(f"@{addr:04x}\n")
+            f.write(f"{image[addr] & 0xFF:02x}\n")
+            next_addr = addr + 1
+
+
+def run(sim_bin, image, mem_addrs):
+    if len(mem_addrs) > MEM_PROBE_LIMIT:
+        raise ValueError(f"too many memory probes: {len(mem_addrs)}")
     with tempfile.NamedTemporaryFile("w", suffix=".hex", delete=False) as f:
-        f.write("\n".join(f"{byte:02x}" for byte in image) + "\n")
         path = f.name
+    write_memh(path, image)
     try:
-        out = subprocess.run(["vvp", sim_bin, f"+hex={path}"],
-                             capture_output=True, text=True, timeout=60).stdout
+        args = ["vvp", sim_bin, f"+hex={path}"]
+        args += [f"+m{i}={addr:04x}" for i, addr in enumerate(mem_addrs)]
+        proc = subprocess.run(args, capture_output=True, text=True, timeout=60)
+        if proc.returncode:
+            raise RuntimeError((proc.stdout + proc.stderr).strip())
+        out = proc.stdout
     finally:
         os.unlink(path)
     regs = ccr = None
+    mem = {}
     for line in out.splitlines():
         if line.startswith("R "):
             regs = [int(x, 16) for x in line.split()[1:9]]
         elif line.startswith("C "):
             ccr = line.split()[1]
-    return regs, ccr
+        elif line.startswith("M "):
+            _, addr, val = line.split()
+            mem[int(addr, 16)] = int(val, 16)
+    return regs, ccr, mem
 
 
 def expected_state(initial, expected):
@@ -118,17 +164,20 @@ def main():
                     or case.get("expected", {}).get("trap"):
                 skipped += 1
                 continue
-            image = prologue(case["initial"]) + case_words(case["words"])
-            regs, ccr = run(sim, image)
+            exp_mem = memory_expected(case)
+            image = image_memory(case)
+            regs, ccr, mem = run(sim, image, sorted(exp_mem))
             exp_regs, exp_ccr = expected_state(case["initial"], case["expected"])
             ok = regs is not None and ccr == exp_ccr \
-                and all(regs[n] == exp_regs[n] for n in range(8))
+                and all(regs[n] == exp_regs[n] for n in range(8)) \
+                and all(mem.get(a) == v for a, v in exp_mem.items())
             if ok:
                 passed += 1
             else:
                 failed += 1
                 fails.append(f"{case['id']}: regs={regs} ccr={ccr} "
-                             f"exp_regs={[exp_regs[n] for n in range(8)]} exp_ccr={exp_ccr}")
+                             f"mem={mem} exp_regs={[exp_regs[n] for n in range(8)]} "
+                             f"exp_ccr={exp_ccr} exp_mem={exp_mem}")
     for f in fails:
         print("  FAIL", f)
     tag = "EXEC-SAIL PASS" if failed == 0 else "EXEC-SAIL FAIL"

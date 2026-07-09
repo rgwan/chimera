@@ -94,12 +94,21 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     val ccrWord = (savedCcr.asBits ## 0.B(8)).asUInt
     val intRead = (udec.io.intIdx === IntIdx.CcrSrc.U(2)).?(ccrWord, intrf.io.rdata)
 
+    val stackBus = (udec.io.h8Idx === H8Idx.Ptr.U(2)) & udec.io.vclr &
+      ((udec.io.busCtl === BusCtl.Read.U(2)) | (udec.io.busCtl === BusCtl.Write.U(2)))
+    val h8BusAddr = (udec.io.busCtl === BusCtl.Write.U(2)) & (!udec.io.vclr) &
+      (udec.io.h8Idx === H8Idx.Ptr.U(2)) & (udec.io.aSel === ASel.Int.U(2))
+    val busAddr = (stackBus | h8BusAddr).?(h8rf.io.rdata, intrf.io.rdata)
+    val memByte = busAddr.asBits.bit(0).?(
+      biu.io.rdata.asBits.bits(7, 0), biu.io.rdata.asBits.bits(15, 8))
+    val memRead = sizeWord.?(biu.io.rdata, (0.B(8) ## memByte).asUInt)
+
     // ALU A mux
     val aMux = Wire(UInt(parameter.dataWidth))
     aMux := h8Read
     when(udec.io.aSel === ASel.Int.U(2))(aMux := intRead)
     when(udec.io.aSel === ASel.Zero.U(2))(aMux := 0.U(parameter.dataWidth))
-    when(udec.io.aSel === ASel.Mem.U(2))(aMux := biu.io.rdata) // load data (BE)
+    when(udec.io.aSel === ASel.Mem.U(2))(aMux := memRead)
 
     // ALU B mux
     val bMux = Wire(UInt(parameter.dataWidth))
@@ -145,15 +154,13 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     intrf.io.we    := udec.io.regWe & toInternal
 
     // SP stack bus ops address R7 while write data can come from the internal file.
-    val stackBus = (udec.io.h8Idx === H8Idx.Ptr.U(2)) & udec.io.vclr &
-      ((udec.io.busCtl === BusCtl.Read.U(2)) | (udec.io.busCtl === BusCtl.Write.U(2)))
-    biu.io.addr   := stackBus.?(h8rf.io.rdata, intrf.io.rdata)
+    biu.io.addr   := busAddr
     biu.io.wdata  := sizeWord.?(alu.io.y, (h8Byte ## h8Byte).asUInt)
     biu.io.busCtl := udec.io.busCtl
     biu.io.word   := sizeWord
 
     // memory is big-endian; the decoder-visible IR is byte-swapped (first byte in
-    // [7:0]). Data loads use biu.rdata directly (natural BE value).
+    // [7:0]). Byte data reads select the lane from the requested address.
     val doFetch      = udec.io.busCtl === BusCtl.Fetch.U(2)
     val fetchSwapped = biu.io.rdata.asBits.bits(7, 0) ## biu.io.rdata.asBits.bits(15, 8)
     when(doFetch & biu.io.rdy)(ir := fetchSwapped.asUInt)

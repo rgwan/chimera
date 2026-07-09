@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 //
 // Pre-decrement / post-increment round trip (stack primitives, general Rn):
-//   R2=0x0200 ; mov.w R1,@-R2 (R2->0x01FE, push) ; mov.w @R2+,R3 (pop, R2->0x0200)
-// -> R3 = 0x1234 and R2 restored to 0x0200.
+//   R2=0x0200 ; mov.w R1,@-R2 ; mov.w @R2+,R3.
+// Also checks the self case: mov.w R1,@-R1 stores the old R1 value.
 `timescale 1ns / 1ps
 module tb_core_stack;
   reg         clock, reset, irq, nmi;
@@ -19,6 +19,7 @@ module tb_core_stack;
     .bus_addr(bus_addr), .bus_wdata(bus_wdata), .bus_rdata(bus_rdata),
     .bus_we(bus_we), .bus_wmask(bus_wmask), .bus_req(bus_req), .bus_rdy(bus_rdy));
 
+  wire [15:0] r1 = dut.h8rf.dbg[31:16];
   wire [15:0] r2 = dut.h8rf.dbg[47:32];
   wire [15:0] r3 = dut.h8rf.dbg[63:48];
 
@@ -39,14 +40,19 @@ module tb_core_stack;
     mem[4]=8'h79; mem[5]=8'h02; mem[6]=8'h02; mem[7]=8'h00; // mov.w #0x0200,R2
     mem[8]=8'h6D; mem[9]=8'hA1;                             // mov.w R1,@-R2
     mem[10]=8'h6D; mem[11]=8'h23;                           // mov.w @R2+,R3
+    mem[12]=8'h79; mem[13]=8'h01; mem[14]=8'h01; mem[15]=8'h42; // mov.w #0x0142,R1
+    mem[16]=8'h6D; mem[17]=8'h91;                           // mov.w R1,@-R1
     fails = 0; irq = 0; nmi = 0; reset = 1;
     repeat (4) @(posedge clock);
     reset = 0;
-    repeat (70) @(posedge clock); #1;
+    repeat (95) @(posedge clock); #1;
     if (r3 !== 16'h1234) begin $display("FAIL R3=%h exp 1234 (pop)", r3); fails=fails+1; end
+    if (r1 !== 16'h0140) begin $display("FAIL R1=%h exp 0140", r1); fails=fails+1; end
     if (r2 !== 16'h0200) begin $display("FAIL R2=%h exp 0200 (SP not restored)", r2); fails=fails+1; end
     if (mem[16'h01FE] !== 8'h12 || mem[16'h01FF] !== 8'h34) begin
       $display("FAIL mem[01FE]=%h%h exp 1234", mem[16'h01FE], mem[16'h01FF]); fails=fails+1; end
+    if (mem[16'h0140] !== 8'h01 || mem[16'h0141] !== 8'h42) begin
+      $display("FAIL mem[0140]=%h%h exp 0142", mem[16'h0140], mem[16'h0141]); fails=fails+1; end
     if (fails == 0) $display("CORE-STACK PASS: pushed @-R2, popped @R2+, R3=%h R2=%h", r3, r2);
     else            $display("CORE-STACK FAIL: %0d", fails);
     $finish;

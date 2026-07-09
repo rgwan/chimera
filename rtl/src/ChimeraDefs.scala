@@ -128,10 +128,7 @@ object Ucode:
   val BitPrefixPc = FetchEntry + 0xb0
   val BitPrefixGuard = FetchEntry + 0xb1
   val BitPrefixRead = FetchEntry + 0xb2
-  val BitPrefixR16Read = FetchEntry + 0xb3
-  val BitPrefixR16Write = FetchEntry + 0xb5
-  val BitSet = FetchEntry + 0xba
-  val BitClear = FetchEntry + 0xbb
-  val BitBst = FetchEntry + 0xbc
+  val BitPrefixR16 = FetchEntry + 0xb3
+  val BitRegIndex = FetchEntry + 0xb5
   val Daa = FetchEntry + 0xc0
   val Das = FetchEntry + 0xc2

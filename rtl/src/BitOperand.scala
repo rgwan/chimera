@@ -17,6 +17,7 @@ class BitOperandIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val bit3         = Flipped(UInt(3))
   val bitMemActive = Flipped(Bool())
   val bitMemByte   = Flipped(UInt(parameter.byteWidth))
+  val cFlag        = Flipped(Bool())
   val aSel         = Flipped(UInt(2))
   val bSel         = Flipped(UInt(2))
   val vclr         = Flipped(Bool())
@@ -24,6 +25,11 @@ class BitOperandIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val operandByte  = Aligned(UInt(parameter.byteWidth))
   val dataByte     = Aligned(UInt(parameter.byteWidth))
   val invert       = Aligned(Bool())
+  val ctlAlu       = Aligned(UInt(4))
+  val ctlFlag      = Aligned(UInt(3))
+  val ctlRegWe     = Aligned(Bool())
+  val ctlASelInt   = Aligned(Bool())
+  val ctlVclr      = Aligned(Bool())
 
 @generator
 object BitOperand extends Generator[ChimeraParameter, ChimeraLayers, BitOperandIO, ChimeraProbe]:
@@ -36,6 +42,11 @@ object BitOperand extends Generator[ChimeraParameter, ChimeraLayers, BitOperandI
     val immBit = opBits.bits(7, 3) === 0x0e.B(5)   // 0x70..0x77
     val bst = io.firstOp === 0x67.U(8)
     val invertible = bst | (opBits.bits(7, 2) === 0x1d.B(6)) // 0x74..0x77
+    val opLow = opBits.bits(1, 0)
+    val ccrOp = immBit & opBits.bit(2)
+    val readWriteOp = regIndex | (immBit & (!opBits.bit(2)))
+    val testOp = readWriteOp & (opLow === 3.B(2))
+    val writeOp = bst | (readWriteOp & (opLow =/= 3.B(2)))
     val bitIndex = regIndex.?(io.intRead.asBits.bits(2, 0).asUInt, io.bit3)
     val mask = Wire(UInt(parameter.byteWidth))
     mask := 1.U(parameter.byteWidth)
@@ -60,16 +71,30 @@ object BitOperand extends Generator[ChimeraParameter, ChimeraLayers, BitOperandI
     when(bitIndex === 7.U(3))(set := bits.bit(7))
 
     val invert = io.ir.asBits.bit(15) & invertible
+    val bstSet = io.cFlag ^ invert
+    val clearMask = io.vclr | (readWriteOp & (opLow === 2.B(2))) | (bst & (!bstSet))
     val value = invert.?((!set), set)
     val insn = regIndex | bst | immBit
     val operandSel = insn & (io.bSel === BSel.Imm8.U(2))
-    val scalar = operandSel & (io.aSel === ASel.Int.U(2))
+    val scalar = operandSel & ccrOp
     val operand = Wire(UInt(parameter.byteWidth))
     operand := mask
-    when(operandSel & io.vclr)(operand := (~mask.asBits).asUInt)
+    when(operandSel & clearMask)(operand := (~mask.asBits).asUInt)
     when(scalar)(operand := (0.B(7) ## value.asBits).asUInt)
+
+    val ctlAlu = Wire(UInt(4))
+    ctlAlu := AluOp.Or.U(4)
+    when(opLow === 1.B(2))(ctlAlu := AluOp.Xor.U(4))
+    when(opLow === 2.B(2))(ctlAlu := AluOp.And.U(4))
+    when(opLow === 3.B(2))(ctlAlu := ccrOp.?(AluOp.Pass.U(4),
+      bst.?(bstSet.?(AluOp.Or.U(4), AluOp.And.U(4)), AluOp.And.U(4))))
 
     io.operandSel := operandSel
     io.operandByte := operand
     io.dataByte := data
     io.invert := invert
+    io.ctlAlu := ctlAlu
+    io.ctlFlag := (ccrOp | testOp).?(FlagCtl.Bit.U(3), FlagCtl.None.U(3))
+    io.ctlRegWe := writeOp
+    io.ctlASelInt := ccrOp
+    io.ctlVclr := clearMask

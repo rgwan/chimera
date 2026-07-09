@@ -56,6 +56,18 @@ object MicrocodeImage:
     "microword field packing"
   )
 
+  /** Two-source reg-reg byte op: stage rs into TEMP, then rd = rd OP TEMP. AH=1
+    * ops dispatch to both `disp` and its m-class alias {0xC0 | disp[5:0]}. */
+  private def regReg2(disp: Int, tail: Int, op: Int, flag: Int, writes: Boolean)
+      : Seq[(Int, MW)] =
+    val stage = MW(bSel = BSel.H8, h8Idx = H8Idx.RsReg, alu = AluOp.Pass,
+                   wsel = WSel.Int, intIdx = IntIdx.Temp, we = true,
+                   seq = SeqSrc.Literal, lit = tail)
+    Seq(disp -> stage, (0xc0 | (disp & 0x3f)) -> stage,
+        tail -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, bSel = BSel.Int,
+                   intIdx = IntIdx.Temp, alu = op, flag = flag, wsel = WSel.H8,
+                   we = writes, seq = SeqSrc.Literal, lit = Ucode.FetchEntry))
+
   /** Routines by ROM address. Instruction routines sit at ROM[dispatch]; the
     * fetch mainloop and multi-step tails live in upper ROM (>= FetchEntry).
     * Unlisted addresses read as the all-zero word (SeqSrc.Next no-op).
@@ -139,7 +151,12 @@ object MicrocodeImage:
       MW(aSel = ASel.Int, bSel = BSel.Imm8, intIdx = IntIdx.PC, alu = AluOp.Add,
          wsel = WSel.Int, we = true, seq = SeqSrc.Literal, lit = Ucode.FetchEntry)
   ) ++ (0x40 to 0x4f).map(a =>
-    a -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x20)).toMap
+    a -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x20)).toMap ++
+    // reg-reg logical/compare (m-class): or/xor/and set N,Z clear V; cmp no write
+    regReg2(0x14, Ucode.FetchEntry + 0x13, AluOp.Or,  FlagCtl.Nz,     true).toMap ++
+    regReg2(0x15, Ucode.FetchEntry + 0x14, AluOp.Xor, FlagCtl.Nz,     true).toMap ++
+    regReg2(0x16, Ucode.FetchEntry + 0x15, AluOp.And, FlagCtl.Nz,     true).toMap ++
+    regReg2(0x1c, Ucode.FetchEntry + 0x16, AluOp.Cmp, FlagCtl.AddSub, false).toMap
 
   /** Sparse image: only authored addresses; the ROM defaults the rest to zero. */
   val sparse: Seq[(Int, BigInt)] =

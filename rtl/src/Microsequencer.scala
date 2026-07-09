@@ -62,5 +62,8 @@ object Microsequencer
     val doCall = (io.seqSrc === SeqSrc.Literal.U(2)) & io.call & pred
     when(doCall)(ret := seqNext)
 
-    io.upc    := upc
-    io.irqAck := doCall & (io.cond === Cond.Irq.U(3))
+    io.upc := upc
+    // Interrupt entry is a conditional JUMP (not a call): the fixed return point
+    // lets irq_proc use the call/return stack for register push/pop. Ack fires
+    // when that jump is taken.
+    io.irqAck := (io.seqSrc === SeqSrc.Literal.U(2)) & (io.cond === Cond.Irq.U(3)) & pred

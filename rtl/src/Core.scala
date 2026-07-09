@@ -81,12 +81,17 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
 
     // imm8 sign-extended: correct for branch disp8 (16-bit PC add) and harmless
     // for byte ALU ops (which use only [7:0]).
-    val abs8Addr = (udec.io.aSel === ASel.Zero.U(2)) & (udec.io.bSel === BSel.Imm8.U(2)) &
+    val abs8PageAddr = (udec.io.aSel === ASel.Zero.U(2)) & (udec.io.bSel === BSel.Imm8.U(2)) &
       (udec.io.aluOp === AluOp.Pass.U(4)) & udec.io.wsel & udec.io.regWe &
       (udec.io.intIdx === IntIdx.IReg.U(2))
+    val vec8Addr = (udec.io.aSel === ASel.Zero.U(2)) & (udec.io.bSel === BSel.Imm8.U(2)) &
+      (udec.io.aluOp === AluOp.Pass.U(4)) & udec.io.wsel & udec.io.regWe &
+      (udec.io.intIdx === IntIdx.PC.U(2))
     val imm8sign = opx.io.imm8.asBits.bit(7).?(0xff.B(8), 0.B(8))
     val imm8top  = (0xff.B(8) ## opx.io.imm8.asBits).asUInt
-    val imm8ext  = abs8Addr.?(imm8top, (imm8sign ## opx.io.imm8.asBits).asUInt)
+    val imm8zero = (0.B(8) ## opx.io.imm8.asBits).asUInt
+    val imm8ext  = abs8PageAddr.?(imm8top,
+      vec8Addr.?(imm8zero, (imm8sign ## opx.io.imm8.asBits).asUInt))
     val litConst = (0.B(8) ## udec.io.literal.asBits.bits(7, 0)).asUInt
 
     // register-file reads (single port each)
@@ -153,10 +158,15 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     h8rf.io.wmask  := sizeWord.?(3.U(parameter.wmaskWidth),
       h8Sel3.?(1.U(parameter.wmaskWidth), 2.U(parameter.wmaskWidth)))
     h8rf.io.we     := udec.io.regWe & (!toInternal)
+    // H8Idx.RsReg tags the internal move that reads IREG and writes PC.
+    val pcFromIReg = toInternal & udec.io.regWe & (udec.io.aSel === ASel.Int.U(2)) &
+      (udec.io.intIdx === IntIdx.IReg.U(2)) & (udec.io.aluOp === AluOp.PassA.U(4)) &
+      (udec.io.h8Idx === H8Idx.RsReg.U(2))
+    val intWaddr = pcFromIReg.?(IntIdx.PC.U(2), udec.io.intIdx)
     // PC is architecturally even: clear bit0 on a PC write so an odd branch/jump
     // displacement aligns the target down (matches the model, no trap).
-    val toPc = udec.io.intIdx === IntIdx.PC.U(2)
-    intrf.io.waddr := udec.io.intIdx
+    val toPc = intWaddr === IntIdx.PC.U(2)
+    intrf.io.waddr := intWaddr
     intrf.io.wdata := toPc.?((alu.io.y.asBits.bits(parameter.dataWidth - 1, 1) ## 0.B(1)).asUInt,
       alu.io.y)
     intrf.io.we    := udec.io.regWe & toInternal

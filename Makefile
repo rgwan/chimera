@@ -148,6 +148,12 @@ check-jsr:
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_jsr
 
+check-jmp-abs:
+	bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_jmp_abs test/core/tb_core_jmp_abs.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_jmp_abs
+
 check-rte:
 	bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/sim_rte test/core/tb_core_rte.v \

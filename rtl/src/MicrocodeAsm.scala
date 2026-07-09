@@ -426,6 +426,48 @@ object MicrocodeImage:
       MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, alu = AluOp.PassA, size = 1,
          wsel = WSel.Int, intIdx = IntIdx.PC, we = true,
          seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    // jmp/jsr absolute forms.
+    0x5a -> MW(bus = BusCtl.Read, intIdx = IntIdx.PC, aSel = ASel.Mem,
+               alu = AluOp.PassA, size = 1, wsel = WSel.Int, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    0x5b -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x9b),
+    0x5e -> MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, aSel = ASel.Mem,
+               alu = AluOp.PassA, size = 1, wsel = WSel.Int, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x93),
+    (Ucode.FetchEntry + 0x93) ->
+      MW(aSel = ASel.Int, intIdx = IntIdx.PC, bSel = BSel.Lit, lit = 2,
+         alu = AluOp.Add, size = 1, wsel = WSel.Int, we = true),
+    (Ucode.FetchEntry + 0x94) ->
+      MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, vclr = true, bSel = BSel.Lit, lit = 2,
+         alu = AluOp.Sub, size = 1, wsel = WSel.H8, we = true),
+    (Ucode.FetchEntry + 0x95) ->
+      MW(bus = BusCtl.Write, h8Idx = H8Idx.Ptr, vclr = true,
+         aSel = ASel.Int, intIdx = IntIdx.PC, alu = AluOp.PassA, size = 1),
+    (Ucode.FetchEntry + 0x96) ->
+      MW(aSel = ASel.Int, intIdx = IntIdx.IReg, h8Idx = H8Idx.RsReg,
+         alu = AluOp.PassA, size = 1, wsel = WSel.Int, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    0x5f -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x97),
+    (Ucode.FetchEntry + 0x97) ->
+      MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, vclr = true, bSel = BSel.Lit, lit = 2,
+         alu = AluOp.Sub, size = 1, wsel = WSel.H8, we = true),
+    (Ucode.FetchEntry + 0x98) ->
+      MW(bus = BusCtl.Write, h8Idx = H8Idx.Ptr, vclr = true,
+         aSel = ASel.Int, intIdx = IntIdx.PC, alu = AluOp.PassA, size = 1),
+    (Ucode.FetchEntry + 0x99) ->
+      MW(aSel = ASel.Zero, bSel = BSel.Imm8, alu = AluOp.Pass,
+         wsel = WSel.Int, intIdx = IntIdx.PC, we = true),
+    (Ucode.FetchEntry + 0x9a) ->
+      MW(bus = BusCtl.Read, intIdx = IntIdx.PC, aSel = ASel.Mem,
+         alu = AluOp.PassA, size = 1, wsel = WSel.Int, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    (Ucode.FetchEntry + 0x9b) ->
+      MW(aSel = ASel.Zero, bSel = BSel.Imm8, alu = AluOp.Pass,
+         wsel = WSel.Int, intIdx = IntIdx.PC, we = true),
+    (Ucode.FetchEntry + 0x9c) ->
+      MW(bus = BusCtl.Read, intIdx = IntIdx.PC, aSel = ASel.Mem,
+         alu = AluOp.PassA, size = 1, wsel = WSel.Int, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
 
     // rte (0x56): pop CCR (high byte of mem[SP]) then PC; SP += 4.
     0x56 -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x69),

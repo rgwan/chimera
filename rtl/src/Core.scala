@@ -58,6 +58,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     coarse.io.word := ir
     opx.io.word    := ir
 
+    val firstOp = ir.asBits.bits(7, 0)
     val sizeWord = udec.io.size
 
     // single H8 read/write index: pick one OperandExtract field. Bit 3 is the
@@ -118,6 +119,63 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       (0.B(8) ## ccr.io.ccrByte.asBits).asUInt)
     val intRead = (udec.io.intIdx === IntIdx.CcrSrc.U(2)).?(ccrWord, intrf.io.rdata)
 
+    val bitRegIndex = (firstOp === 0x60.B(8)) | (firstOp === 0x61.B(8)) |
+      (firstOp === 0x62.B(8)) | (firstOp === 0x63.B(8))
+    val bitIndex = bitRegIndex.?(intRead.asBits.bits(2, 0).asUInt, opx.io.bit3)
+    val bitMask8 = Wire(UInt(parameter.byteWidth))
+    bitMask8 := 1.U(parameter.byteWidth)
+    when(bitIndex === 1.U(3))(bitMask8 := 2.U(parameter.byteWidth))
+    when(bitIndex === 2.U(3))(bitMask8 := 4.U(parameter.byteWidth))
+    when(bitIndex === 3.U(3))(bitMask8 := 8.U(parameter.byteWidth))
+    when(bitIndex === 4.U(3))(bitMask8 := 16.U(parameter.byteWidth))
+    when(bitIndex === 5.U(3))(bitMask8 := 32.U(parameter.byteWidth))
+    when(bitIndex === 6.U(3))(bitMask8 := 64.U(parameter.byteWidth))
+    when(bitIndex === 7.U(3))(bitMask8 := 128.U(parameter.byteWidth))
+    val h8ByteBits = h8Byte
+    val bitMaskBits = bitMask8.asBits
+    val bitSetByte = (h8ByteBits | bitMaskBits).asUInt
+    val bitClearByte = (h8ByteBits & (~bitMaskBits)).asUInt
+    val bitToggleByte = (h8ByteBits ^ bitMaskBits).asUInt
+    val bitSet = Wire(Bool())
+    bitSet := h8ByteBits.bit(0)
+    when(bitIndex === 1.U(3))(bitSet := h8ByteBits.bit(1))
+    when(bitIndex === 2.U(3))(bitSet := h8ByteBits.bit(2))
+    when(bitIndex === 3.U(3))(bitSet := h8ByteBits.bit(3))
+    when(bitIndex === 4.U(3))(bitSet := h8ByteBits.bit(4))
+    when(bitIndex === 5.U(3))(bitSet := h8ByteBits.bit(5))
+    when(bitIndex === 6.U(3))(bitSet := h8ByteBits.bit(6))
+    when(bitIndex === 7.U(3))(bitSet := h8ByteBits.bit(7))
+    val bitInvert = ir.asBits.bit(15) & ((firstOp === 0x67.B(8)) |
+      (firstOp === 0x74.B(8)) | (firstOp === 0x75.B(8)) |
+      (firstOp === 0x76.B(8)) | (firstOp === 0x77.B(8)))
+    val bitValue = Wire(Bool())
+    bitValue := bitSet
+    when(bitInvert)(bitValue := !bitSet)
+    val bitWriteByte = Wire(UInt(parameter.byteWidth))
+    bitWriteByte := h8Byte.asUInt
+    when((firstOp === 0x60.B(8)) | (firstOp === 0x70.B(8)))(
+      bitWriteByte := bitSetByte)
+    when((firstOp === 0x61.B(8)) | (firstOp === 0x71.B(8)))(
+      bitWriteByte := bitToggleByte)
+    when((firstOp === 0x62.B(8)) | (firstOp === 0x72.B(8)))(
+      bitWriteByte := bitClearByte)
+    when(firstOp === 0x67.B(8)) {
+      bitWriteByte := ccr.io.cFlag.?(bitSetByte, bitClearByte)
+      when(bitInvert)(bitWriteByte := ccr.io.cFlag.?(bitClearByte, bitSetByte))
+    }
+    val bitWriteActive = udec.io.regWe & (!udec.io.wsel) & (!sizeWord) &
+      ((firstOp === 0x60.B(8)) | (firstOp === 0x61.B(8)) |
+       (firstOp === 0x62.B(8)) | (firstOp === 0x67.B(8)) |
+       (firstOp === 0x70.B(8)) | (firstOp === 0x71.B(8)) |
+       (firstOp === 0x72.B(8)))
+    val bitCOp = (firstOp === 0x74.B(8)) | (firstOp === 0x75.B(8)) |
+      (firstOp === 0x76.B(8)) | (firstOp === 0x77.B(8))
+    val bitCResult = Wire(Bool())
+    bitCResult := bitValue
+    when(firstOp === 0x74.B(8))(bitCResult := ccr.io.cFlag | bitValue)
+    when(firstOp === 0x75.B(8))(bitCResult := ccr.io.cFlag ^ bitValue)
+    when(firstOp === 0x76.B(8))(bitCResult := ccr.io.cFlag & bitValue)
+
     val stackBus = (udec.io.h8Idx === H8Idx.Ptr.U(2)) & udec.io.vclr &
       ((udec.io.busCtl === BusCtl.Read.U(2)) | (udec.io.busCtl === BusCtl.Write.U(2)))
     val h8BusAddr = (udec.io.busCtl === BusCtl.Write.U(2)) & (!udec.io.vclr) &
@@ -154,11 +212,12 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     // flags
     ccr.io.flagCtl := udec.io.flagCtl
     ccr.io.resN    := sizeWord.?(alu.io.y.asBits.bit(15), alu.io.y.asBits.bit(7))
-    ccr.io.resZ    := sizeWord.?(alu.io.y.asBits.bits(15, 0) === 0.B(16),
-      alu.io.y.asBits.bits(7, 0) === 0.B(8))
-    ccr.io.resH    := alu.io.hout
+    val bitFlag = udec.io.flagCtl === FlagCtl.Bit.U(3)
+    ccr.io.resZ    := bitFlag.?((!bitSet), sizeWord.?(alu.io.y.asBits.bits(15, 0) === 0.B(16),
+      alu.io.y.asBits.bits(7, 0) === 0.B(8)))
+    ccr.io.resH    := bitFlag.?(bitCOp, alu.io.hout)
     ccr.io.hwV     := udec.io.vclr.?(false.B, alu.io.vout) // SHLL/SHLR/SHAR/ROT* force V=0
-    ccr.io.hwC     := alu.io.cout
+    ccr.io.hwC     := bitFlag.?(bitCResult, alu.io.cout)
     ccr.io.ldWe    := udec.io.flagCtl === FlagCtl.LoadCcr.U(3)
     val ccrRegByte = h8Read.asBits.bits(7, 0).asUInt
     val ccrLogicByte = alu.io.y.asBits.bits(7, 0).asUInt
@@ -172,8 +231,9 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     // replicate the result byte and let wmask place it into the selected half.
     val toInternal = udec.io.wsel
     val yByte = alu.io.y.asBits.bits(7, 0)
+    val wbByte = bitWriteActive.?(bitWriteByte.asBits, yByte)
     h8rf.io.waddr  := h8Idx
-    h8rf.io.wdata  := sizeWord.?(alu.io.y, (yByte ## yByte).asUInt)
+    h8rf.io.wdata  := sizeWord.?(alu.io.y, (wbByte ## wbByte).asUInt)
     h8rf.io.wmask  := sizeWord.?(3.U(parameter.wmaskWidth),
       h8Sel3.?(1.U(parameter.wmaskWidth), 2.U(parameter.wmaskWidth)))
     h8rf.io.we     := udec.io.regWe & (!toInternal)
@@ -211,7 +271,6 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     useq.io.condZ    := ccr.io.zFlag
     useq.io.condC    := ccr.io.cFlag
     useq.io.busRdy   := biu.io.rdy
-    val firstOp = ir.asBits.bits(7, 0)
     val wordRegPage = (firstOp === 0x09.B(8)) | (firstOp === 0x0d.B(8)) |
       (firstOp === 0x19.B(8)) | (firstOp === 0x1d.B(8))
     useq.io.wordBad := wordRegPage.?(ir.asBits.bit(15) | ir.asBits.bit(11),

@@ -48,6 +48,15 @@ IMPLEMENTED = {
     "h8_cmp16_r16_r16", "h8_mov16_r16_r16",
     "h8_adds16_one_r16", "h8_adds16_two_r16",
     "h8_subs16_one_r16", "h8_subs16_two_r16",
+    "h8_bset_imm3_r8", "h8_bnot_imm3_r8",
+    "h8_bclr_imm3_r8", "h8_btst_imm3_r8",
+    "h8_bset_r8_r8", "h8_bnot_r8_r8",
+    "h8_bclr_r8_r8", "h8_btst_r8_r8",
+    "h8_bst_imm3_r8", "h8_bist_imm3_r8",
+    "h8_bld_imm3_r8", "h8_bild_imm3_r8",
+    "h8_bor_imm3_r8", "h8_bior_imm3_r8",
+    "h8_bxor_imm3_r8", "h8_bixor_imm3_r8",
+    "h8_band_imm3_r8", "h8_biand_imm3_r8",
 }
 
 MEM_PROBE_LIMIT = 16

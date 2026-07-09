@@ -60,7 +60,8 @@ object Ccr extends Generator[ChimeraParameter, ChimeraLayers, CcrIO, ChimeraProb
     when(fc(FlagCtl.AddSub) | fc(FlagCtl.Shift) | fc(FlagCtl.StickyZ) | fc(FlagCtl.Nzv))(v := io.hwV)
     when(fc(FlagCtl.AddSub) | fc(FlagCtl.Shift) | fc(FlagCtl.StickyZ))(c := io.hwC)
     when(fc(FlagCtl.AddSub) | fc(FlagCtl.StickyZ))(h := io.resH)
-    when(fc(FlagCtl.Bit))(z := io.resZ)
+    when(fc(FlagCtl.Bit) & (!io.resH))(z := io.resZ)
+    when(fc(FlagCtl.Bit) & io.resH)(c := io.hwC)
 
     when(io.ldWe) {
       val lv = io.ldVal.asBits

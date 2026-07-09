@@ -2508,6 +2508,43 @@ cases:
         wmask: "11"
         wdata: "0x0102"
 
+  - id: h8_bsr_rel8_odd_target
+    instruction: h8_bsr_rel8
+    status: supported
+    check_area: memory
+    assembler:
+      - ".word 0x5505"
+    words:
+      - "0x5505"
+    decode_keys: ["5", "5"]
+    sail:
+      decode: H8_BSR_REL8
+      execute: h8_exec_bsr_rel8
+    initial:
+      pc: "0x0100"
+      regs:
+        r7: "0x0200"
+      ccr_hnzvc: "10011"
+    expected:
+      pc: "0x0106"
+      regs:
+        r7: "0x01fe"
+      ccr_hnzvc: preserve
+      trap: false
+    memory:
+      initial:
+        "0x01fe": "0xaa"
+        "0x01ff": "0x55"
+      expected:
+        "0x01fe": "0x01"
+        "0x01ff": "0x02"
+      access:
+        kind: write
+        width: word
+        addr: "0x01fe"
+        wmask: "11"
+        wdata: "0x0102"
+
   - id: h8_bsr_rel8_backward
     instruction: h8_bsr_rel8
     status: supported
@@ -7523,6 +7560,28 @@ cases:
       ccr_hnzvc: "00100"
     expected:
       pc: "0x000e"
+      regs: {}
+      ccr_hnzvc: preserve
+      trap: false
+
+  - id: h8_bra_rel8_odd_target
+    instruction: h8_branch_rel8
+    status: supported
+    check_area: branch
+    assembler:
+      - ".word 0x4005"
+    words:
+      - "0x4005"
+    decode_keys: ["4", "0"]
+    sail:
+      decode: H8_BRANCH
+      execute: h8_exec_branch
+    initial:
+      pc: "0x0000"
+      regs: {}
+      ccr_hnzvc: "00100"
+    expected:
+      pc: "0x0006"
       regs: {}
       ccr_hnzvc: preserve
       trap: false

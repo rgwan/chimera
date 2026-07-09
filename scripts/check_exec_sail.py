@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
+# SPDX-License-Identifier: MIT
+"""Execution-equivalence gate: run isa/*.yaml cases on the RTL and compare the
+retired register file and CCR to the Sail-derived expected state.
+
+State is preloaded with a mov.w/ldc prologue, so no debug backdoor is needed;
+only cases whose instruction is implemented in microcode are run (others are
+skipped and counted). Env SIM_BIN points at the compiled tb_isa_case runner.
+"""
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+import yaml
+
+ROOT = Path(__file__).resolve().parent.parent
+CASE_FILES = [ROOT / "isa" / "h8300_base_cases.yaml",
+              ROOT / "isa" / "h8300_legacy_cases.yaml"]
+
+# instructions whose microcode is implemented (register/CCR data effects)
+IMPLEMENTED = {
+    "h8_nop", "h8_mov8_imm_r8", "h8_add8_imm_r8", "h8_cmp8_imm_r8",
+    "h8_or8_imm_r8", "h8_xor8_imm_r8", "h8_and8_imm_r8",
+    "h8_add8_r8_r8", "h8_sub8_r8_r8", "h8_mov16_imm_r16", "h8_ldc_imm_ccr",
+}
+
+
+def reg_word(regs):
+    """Collapse a {r0l/r0h/r0: hex} dict into {index: 16-bit word}."""
+    words = {}
+    for name, val in regs.items():
+        n = int(name[1])
+        v = int(str(val), 16)
+        cur = words.get(n, 0)
+        if name.endswith("h"):
+            cur = (cur & 0x00FF) | ((v & 0xFF) << 8)
+        elif name.endswith("l"):
+            cur = (cur & 0xFF00) | (v & 0xFF)
+        else:
+            cur = v & 0xFFFF
+        words[n] = cur
+    return words
+
+
+def ccr_imm8(hnzvc):
+    h, n, z, v, c = (int(x) for x in hnzvc)
+    return (h << 5) | (n << 3) | (z << 2) | (v << 1) | c
+
+
+def prologue(initial):
+    """mov.w each preset word register, then ldc the exact initial CCR."""
+    b = []
+    for n in sorted(reg_word(initial.get("regs", {})).items()):
+        idx, val = n
+        b += [0x79, idx & 0x07, (val >> 8) & 0xFF, val & 0xFF]
+    b += [0x07, ccr_imm8(initial.get("ccr_hnzvc", "00000"))]
+    return b
+
+
+def case_words(words):
+    b = []
+    for w in words:
+        x = int(str(w), 16)
+        b += [(x >> 8) & 0xFF, x & 0xFF]
+    return b
+
+
+def run(sim_bin, image):
+    with tempfile.NamedTemporaryFile("w", suffix=".hex", delete=False) as f:
+        f.write("\n".join(f"{byte:02x}" for byte in image) + "\n")
+        path = f.name
+    try:
+        out = subprocess.run(["vvp", sim_bin, f"+hex={path}"],
+                             capture_output=True, text=True, timeout=60).stdout
+    finally:
+        os.unlink(path)
+    regs = ccr = None
+    for line in out.splitlines():
+        if line.startswith("R "):
+            regs = [int(x, 16) for x in line.split()[1:9]]
+        elif line.startswith("C "):
+            ccr = line.split()[1]
+    return regs, ccr
+
+
+def expected_state(initial, expected):
+    words = reg_word(initial.get("regs", {}))
+    words = {n: words.get(n, 0) for n in range(8)}
+    for n, v in reg_word(expected.get("regs", {})).items():
+        words[n] = v
+    exp_ccr = expected.get("ccr_hnzvc", "preserve")
+    if exp_ccr == "preserve":
+        exp_ccr = initial.get("ccr_hnzvc", "00000")
+    return words, exp_ccr
+
+
+def main():
+    sim = os.environ.get("SIM_BIN")
+    if not sim or not Path(sim).exists():
+        sys.exit("SIM_BIN not set to a compiled tb_isa_case runner")
+    passed = failed = skipped = 0
+    fails = []
+    for cf in CASE_FILES:
+        doc = yaml.safe_load(cf.read_text())
+        for case in doc.get("cases", []):
+            instr = case.get("instruction")
+            if case.get("status") != "supported" or instr not in IMPLEMENTED \
+                    or case.get("expected", {}).get("trap"):
+                skipped += 1
+                continue
+            image = prologue(case["initial"]) + case_words(case["words"])
+            regs, ccr = run(sim, image)
+            exp_regs, exp_ccr = expected_state(case["initial"], case["expected"])
+            ok = regs is not None and ccr == exp_ccr \
+                and all(regs[n] == exp_regs[n] for n in range(8))
+            if ok:
+                passed += 1
+            else:
+                failed += 1
+                fails.append(f"{case['id']}: regs={regs} ccr={ccr} "
+                             f"exp_regs={[exp_regs[n] for n in range(8)]} exp_ccr={exp_ccr}")
+    for f in fails:
+        print("  FAIL", f)
+    tag = "EXEC-SAIL PASS" if failed == 0 else "EXEC-SAIL FAIL"
+    print(f"{tag}: {passed} matched, {failed} failed, {skipped} skipped (unimplemented)")
+    sys.exit(1 if failed else 0)
+
+
+if __name__ == "__main__":
+    main()

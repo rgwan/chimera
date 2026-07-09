@@ -71,6 +71,9 @@ object MicrocodeImage:
     // NOP (dispatch 0x00): return to fetch
     0x00 -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
 
+    // ldc #imm8,ccr (dispatch 0x07): CCR := imm8 (I UI H U N Z V C)
+    0x07 -> MW(flag = FlagCtl.LoadCcr, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+
     // Immediate-ALU page (dispatch 0x80|ooo). rd is instr[3:0]; imm8 the 2nd byte.
     // add.b #imm,Rd
     0x80 -> MW(aSel = ASel.H8, bSel = BSel.Imm8, h8Idx = H8Idx.RdImm, alu = AluOp.Add,

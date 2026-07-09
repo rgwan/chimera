@@ -83,6 +83,12 @@ check-movw:
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_movw
 
+check-exec-sail:
+	bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_isa test/isa/tb_isa_case.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	SIM_BIN=rtl/generated/sim_isa python3 scripts/check_exec_sail.py
+
 gnu-oracle:
 	python3 scripts/check_gnu_oracle.py
 

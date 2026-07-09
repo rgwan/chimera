@@ -111,8 +111,8 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     ccr.io.resH    := alu.io.hout
     ccr.io.hwV     := alu.io.vout
     ccr.io.hwC     := alu.io.cout
-    ccr.io.ldWe    := false.B
-    ccr.io.ldVal   := 0.U(8)
+    ccr.io.ldWe    := udec.io.flagCtl === FlagCtl.LoadCcr.U(3)
+    ccr.io.ldVal   := opx.io.imm8
 
     // writeback: WSel picks the H8 or internal file (shared index/data). Byte ops
     // replicate the result byte and let wmask place it into the selected half.

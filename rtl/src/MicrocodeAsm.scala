@@ -206,6 +206,23 @@ object MicrocodeImage:
          wsel = WSel.Int, we = true),
     (Ucode.FetchEntry + 0x41) -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
 
+    // mov.w @Rn,Rd (load 0x69) / mov.w Rs,@Rn (store, m-class 0xE9). Rn = bit3
+    // field (word[6:4]); data reg = rdReg. The first word reads Rn into IREG.
+    0x69 -> MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, alu = AluOp.PassA, size = 1,
+               wsel = WSel.Int, intIdx = IntIdx.IReg, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x50),
+    0xe9 -> MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, alu = AluOp.PassA, size = 1,
+               wsel = WSel.Int, intIdx = IntIdx.IReg, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x51),
+    (Ucode.FetchEntry + 0x50) ->               // load: Rd = mem[IREG]
+      MW(bus = BusCtl.Read, intIdx = IntIdx.IReg, aSel = ASel.Mem, alu = AluOp.PassA,
+         flag = FlagCtl.Nz, wsel = WSel.H8, h8Idx = H8Idx.RdReg, size = 1, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    (Ucode.FetchEntry + 0x51) ->               // store: mem[IREG] = Rs (flags from Rs)
+      MW(bus = BusCtl.Write, intIdx = IntIdx.IReg, aSel = ASel.H8, h8Idx = H8Idx.RdReg,
+         alu = AluOp.PassA, flag = FlagCtl.Nz, size = 1,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+
     // Bcc shared routine: taken -> PC += signext(disp8); not taken -> fetch.
     // cond nibble drives the CcInstr predicate (evaluated in Core).
     (Ucode.FetchEntry + 0x20) ->

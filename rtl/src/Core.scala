@@ -66,6 +66,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     h8field := opx.io.rdReg
     when(udec.io.h8Idx === H8Idx.RdImm.U(2))(h8field := opx.io.rdImm)
     when(udec.io.h8Idx === H8Idx.RsReg.U(2))(h8field := opx.io.rsReg)
+    when(udec.io.h8Idx === H8Idx.Ptr.U(2))(h8field := (0.B(1) ## opx.io.bit3.asBits).asUInt)
     val h8Idx  = h8field.asBits.bits(ri, 0).asUInt
     val h8Sel3 = h8field.asBits.bit(3)
 

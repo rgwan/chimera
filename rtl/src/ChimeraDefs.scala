@@ -98,6 +98,7 @@ object H8Idx:
   val RdImm = 0 // instr[3:0]   imm-ALU / mov-imm rd
   val RdReg = 1 // instr[11:8]  reg-reg / rd-only rd
   val RsReg = 2 // instr[15:12] reg-reg rs
+  val Ptr   = 3 // instr[14:12] register-indirect pointer Rn (word reg)
 
 /** Internal-file index. */
 object IntIdx:

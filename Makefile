@@ -100,6 +100,12 @@ check-movw:
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_movw
 
+check-mem:
+	bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_mem test/core/tb_core_mem.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_mem
+
 check-exec-sail:
 	bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/sim_isa test/isa/tb_isa_case.v \

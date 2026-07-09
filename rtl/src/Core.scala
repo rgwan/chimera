@@ -92,7 +92,15 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     val imm8zero = (0.B(8) ## opx.io.imm8.asBits).asUInt
     val imm8ext  = abs8PageAddr.?(imm8top,
       vec8Addr.?(imm8zero, (imm8sign ## opx.io.imm8.asBits).asUInt))
-    val litConst = (0.B(8) ## udec.io.literal.asBits.bits(7, 0)).asUInt
+    val addsSubsLit = (udec.io.bSel === BSel.Lit.U(2)) &
+      (udec.io.literal === 0.U(parameter.upcBits)) & sizeWord &
+      udec.io.regWe & (!udec.io.wsel) &
+      (udec.io.h8Idx === H8Idx.RdReg.U(2)) &
+      ((udec.io.aluOp === AluOp.Add.U(4)) | (udec.io.aluOp === AluOp.Sub.U(4)))
+    val addsSubsConst = ir.asBits.bit(15).?(2.U(parameter.dataWidth),
+      1.U(parameter.dataWidth))
+    val litConst = addsSubsLit.?(addsSubsConst,
+      (0.B(8) ## udec.io.literal.asBits.bits(7, 0)).asUInt)
 
     // register-file reads (single port each)
     h8rf.io.raddr  := h8Idx
@@ -204,8 +212,11 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       ir.asBits.bit(11))
     val secondHigh = ir.asBits.bits(15, 12)
     val byteCcrPage = (firstOp === 0x02.B(8)) | (firstOp === 0x03.B(8))
+    val addsSubsPage = (firstOp === 0x0b.B(8)) | (firstOp === 0x1b.B(8))
     useq.io.nibbleBad := byteCcrPage.?(
-      secondHigh =/= 0.B(4), ir.asBits.bits(14, 12) =/= 0.B(3))
+      secondHigh =/= 0.B(4),
+      addsSubsPage.?(ir.asBits.bits(14, 11) =/= 0.B(4),
+        ir.asBits.bits(14, 12) =/= 0.B(3)))
 
     // Bcc condition evaluator: cond nibble = instr[3:0], flags from CCR.
     val fN = ccr.io.hnzvc.asBits.bit(3)

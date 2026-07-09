@@ -96,6 +96,17 @@ object MicrocodeImage:
                       seq = SeqSrc.Next),
         (routine + 1) -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry))
 
+  private def addsSubs(disp: Int, routine: Int, op: Int,
+                       mclass: Boolean = false): Seq[(Int, MW)] =
+    val entries = if mclass then Seq(disp, 0xc0 | (disp & 0x3f)) else Seq(disp)
+    entries.map(_ -> MW(seq = SeqSrc.Literal, lit = routine)) ++
+      Seq(routine -> MW(cond = Cond.NibbleBad, seq = SeqSrc.Literal,
+                        lit = Ucode.FetchEntry),
+        (routine + 1) -> MW(aSel = ASel.H8, bSel = BSel.Lit, lit = 0,
+                      h8Idx = H8Idx.RdReg, alu = op, size = 1,
+                      wsel = WSel.H8, we = true, seq = SeqSrc.Next),
+        (routine + 2) -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry))
+
   /** Routines by ROM address. Instruction routines sit at ROM[dispatch]; the
     * fetch mainloop and multi-step tails live in upper ROM (>= FetchEntry).
     * Unlisted addresses read as the all-zero word (SeqSrc.Next no-op).
@@ -543,7 +554,9 @@ object MicrocodeImage:
     regReg2Word(0x1d, Ucode.FetchEntry + 0x7b, AluOp.Cmp, FlagCtl.AddSub, false).toMap ++
     // inc.b / dec.b (N,Z,V; C,H preserved)
     unary1(0x0a, Ucode.FetchEntry + 0x1a, AluOp.Add).toMap ++
-    unary1(0x1a, Ucode.FetchEntry + 0x1c, AluOp.Sub).toMap
+    unary1(0x1a, Ucode.FetchEntry + 0x1c, AluOp.Sub).toMap ++
+    addsSubs(0x0b, Ucode.FetchEntry + 0xa1, AluOp.Add).toMap ++
+    addsSubs(0x1b, Ucode.FetchEntry + 0xa4, AluOp.Sub, mclass = true).toMap
 
   /** Sparse image: only authored addresses; the ROM defaults the rest to zero. */
   val sparse: Seq[(Int, BigInt)] =

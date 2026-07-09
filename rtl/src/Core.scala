@@ -38,6 +38,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     val intrf  = IntRegFile.instantiate(parameter)
     val alu    = Alu.instantiate(parameter)
     val ccr    = Ccr.instantiate(parameter)
+    val bitop  = BitOperand.instantiate(parameter)
     val bcd    = BcdAdjust.instantiate(parameter)
     val bcond  = BranchCond.instantiate(parameter)
     val biu    = Biu.instantiate(parameter)
@@ -61,6 +62,12 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     opx.io.word    := ir
 
     val firstOp = ir.asBits.bits(7, 0)
+    val firstOpHi6 = firstOp.bits(7, 2)
+    val firstOpHi5 = firstOp.bits(7, 3)
+    val bitRegIndexOp = firstOpHi6 === 0x18.B(6) // 0x60..0x63
+    val bitImmOp = firstOpHi5 === 0x0e.B(5)      // 0x70..0x77
+    val bitBstOp = firstOp === 0x67.B(8)
+    val bitPrefixOp = firstOpHi6 === 0x1f.B(6)   // 0x7c..0x7f
     val sizeWord = udec.io.size
 
     // single H8 read/write index: pick one OperandExtract field. Bit 3 is the
@@ -124,77 +131,30 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     val bitMemActive = RegInit(false.B)
     val bitMemWrite = RegInit(false.B)
     val bitMemByte = RegInit(0.U(parameter.byteWidth))
-    val bitPrefixHead = ((firstOp === 0x7c.B(8)) | (firstOp === 0x7d.B(8)) |
-      (firstOp === 0x7e.B(8)) | (firstOp === 0x7f.B(8))) &
+    val bitPrefixHead = bitPrefixOp &
       (udec.io.seqSrc === SeqSrc.Literal.U(2)) &
       (udec.io.literal === Ucode.BitPrefixExt.U(parameter.upcBits))
 
-    val bitRegIndex = (firstOp === 0x60.B(8)) | (firstOp === 0x61.B(8)) |
-      (firstOp === 0x62.B(8)) | (firstOp === 0x63.B(8))
-    val bitIndex = bitRegIndex.?(intRead.asBits.bits(2, 0).asUInt, opx.io.bit3)
-    val bitMask8 = Wire(UInt(parameter.byteWidth))
-    bitMask8 := 1.U(parameter.byteWidth)
-    when(bitIndex === 1.U(3))(bitMask8 := 2.U(parameter.byteWidth))
-    when(bitIndex === 2.U(3))(bitMask8 := 4.U(parameter.byteWidth))
-    when(bitIndex === 3.U(3))(bitMask8 := 8.U(parameter.byteWidth))
-    when(bitIndex === 4.U(3))(bitMask8 := 16.U(parameter.byteWidth))
-    when(bitIndex === 5.U(3))(bitMask8 := 32.U(parameter.byteWidth))
-    when(bitIndex === 6.U(3))(bitMask8 := 64.U(parameter.byteWidth))
-    when(bitIndex === 7.U(3))(bitMask8 := 128.U(parameter.byteWidth))
-    val bitDataByte = bitMemActive.?(bitMemByte, h8Byte.asUInt)
-    val h8ByteBits = bitDataByte.asBits
-    val bitMaskBits = bitMask8.asBits
-    val bitSetByte = (h8ByteBits | bitMaskBits).asUInt
-    val bitClearByte = (h8ByteBits & (~bitMaskBits)).asUInt
-    val bitToggleByte = (h8ByteBits ^ bitMaskBits).asUInt
-    val bitSet = Wire(Bool())
-    bitSet := h8ByteBits.bit(0)
-    when(bitIndex === 1.U(3))(bitSet := h8ByteBits.bit(1))
-    when(bitIndex === 2.U(3))(bitSet := h8ByteBits.bit(2))
-    when(bitIndex === 3.U(3))(bitSet := h8ByteBits.bit(3))
-    when(bitIndex === 4.U(3))(bitSet := h8ByteBits.bit(4))
-    when(bitIndex === 5.U(3))(bitSet := h8ByteBits.bit(5))
-    when(bitIndex === 6.U(3))(bitSet := h8ByteBits.bit(6))
-    when(bitIndex === 7.U(3))(bitSet := h8ByteBits.bit(7))
-    val bitInvert = ir.asBits.bit(15) & ((firstOp === 0x67.B(8)) |
-      (firstOp === 0x74.B(8)) | (firstOp === 0x75.B(8)) |
-      (firstOp === 0x76.B(8)) | (firstOp === 0x77.B(8)))
-    val bitValue = Wire(Bool())
-    bitValue := bitSet
-    when(bitInvert)(bitValue := !bitSet)
-    val bitWriteByte = Wire(UInt(parameter.byteWidth))
-    bitWriteByte := bitDataByte
-    when((firstOp === 0x60.B(8)) | (firstOp === 0x70.B(8)))(
-      bitWriteByte := bitSetByte)
-    when((firstOp === 0x61.B(8)) | (firstOp === 0x71.B(8)))(
-      bitWriteByte := bitToggleByte)
-    when((firstOp === 0x62.B(8)) | (firstOp === 0x72.B(8)))(
-      bitWriteByte := bitClearByte)
-    when(firstOp === 0x67.B(8)) {
-      bitWriteByte := ccr.io.cFlag.?(bitSetByte, bitClearByte)
-      when(bitInvert)(bitWriteByte := ccr.io.cFlag.?(bitClearByte, bitSetByte))
-    }
-    val bitWriteActive = udec.io.regWe & (!udec.io.wsel) & (!sizeWord) &
-      ((firstOp === 0x60.B(8)) | (firstOp === 0x61.B(8)) |
-       (firstOp === 0x62.B(8)) | (firstOp === 0x67.B(8)) |
-       (firstOp === 0x70.B(8)) | (firstOp === 0x71.B(8)) |
-       (firstOp === 0x72.B(8)))
-    val bitMemStore = bitMemActive & bitMemWrite & bitWriteActive
-    val bitCOp = (firstOp === 0x74.B(8)) | (firstOp === 0x75.B(8)) |
-      (firstOp === 0x76.B(8)) | (firstOp === 0x77.B(8))
-    val bitCResult = Wire(Bool())
-    bitCResult := bitValue
-    when(firstOp === 0x74.B(8))(bitCResult := ccr.io.cFlag | bitValue)
-    when(firstOp === 0x75.B(8))(bitCResult := ccr.io.cFlag ^ bitValue)
-    when(firstOp === 0x76.B(8))(bitCResult := ccr.io.cFlag & bitValue)
+    bitop.io.firstOp := firstOp.asUInt
+    bitop.io.ir := ir
+    bitop.io.intRead := intRead
+    bitop.io.h8Byte := h8Byte.asUInt
+    bitop.io.bit3 := opx.io.bit3
+    bitop.io.bitMemActive := bitMemActive
+    bitop.io.bitMemByte := bitMemByte
+    bitop.io.aSel := udec.io.aSel
+    bitop.io.bSel := udec.io.bSel
+    bitop.io.vclr := udec.io.vclr
+    val bitMemStore = bitMemActive & bitMemWrite & udec.io.regWe & (!udec.io.wsel) & (!sizeWord)
 
-    val daaActive = (firstOp === 0x0f.B(8)) & (udec.io.flagCtl === FlagCtl.LoadCcr.U(3))
-    val dasActive = (firstOp === 0x1f.B(8)) & (udec.io.flagCtl === FlagCtl.LoadCcr.U(3))
-    val bcdActive = (daaActive | dasActive) & udec.io.regWe & (!udec.io.wsel)
+    val daaFinal = (firstOp === 0x0f.B(8)) & (udec.io.flagCtl === FlagCtl.LoadCcr.U(3)) &
+      udec.io.regWe & (!udec.io.wsel)
+    val dasFinal = (firstOp === 0x1f.B(8)) & (udec.io.flagCtl === FlagCtl.LoadCcr.U(3)) &
+      udec.io.regWe & (!udec.io.wsel)
+    val bcdFinal = daaFinal | dasFinal
     bcd.io.value := h8Byte.asUInt
-    bcd.io.ccrHnzvc := ccr.io.hnzvc
     bcd.io.ccrByte := ccr.io.ccrByte
-    bcd.io.isDaa := daaActive
+    bcd.io.isDaa := daaFinal
 
     val stackBus = (udec.io.h8Idx === H8Idx.Ptr.U(2)) & udec.io.vclr &
       ((udec.io.busCtl === BusCtl.Read.U(2)) | (udec.io.busCtl === BusCtl.Write.U(2)))
@@ -215,13 +175,18 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     when(udec.io.aSel === ASel.Int.U(2))(aMux := intRead)
     when(udec.io.aSel === ASel.Zero.U(2))(aMux := 0.U(parameter.dataWidth))
     when(udec.io.aSel === ASel.Mem.U(2))(aMux := memRead)
+    when(bitMemActive & (udec.io.aSel === ASel.H8.U(2)) &
+      (udec.io.bSel === BSel.Imm8.U(2)))(
+      aMux := (0.B(8) ## bitop.io.dataByte.asBits).asUInt)
 
     // ALU B mux
     val bMux = Wire(UInt(parameter.dataWidth))
     bMux := h8Read
     when(udec.io.bSel === BSel.Imm8.U(2))(bMux := imm8ext)
+    when(bitop.io.operandSel)(bMux := (0.B(8) ## bitop.io.operandByte.asBits).asUInt)
     when(udec.io.bSel === BSel.Int.U(2))(bMux := intRead)
     when(udec.io.bSel === BSel.Lit.U(2))(bMux := litConst)
+    when(bcdFinal)(bMux := (0.B(8) ## bcd.io.adjust.asBits).asUInt)
 
     alu.io.a    := aMux
     alu.io.b    := bMux
@@ -233,27 +198,33 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     ccr.io.flagCtl := udec.io.flagCtl
     ccr.io.resN    := sizeWord.?(alu.io.y.asBits.bit(15), alu.io.y.asBits.bit(7))
     val bitFlag = udec.io.flagCtl === FlagCtl.Bit.U(3)
-    ccr.io.resZ    := bitFlag.?((!bitSet), sizeWord.?(alu.io.y.asBits.bits(15, 0) === 0.B(16),
+    ccr.io.resZ    := bitFlag.?(alu.io.y.asBits.bits(7, 0) === 0.B(8),
+      sizeWord.?(alu.io.y.asBits.bits(15, 0) === 0.B(16),
       alu.io.y.asBits.bits(7, 0) === 0.B(8)))
-    ccr.io.resH    := bitFlag.?(bitCOp, alu.io.hout)
+    ccr.io.resH    := bitFlag.?((udec.io.aSel === ASel.Int.U(2)), alu.io.hout)
     ccr.io.hwV     := udec.io.vclr.?(false.B, alu.io.vout) // SHLL/SHLR/SHAR/ROT* force V=0
-    ccr.io.hwC     := bitFlag.?(bitCResult, alu.io.cout)
+    ccr.io.hwC     := bitFlag.?(alu.io.y.asBits.bit(0), alu.io.cout)
     ccr.io.ldWe    := udec.io.flagCtl === FlagCtl.LoadCcr.U(3)
     val ccrRegByte = h8Read.asBits.bits(7, 0).asUInt
     val ccrLogicByte = alu.io.y.asBits.bits(7, 0).asUInt
     val ccrImmByte = (udec.io.aSel === ASel.Int.U(2)).?(ccrLogicByte,
       (udec.io.aSel === ASel.H8.U(2)).?(ccrRegByte, opx.io.imm8))
+    val oldCcr = ccr.io.ccrByte.asBits
+    val bcdC = daaFinal.?((oldCcr.bit(0) | alu.io.cout), oldCcr.bit(0))
+    val bcdCcrByte = (oldCcr.bit(7).asBits ## 0.B(1) ## oldCcr.bit(5).asBits ##
+      0.B(1) ## alu.io.y.asBits.bit(7).asBits ##
+      (alu.io.y.asBits.bits(7, 0) === 0.B(8)).asBits ##
+      oldCcr.bit(1).asBits ## bcdC.asBits).asUInt
     // RTE pops CCR from the high byte of mem[SP].
     ccr.io.ldVal   := (udec.io.aSel === ASel.Mem.U(2)).?(
-      biu.io.rdata.asBits.bits(15, 8).asUInt, bcdActive.?(bcd.io.ccrOut, ccrImmByte))
+      biu.io.rdata.asBits.bits(15, 8).asUInt, bcdFinal.?(bcdCcrByte, ccrImmByte))
 
     // writeback: WSel picks the H8 or internal file (shared index/data). Byte ops
     // replicate the result byte and let wmask place it into the selected half.
     val toInternal = udec.io.wsel
     val yByte = alu.io.y.asBits.bits(7, 0)
-    val wbByte = bcdActive.?(bcd.io.result.asBits, bitWriteActive.?(bitWriteByte.asBits, yByte))
     h8rf.io.waddr  := h8Idx
-    h8rf.io.wdata  := sizeWord.?(alu.io.y, (wbByte ## wbByte).asUInt)
+    h8rf.io.wdata  := sizeWord.?(alu.io.y, (yByte ## yByte).asUInt)
     h8rf.io.wmask  := sizeWord.?(3.U(parameter.wmaskWidth),
       h8Sel3.?(1.U(parameter.wmaskWidth), 2.U(parameter.wmaskWidth)))
     h8rf.io.we     := udec.io.regWe & (!toInternal) & (!bitMemStore)
@@ -270,7 +241,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       alu.io.y)
     intrf.io.we    := udec.io.regWe & toInternal
 
-    val bitMemWdata = (bitWriteByte.asBits ## bitWriteByte.asBits).asUInt
+    val bitMemWdata = (yByte ## yByte).asUInt
     val normalWdata = sizeWord.?(alu.io.y, (yByte ## yByte).asUInt)
     // SP stack bus ops address R7 while write data can come from the internal file.
     biu.io.addr   := bitMemStore.?(intrf.io.iregData, busAddr)
@@ -295,7 +266,8 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     useq.io.literal  := udec.io.literal
     useq.io.dispatch := coarse.io.dispatch
     useq.io.condZ    := ccr.io.zFlag
-    useq.io.condC    := ccr.io.cFlag
+    val bitBstCond = bitBstOp & (udec.io.cond === Cond.C.U(3))
+    useq.io.condC    := bitBstCond.?((ccr.io.cFlag ^ bitop.io.invert), ccr.io.cFlag)
     useq.io.busRdy   := biu.io.rdy
     val wordRegPage = (firstOp === 0x09.B(8)) | (firstOp === 0x0d.B(8)) |
       (firstOp === 0x19.B(8)) | (firstOp === 0x1d.B(8))
@@ -310,19 +282,18 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       daaDasPage.?(secondHigh =/= 0.B(4),
         addsSubsPage.?(ir.asBits.bits(14, 11) =/= 0.B(4),
           ir.asBits.bits(14, 12) =/= 0.B(3))))
-    val bitPrefixR16 = (!bitMemActive) & ((firstOp === 0x7c.B(8)) | (firstOp === 0x7d.B(8)))
+    val bitPrefixR16 = (!bitMemActive) & bitPrefixOp & (!firstOp.bit(1))
     val bitPrefixR16Bad = ir.asBits.bit(15) | (ir.asBits.bits(11, 8) =/= 0.B(4))
     val bitExtInv = ir.asBits.bit(15)
     val bitMemExtLowBad = ir.asBits.bits(11, 8) =/= 0.B(4)
-    val bitMemReadOp = (firstOp === 0x63.B(8)) |
-      ((firstOp === 0x73.B(8)) & (!bitExtInv)) |
-      (firstOp === 0x74.B(8)) | (firstOp === 0x75.B(8)) |
-      (firstOp === 0x76.B(8)) | (firstOp === 0x77.B(8))
-    val bitMemWriteOp = (firstOp === 0x60.B(8)) | (firstOp === 0x61.B(8)) |
-      (firstOp === 0x62.B(8)) | (firstOp === 0x67.B(8)) |
-      ((firstOp === 0x70.B(8)) & (!bitExtInv)) |
-      ((firstOp === 0x71.B(8)) & (!bitExtInv)) |
-      ((firstOp === 0x72.B(8)) & (!bitExtInv))
+    val bitRegReadOp = bitRegIndexOp & (firstOp.bits(1, 0) === 3.B(2))
+    val bitRegWriteOp = bitRegIndexOp & (firstOp.bits(1, 0) =/= 3.B(2))
+    val bitImmBaseOp = bitImmOp & (!firstOp.bit(2))
+    val bitMemReadOp = bitRegReadOp |
+      (bitImmBaseOp & (firstOp.bits(1, 0) === 3.B(2)) & (!bitExtInv)) |
+      (bitImmOp & firstOp.bit(2))
+    val bitMemWriteOp = bitRegWriteOp | bitBstOp |
+      (bitImmBaseOp & (firstOp.bits(1, 0) =/= 3.B(2)) & (!bitExtInv))
     val bitMemExtBad = bitMemExtLowBad | bitMemWrite.?((!bitMemWriteOp), (!bitMemReadOp))
     useq.io.nibbleBad := bitMemActive.?(bitMemExtBad,
       bitPrefixR16.?(bitPrefixR16Bad, normalNibbleBad))
@@ -335,7 +306,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     }
     when(bitPrefixHead) {
       bitMemActive := true.B
-      bitMemWrite := (firstOp === 0x7d.B(8)) | (firstOp === 0x7f.B(8))
+      bitMemWrite := firstOp.bit(0)
     }
 
     bcond.io.cc := opx.io.rdImm

@@ -107,14 +107,16 @@ object MicrocodeImage:
                       wsel = WSel.H8, we = true, seq = SeqSrc.Next),
         (routine + 2) -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry))
 
-  private def bitReg2(disp: Int, tail: Int, flag: Int, writes: Boolean): Seq[(Int, MW)] =
+  private def bitReg2(disp: Int, tail: Int, op: Int, flag: Int, writes: Boolean,
+                      invMask: Boolean = false): Seq[(Int, MW)] =
     val stage = MW(bSel = BSel.H8, h8Idx = H8Idx.RsReg, alu = AluOp.Pass,
                    wsel = WSel.Int, intIdx = IntIdx.Temp, we = true,
                    seq = SeqSrc.Literal, lit = tail)
     Seq(disp, 0xc0 | (disp & 0x3f)).map(_ -> stage) :+
-      (tail -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, intIdx = IntIdx.Temp,
-                  alu = AluOp.PassA, flag = flag, wsel = WSel.H8,
-                  we = writes, seq = SeqSrc.Literal, lit = Ucode.FetchEntry))
+      (tail -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, bSel = BSel.Imm8,
+                  intIdx = IntIdx.Temp, alu = op, flag = flag, wsel = WSel.H8,
+                  we = writes, vclr = invMask, seq = SeqSrc.Literal,
+                  lit = Ucode.FetchEntry))
 
   /** Routines by ROM address. Instruction routines sit at ROM[dispatch]; the
     * fetch mainloop and multi-step tails live in upper ROM (>= FetchEntry).
@@ -214,50 +216,55 @@ object MicrocodeImage:
                flag = FlagCtl.Shift, vclr = true, wsel = WSel.H8, we = true,
                seq = SeqSrc.Literal, lit = Ucode.FetchEntry),   // rotr.b
 
-    // byte-register bit operations. Bit masks and C/Z-only flag results are
-    // derived in Core to keep the microword at 36 bits.
-    0x67 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.PassA,
-               wsel = WSel.H8, we = true, seq = SeqSrc.Literal,
-               lit = Ucode.FetchEntry), // bst
-    0xe7 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.PassA,
-               wsel = WSel.H8, we = true, seq = SeqSrc.Literal,
-               lit = Ucode.FetchEntry), // bist
-    0x70 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.PassA,
-               wsel = WSel.H8, we = true, seq = SeqSrc.Literal,
-               lit = Ucode.FetchEntry), // bset
-    0x71 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.PassA,
-               wsel = WSel.H8, we = true, seq = SeqSrc.Literal,
-               lit = Ucode.FetchEntry), // bnot
-    0x72 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.PassA,
-               wsel = WSel.H8, we = true, seq = SeqSrc.Literal,
-               lit = Ucode.FetchEntry), // bclr
-    0x73 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.PassA,
-               flag = FlagCtl.Bit, seq = SeqSrc.Literal,
+    // byte-register bit operations. Core supplies only mask/scalar operands.
+    0x67 -> MW(seq = SeqSrc.Literal, lit = Ucode.BitBst), // bst
+    0xe7 -> MW(seq = SeqSrc.Literal, lit = Ucode.BitBst), // bist
+    0x70 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, bSel = BSel.Imm8,
+               alu = AluOp.Or, wsel = WSel.H8, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry), // bset
+    0x71 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, bSel = BSel.Imm8,
+               alu = AluOp.Xor, wsel = WSel.H8, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry), // bnot
+    0x72 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, bSel = BSel.Imm8,
+               alu = AluOp.And, wsel = WSel.H8, we = true, vclr = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry), // bclr
+    0x73 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, bSel = BSel.Imm8,
+               alu = AluOp.And, flag = FlagCtl.Bit, seq = SeqSrc.Literal,
                lit = Ucode.FetchEntry), // btst
-    0x74 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.PassA,
-               flag = FlagCtl.Bit, seq = SeqSrc.Literal,
+    0x74 -> MW(aSel = ASel.Int, intIdx = IntIdx.CcrSrc, bSel = BSel.Imm8,
+               alu = AluOp.Or, flag = FlagCtl.Bit, seq = SeqSrc.Literal,
                lit = Ucode.FetchEntry), // bor
-    0xf4 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.PassA,
-               flag = FlagCtl.Bit, seq = SeqSrc.Literal,
+    0xf4 -> MW(aSel = ASel.Int, intIdx = IntIdx.CcrSrc, bSel = BSel.Imm8,
+               alu = AluOp.Or, flag = FlagCtl.Bit, seq = SeqSrc.Literal,
                lit = Ucode.FetchEntry), // bior
-    0x75 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.PassA,
-               flag = FlagCtl.Bit, seq = SeqSrc.Literal,
+    0x75 -> MW(aSel = ASel.Int, intIdx = IntIdx.CcrSrc, bSel = BSel.Imm8,
+               alu = AluOp.Xor, flag = FlagCtl.Bit, seq = SeqSrc.Literal,
                lit = Ucode.FetchEntry), // bxor
-    0xf5 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.PassA,
-               flag = FlagCtl.Bit, seq = SeqSrc.Literal,
+    0xf5 -> MW(aSel = ASel.Int, intIdx = IntIdx.CcrSrc, bSel = BSel.Imm8,
+               alu = AluOp.Xor, flag = FlagCtl.Bit, seq = SeqSrc.Literal,
                lit = Ucode.FetchEntry), // bixor
-    0x76 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.PassA,
-               flag = FlagCtl.Bit, seq = SeqSrc.Literal,
+    0x76 -> MW(aSel = ASel.Int, intIdx = IntIdx.CcrSrc, bSel = BSel.Imm8,
+               alu = AluOp.And, flag = FlagCtl.Bit, seq = SeqSrc.Literal,
                lit = Ucode.FetchEntry), // band
-    0xf6 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.PassA,
-               flag = FlagCtl.Bit, seq = SeqSrc.Literal,
+    0xf6 -> MW(aSel = ASel.Int, intIdx = IntIdx.CcrSrc, bSel = BSel.Imm8,
+               alu = AluOp.And, flag = FlagCtl.Bit, seq = SeqSrc.Literal,
                lit = Ucode.FetchEntry), // biand
-    0x77 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.PassA,
-               flag = FlagCtl.Bit, seq = SeqSrc.Literal,
+    0x77 -> MW(aSel = ASel.Int, intIdx = IntIdx.CcrSrc, bSel = BSel.Imm8,
+               alu = AluOp.Pass, flag = FlagCtl.Bit, seq = SeqSrc.Literal,
                lit = Ucode.FetchEntry), // bld
-    0xf7 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.PassA,
-               flag = FlagCtl.Bit, seq = SeqSrc.Literal,
+    0xf7 -> MW(aSel = ASel.Int, intIdx = IntIdx.CcrSrc, bSel = BSel.Imm8,
+               alu = AluOp.Pass, flag = FlagCtl.Bit, seq = SeqSrc.Literal,
                lit = Ucode.FetchEntry), // bild
+    Ucode.BitBst -> MW(cond = Cond.C, seq = SeqSrc.Literal, lit = Ucode.BitSet),
+    (Ucode.BitBst + 1) -> MW(seq = SeqSrc.Literal, lit = Ucode.BitClear),
+    Ucode.BitSet ->
+      MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, bSel = BSel.Imm8,
+         alu = AluOp.Or, wsel = WSel.H8, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    Ucode.BitClear ->
+      MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, bSel = BSel.Imm8,
+         alu = AluOp.And, wsel = WSel.H8, we = true, vclr = true,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
 
     // Memory-bit prefixes build the byte address, read the extension word into
     // IR, read the target byte, then dispatch into the register bit-op routines.
@@ -288,15 +295,17 @@ object MicrocodeImage:
          wsel = WSel.Int, intIdx = IntIdx.IReg, we = true,
          seq = SeqSrc.Literal, lit = Ucode.BitPrefixExt),
     0x0f -> MW(seq = SeqSrc.Literal, lit = Ucode.Daa),
-    Ucode.Daa -> MW(cond = Cond.NibbleBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    0x1f -> MW(seq = SeqSrc.Literal, lit = Ucode.Das),
+    Ucode.Daa ->
+      MW(cond = Cond.NibbleBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
     (Ucode.Daa + 1) ->
-      MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.PassA,
+      MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.Add,
          flag = FlagCtl.LoadCcr, wsel = WSel.H8, we = true,
          seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
-    0x1f -> MW(seq = SeqSrc.Literal, lit = Ucode.Das),
-    Ucode.Das -> MW(cond = Cond.NibbleBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    Ucode.Das ->
+      MW(cond = Cond.NibbleBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
     (Ucode.Das + 1) ->
-      MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.PassA,
+      MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.Sub,
          flag = FlagCtl.LoadCcr, wsel = WSel.H8, we = true,
          seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
     Ucode.BitPrefixExt ->
@@ -688,10 +697,11 @@ object MicrocodeImage:
     unary1(0x1a, Ucode.FetchEntry + 0x1c, AluOp.Sub).toMap ++
     addsSubs(0x0b, Ucode.FetchEntry + 0xa1, AluOp.Add).toMap ++
     addsSubs(0x1b, Ucode.FetchEntry + 0xa4, AluOp.Sub, mclass = true).toMap ++
-    bitReg2(0x60, Ucode.FetchEntry + 0xab, FlagCtl.None, true).toMap ++
-    bitReg2(0x61, Ucode.FetchEntry + 0xac, FlagCtl.None, true).toMap ++
-    bitReg2(0x62, Ucode.FetchEntry + 0xad, FlagCtl.None, true).toMap ++
-    bitReg2(0x63, Ucode.FetchEntry + 0xae, FlagCtl.Bit, false).toMap
+    bitReg2(0x60, Ucode.FetchEntry + 0xab, AluOp.Or, FlagCtl.None, true).toMap ++
+    bitReg2(0x61, Ucode.FetchEntry + 0xac, AluOp.Xor, FlagCtl.None, true).toMap ++
+    bitReg2(0x62, Ucode.FetchEntry + 0xad, AluOp.And, FlagCtl.None, true,
+            invMask = true).toMap ++
+    bitReg2(0x63, Ucode.FetchEntry + 0xae, AluOp.And, FlagCtl.Bit, false).toMap
 
   /** Sparse image: only authored addresses; the ROM defaults the rest to zero. */
   val sparse: Seq[(Int, BigInt)] =

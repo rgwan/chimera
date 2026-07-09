@@ -41,133 +41,132 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     val bitop  = BitOperand.instantiate(parameter)
     val bcd    = BcdAdjust.instantiate(parameter)
     val bcond  = BranchCond.instantiate(parameter)
+    val readsel = CoreReadSelect.instantiate(parameter)
+    val imm    = CoreImmediates.instantiate(parameter)
     val preds  = CorePredicates.instantiate(parameter)
+    val div    = DivAssist.instantiate(parameter)
+    val bitctl = CoreBitControl.instantiate(parameter)
+    val aluctl = CoreAluControl.instantiate(parameter)
+    val ccrctl = CoreCcrControl.instantiate(parameter)
+    val wb     = CoreWriteback.instantiate(parameter)
+    val irqctl = CoreIrqControl.instantiate(parameter)
     val biu    = Biu.instantiate(parameter)
 
     // instruction register (holds the fetched word microcode reads)
     val ir = RegInit(0.U(parameter.dataWidth))
 
-    // clocks / resets to the sequential submodules
-    h8rf.io.clock  := io.clock; h8rf.io.reset  := io.reset
-    intrf.io.clock := io.clock; intrf.io.reset := io.reset
-    ccr.io.clock   := io.clock; ccr.io.reset   := io.reset
-    useq.io.clock  := io.clock; useq.io.reset  := io.reset
-    urom.io.clock  := io.clock; urom.io.reset  := io.reset
+    def connectClockedDecode() =
+      h8rf.io.clock  := io.clock; h8rf.io.reset  := io.reset
+      intrf.io.clock := io.clock; intrf.io.reset := io.reset
+      ccr.io.clock   := io.clock; ccr.io.reset   := io.reset
+      readsel.io.clock := io.clock; readsel.io.reset := io.reset
+      irqctl.io.clock := io.clock; irqctl.io.reset := io.reset
+      useq.io.clock  := io.clock; useq.io.reset  := io.reset
+      urom.io.clock  := io.clock; urom.io.reset  := io.reset
+      urom.io.addr := useq.io.upc
+      udec.io.word := urom.io.data
+      coarse.io.word := ir
+      opx.io.word    := ir
 
-    // microcode fetch/decode loop
-    urom.io.addr := useq.io.upc
-    udec.io.word := urom.io.data
-
-    // decode paths
-    coarse.io.word := ir
-    opx.io.word    := ir
+    connectClockedDecode()
 
     val firstOp = ir.asBits.bits(7, 0)
-    val firstOpHi6 = firstOp.bits(7, 2)
-    val firstOpHi5 = firstOp.bits(7, 3)
-    val bitRegIndexOp = firstOpHi6 === 0x18.B(6) // 0x60..0x63
-    val bitImmOp = firstOpHi5 === 0x0e.B(5)      // 0x70..0x77
-    val bitBstOp = firstOp === 0x67.B(8)
-    val bitPrefixOp = firstOpHi6 === 0x1f.B(6)   // 0x7c..0x7f
     val sizeWord = udec.io.size
 
-    // single H8 read/write index: pick one OperandExtract field. Bit 3 is the
-    // byte select (0 = RnH high, 1 = RnL low); bits [2:0] are the word register.
-    val ri = parameter.regIndexBits - 1
-    val h8field = Wire(UInt(4))
-    h8field := opx.io.rdReg
-    when(udec.io.h8Idx === H8Idx.RdImm.U(2))(h8field := opx.io.rdImm)
-    when(udec.io.h8Idx === H8Idx.RsReg.U(2))(h8field := opx.io.rsReg)
-    // Ptr indexes Rn (word[6:4]); with vclr set it selects the fixed SP = R7
-    // (stack pushes/pops address SP, which no field encodes). SP microwords don't
-    // update V, so reusing vclr here is free.
-    when(udec.io.h8Idx === H8Idx.Ptr.U(2))(
-      h8field := udec.io.vclr.?(7.U(4), (0.B(1) ## opx.io.bit3.asBits).asUInt))
-    val h8Idx  = h8field.asBits.bits(ri, 0).asUInt
-    val h8Sel3 = h8field.asBits.bit(3)
+    def connectReadSelect() =
+      readsel.io.irqAck := useq.io.irqAck
+      readsel.io.size := sizeWord
+      readsel.io.h8IdxCtl := udec.io.h8Idx
+      readsel.io.intIdx := udec.io.intIdx
+      readsel.io.vclr := udec.io.vclr
+      readsel.io.rdReg := opx.io.rdReg
+      readsel.io.rdImm := opx.io.rdImm
+      readsel.io.rsReg := opx.io.rsReg
+      readsel.io.bit3 := opx.io.bit3
+      readsel.io.h8Rdata := h8rf.io.rdata
+      readsel.io.intRdata := intrf.io.rdata
+      readsel.io.ccrByte := ccr.io.ccrByte
 
-    // byte-aligned H8 read: selected byte into [7:0] for byte ops
-    val h8Byte = h8Sel3.?(h8rf.io.rdata.asBits.bits(7, 0), h8rf.io.rdata.asBits.bits(15, 8))
-    val h8Read = sizeWord.?(h8rf.io.rdata, (0.B(8) ## h8Byte).asUInt)
+    connectReadSelect()
+    val h8Idx = readsel.io.h8Idx
+    val h8Sel3 = readsel.io.h8Sel3
+    val h8Byte = readsel.io.h8Byte
+    val h8Read = readsel.io.h8Read
+    val intRead = readsel.io.intRead
 
-    // imm8 sign-extended: correct for branch disp8 (16-bit PC add) and harmless
-    // for byte ALU ops (which use only [7:0]).
-    val abs8PageAddr = (udec.io.aSel === ASel.Zero.U(2)) & (udec.io.bSel === BSel.Imm8.U(2)) &
-      (udec.io.aluOp === AluOp.Pass.U(4)) & udec.io.wsel & udec.io.regWe &
-      (udec.io.intIdx === IntIdx.IReg.U(2))
-    val vec8Addr = (udec.io.aSel === ASel.Zero.U(2)) & (udec.io.bSel === BSel.Imm8.U(2)) &
-      (udec.io.aluOp === AluOp.Pass.U(4)) & udec.io.wsel & udec.io.regWe &
-      (udec.io.intIdx === IntIdx.PC.U(2))
-    val imm8sign = opx.io.imm8.asBits.bit(7).?(0xff.B(8), 0.B(8))
-    val imm8top  = (0xff.B(8) ## opx.io.imm8.asBits).asUInt
-    val imm8zero = (0.B(8) ## opx.io.imm8.asBits).asUInt
-    val imm8ext  = abs8PageAddr.?(imm8top,
-      vec8Addr.?(imm8zero, (imm8sign ## opx.io.imm8.asBits).asUInt))
-    val addsSubsLit = (udec.io.bSel === BSel.Lit.U(2)) &
-      (udec.io.literal === 0.U(parameter.upcBits)) & sizeWord &
-      udec.io.regWe & (!udec.io.wsel) &
-      (udec.io.h8Idx === H8Idx.RdReg.U(2)) &
-      ((udec.io.aluOp === AluOp.Add.U(4)) | (udec.io.aluOp === AluOp.Sub.U(4)))
-    val addsSubsConst = ir.asBits.bit(15).?(2.U(parameter.dataWidth),
-      1.U(parameter.dataWidth))
-    val irqVectorAddr = RegInit(8.U(parameter.dataWidth))
-    val irqVectorLit = (udec.io.aSel === ASel.Zero.U(2)) &
-      (udec.io.bSel === BSel.Lit.U(2)) &
-      (udec.io.aluOp === AluOp.Pass.U(4)) & udec.io.wsel & udec.io.regWe &
-      (udec.io.intIdx === IntIdx.PC.U(2)) &
-      (udec.io.literal === 8.U(parameter.upcBits))
-    val litConst = addsSubsLit.?(addsSubsConst,
-      irqVectorLit.?(irqVectorAddr, (0.B(8) ## udec.io.literal.asBits.bits(7, 0)).asUInt))
+    def connectImmediateAndReads() =
+      imm.io.ir := ir
+      imm.io.imm8 := opx.io.imm8
+      imm.io.literal := udec.io.literal
+      imm.io.aSel := udec.io.aSel
+      imm.io.bSel := udec.io.bSel
+      imm.io.aluOp := udec.io.aluOp
+      imm.io.h8Idx := udec.io.h8Idx
+      imm.io.intIdx := udec.io.intIdx
+      imm.io.wsel := udec.io.wsel
+      imm.io.regWe := udec.io.regWe
+      imm.io.size := sizeWord
+      imm.io.irqVectorAddr := irqctl.io.irqVectorAddr
+      h8rf.io.raddr  := h8Idx
+      intrf.io.raddr := udec.io.intIdx
 
-    // register-file reads (single port each)
-    h8rf.io.raddr  := h8Idx
-    intrf.io.raddr := udec.io.intIdx
-
-    val savedCcr = RegInit(0.U(parameter.byteWidth))
-    when(useq.io.irqAck)(savedCcr := ccr.io.ccrByte)
-    val ccrWord = sizeWord.?((savedCcr.asBits ## 0.B(8)).asUInt,
-      (0.B(8) ## ccr.io.ccrByte.asBits).asUInt)
-    val intRead = (udec.io.intIdx === IntIdx.CcrSrc.U(2)).?(ccrWord, intrf.io.rdata)
+    connectImmediateAndReads()
 
     val bitMemActive = RegInit(false.B)
     val bitMemWrite = RegInit(false.B)
     val bitMemByte = RegInit(0.U(parameter.byteWidth))
-    val bitPrefixHead = bitPrefixOp &
-      (udec.io.seqSrc === SeqSrc.Literal.U(2)) &
-      (udec.io.literal === Ucode.BitPrefixExt.U(parameter.upcBits))
 
-    bitop.io.firstOp := firstOp.asUInt
-    bitop.io.ir := ir
-    bitop.io.intRead := intRead
-    bitop.io.h8Byte := h8Byte.asUInt
-    bitop.io.bit3 := opx.io.bit3
-    bitop.io.bitMemActive := bitMemActive
-    bitop.io.bitMemByte := bitMemByte
-    bitop.io.cFlag := ccr.io.cFlag
-    bitop.io.aSel := udec.io.aSel
-    bitop.io.bSel := udec.io.bSel
-    bitop.io.vclr := udec.io.vclr
+    def connectBitInputs() =
+      bitop.io.firstOp := firstOp.asUInt
+      bitop.io.ir := ir
+      bitop.io.intRead := intRead
+      bitop.io.h8Byte := h8Byte
+      bitop.io.bit3 := opx.io.bit3
+      bitop.io.bitMemActive := bitMemActive
+      bitop.io.bitMemByte := bitMemByte
+      bitop.io.cFlag := ccr.io.cFlag
+      bitop.io.aSel := udec.io.aSel
+      bitop.io.bSel := udec.io.bSel
+      bitop.io.vclr := udec.io.vclr
+
+    connectBitInputs()
     val bitMemStore = bitMemActive & bitMemWrite & bitop.io.operandSel &
       bitop.io.ctlRegWe & (!udec.io.wsel) & (!sizeWord)
 
-    preds.io.firstOp := firstOp.asUInt
-    preds.io.ir := ir
-    preds.io.seqSrc := udec.io.seqSrc
-    preds.io.cond := udec.io.cond
-    preds.io.intIdx := udec.io.intIdx
-    preds.io.intRead := intRead
-    preds.io.cFlag := ccr.io.cFlag
-    preds.io.bitMemActive := bitMemActive
-    preds.io.bitMemWrite := bitMemWrite
+    def connectPredicates() =
+      preds.io.firstOp := firstOp.asUInt
+      preds.io.ir := ir
+      preds.io.seqSrc := udec.io.seqSrc
+      preds.io.cond := udec.io.cond
+      preds.io.intIdx := udec.io.intIdx
+      preds.io.intRead := intRead
+      preds.io.iregData := intrf.io.iregData
+      preds.io.tempData := intrf.io.tempData
+      preds.io.cFlag := ccr.io.cFlag
+      preds.io.bitMemActive := bitMemActive
+      preds.io.bitMemWrite := bitMemWrite
+      bitctl.io.firstOp := firstOp.asUInt
+      bitctl.io.ir := ir
+      bitctl.io.coarseDispatch := coarse.io.dispatch
+      bitctl.io.seqSrc := udec.io.seqSrc
+      bitctl.io.cond := udec.io.cond
+      bitctl.io.literal := udec.io.literal
+      bitctl.io.bitMemActive := bitMemActive
+      bitctl.io.bitMemExtBad := preds.io.bitMemExtBad
+
+    connectPredicates()
 
     val daaFinal = (firstOp === 0x0f.B(8)) & (udec.io.flagCtl === FlagCtl.LoadCcr.U(3)) &
       udec.io.regWe & (!udec.io.wsel)
     val dasFinal = (firstOp === 0x1f.B(8)) & (udec.io.flagCtl === FlagCtl.LoadCcr.U(3)) &
       udec.io.regWe & (!udec.io.wsel)
     val bcdFinal = daaFinal | dasFinal
-    bcd.io.value := h8Byte.asUInt
-    bcd.io.ccrByte := ccr.io.ccrByte
-    bcd.io.isDaa := daaFinal
+    def connectBcd() =
+      bcd.io.value := h8Byte
+      bcd.io.ccrByte := ccr.io.ccrByte
+      bcd.io.isDaa := daaFinal
+
+    connectBcd()
 
     val stackBus = (udec.io.h8Idx === H8Idx.Ptr.U(2)) & udec.io.vclr &
       ((udec.io.busCtl === BusCtl.Read.U(2)) | (udec.io.busCtl === BusCtl.Write.U(2)))
@@ -182,166 +181,169 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       biu.io.rdata.asBits.bits(7, 0), biu.io.rdata.asBits.bits(15, 8))
     val memRead = sizeWord.?(biu.io.rdata, (0.B(8) ## memByte).asUInt)
 
-    val bitExec = bitop.io.operandSel &
-      (udec.io.seqSrc === SeqSrc.Literal.U(2)) &
-      (udec.io.literal === Ucode.FetchEntry.U(parameter.upcBits))
-    val bitASelInt = bitExec & bitop.io.ctlASelInt
-    val bitAluOp = bitExec.?(bitop.io.ctlAlu, udec.io.aluOp)
-    val bitFlagCtl = bitExec.?(bitop.io.ctlFlag, udec.io.flagCtl)
-    val bitRegWe = bitExec.?(bitop.io.ctlRegWe, udec.io.regWe)
-    val bitVclr = bitExec.?(bitop.io.ctlVclr, udec.io.vclr)
+    def connectAluPath() =
+      aluctl.io.seqSrc := udec.io.seqSrc
+      aluctl.io.literal := udec.io.literal
+      aluctl.io.aSel := udec.io.aSel
+      aluctl.io.bSel := udec.io.bSel
+      aluctl.io.aluOp := udec.io.aluOp
+      aluctl.io.flagCtl := udec.io.flagCtl
+      aluctl.io.regWe := udec.io.regWe
+      aluctl.io.wsel := udec.io.wsel
+      aluctl.io.size := sizeWord
+      aluctl.io.vclr := udec.io.vclr
+      aluctl.io.bitMemActive := bitMemActive
+      aluctl.io.bitOperandSel := bitop.io.operandSel
+      aluctl.io.bitCtlASelInt := bitop.io.ctlASelInt
+      aluctl.io.bitCtlAlu := bitop.io.ctlAlu
+      aluctl.io.bitCtlFlag := bitop.io.ctlFlag
+      aluctl.io.bitCtlRegWe := bitop.io.ctlRegWe
+      aluctl.io.bitCtlVclr := bitop.io.ctlVclr
+      aluctl.io.bitDataByte := bitop.io.dataByte
+      aluctl.io.bitOperandByte := bitop.io.operandByte
+      aluctl.io.h8Read := h8Read
+      aluctl.io.intRead := intRead
+      aluctl.io.memRead := memRead
+      aluctl.io.imm8ext := imm.io.imm8ext
+      aluctl.io.litConst := imm.io.litConst
+      aluctl.io.tempData := intrf.io.tempData
+      aluctl.io.bcdFinal := bcdFinal
+      aluctl.io.bcdAdjust := bcd.io.adjust
+      aluctl.io.divSub := div.io.sub
+      div.io.firstOp := firstOp.asUInt
+      div.io.flagCtl := udec.io.flagCtl
+      div.io.intIdx := udec.io.intIdx
+      div.io.regWe := udec.io.regWe
+      div.io.wsel := udec.io.wsel
+      div.io.aSel := udec.io.aSel
+      div.io.bSel := udec.io.bSel
+      div.io.aluOp := udec.io.aluOp
+      div.io.size := sizeWord
+      div.io.vclr := udec.io.vclr
+      div.io.bitAluOp := aluctl.io.bitAluOp
+      div.io.bitRegWe := aluctl.io.bitRegWe
+      div.io.oldCcr := ccr.io.ccrByte
+      div.io.iregData := intrf.io.iregData
+      div.io.tempData := intrf.io.tempData
+      div.io.h8Data := h8rf.io.rdata
+      alu.io.a    := aluctl.io.aMux
+      alu.io.b    := aluctl.io.bMux
+      alu.io.cin  := ccr.io.cFlag
+      alu.io.op   := aluctl.io.bitAluOp
+      alu.io.word := sizeWord
 
-    // ALU A mux
-    val aMux = Wire(UInt(parameter.dataWidth))
-    aMux := h8Read
-    when(udec.io.aSel === ASel.Int.U(2))(aMux := intRead)
-    when(udec.io.aSel === ASel.Zero.U(2))(aMux := 0.U(parameter.dataWidth))
-    when(udec.io.aSel === ASel.Mem.U(2))(aMux := memRead)
-    when(bitASelInt)(aMux := intRead)
-    when(bitMemActive & (udec.io.aSel === ASel.H8.U(2)) &
-      (udec.io.bSel === BSel.Imm8.U(2)))(
-      aMux := (0.B(8) ## bitop.io.dataByte.asBits).asUInt)
+    connectAluPath()
 
-    // ALU B mux
-    val bMux = Wire(UInt(parameter.dataWidth))
-    bMux := h8Read
-    when(udec.io.bSel === BSel.Imm8.U(2))(bMux := imm8ext)
-    when(bitop.io.operandSel)(bMux := (0.B(8) ## bitop.io.operandByte.asBits).asUInt)
-    when(udec.io.bSel === BSel.Int.U(2))(bMux := intRead)
-    when(udec.io.bSel === BSel.Lit.U(2))(bMux := litConst)
-    when(bcdFinal)(bMux := (0.B(8) ## bcd.io.adjust.asBits).asUInt)
+    def connectCcrPath() =
+      ccrctl.io.size := sizeWord
+      ccrctl.io.aSel := udec.io.aSel
+      ccrctl.io.bitASelInt := aluctl.io.bitASelInt
+      ccrctl.io.bitFlagCtl := aluctl.io.bitFlagCtl
+      ccrctl.io.bitVclr := aluctl.io.bitVclr
+      ccrctl.io.aluY := alu.io.y
+      ccrctl.io.aluH := alu.io.hout
+      ccrctl.io.aluV := alu.io.vout
+      ccrctl.io.aluC := alu.io.cout
+      ccrctl.io.h8Read := h8Read
+      ccrctl.io.imm8 := opx.io.imm8
+      ccrctl.io.memData := biu.io.rdata
+      ccrctl.io.oldCcr := ccr.io.ccrByte
+      ccrctl.io.daaFinal := daaFinal
+      ccrctl.io.bcdFinal := bcdFinal
+      ccrctl.io.divFlagLoad := div.io.flagLoad
+      ccrctl.io.divCcrByte := div.io.ccrByte
+      ccr.io.flagCtl := ccrctl.io.flagCtl
+      ccr.io.resN := ccrctl.io.resN
+      ccr.io.resZ := ccrctl.io.resZ
+      ccr.io.resH := ccrctl.io.resH
+      ccr.io.hwV := ccrctl.io.hwV
+      ccr.io.hwC := ccrctl.io.hwC
+      ccr.io.ldWe := ccrctl.io.ldWe
+      ccr.io.ldVal := ccrctl.io.ldVal
 
-    alu.io.a    := aMux
-    alu.io.b    := bMux
-    alu.io.cin  := ccr.io.cFlag
-    alu.io.op   := bitAluOp
-    alu.io.word := sizeWord
+    connectCcrPath()
 
-    // flags
-    ccr.io.flagCtl := bitFlagCtl
-    ccr.io.resN    := sizeWord.?(alu.io.y.asBits.bit(15), alu.io.y.asBits.bit(7))
-    val bitFlag = bitFlagCtl === FlagCtl.Bit.U(3)
-    ccr.io.resZ    := bitFlag.?(alu.io.y.asBits.bits(7, 0) === 0.B(8),
-      sizeWord.?(alu.io.y.asBits.bits(15, 0) === 0.B(16),
-      alu.io.y.asBits.bits(7, 0) === 0.B(8)))
-    ccr.io.resH    := bitFlag.?(bitASelInt, alu.io.hout)
-    ccr.io.hwV     := bitVclr.?(false.B, alu.io.vout) // SHLL/SHLR/SHAR/ROT* force V=0
-    ccr.io.hwC     := bitFlag.?(alu.io.y.asBits.bit(0), alu.io.cout)
-    ccr.io.ldWe    := bitFlagCtl === FlagCtl.LoadCcr.U(3)
-    val ccrRegByte = h8Read.asBits.bits(7, 0).asUInt
-    val ccrLogicByte = alu.io.y.asBits.bits(7, 0).asUInt
-    val ccrImmByte = (udec.io.aSel === ASel.Int.U(2)).?(ccrLogicByte,
-      (udec.io.aSel === ASel.H8.U(2)).?(ccrRegByte, opx.io.imm8))
-    val oldCcr = ccr.io.ccrByte.asBits
-    val bcdC = daaFinal.?((oldCcr.bit(0) | alu.io.cout), oldCcr.bit(0))
-    val bcdCcrByte = (oldCcr.bit(7).asBits ## 0.B(1) ## oldCcr.bit(5).asBits ##
-      0.B(1) ## alu.io.y.asBits.bit(7).asBits ##
-      (alu.io.y.asBits.bits(7, 0) === 0.B(8)).asBits ##
-      oldCcr.bit(1).asBits ## bcdC.asBits).asUInt
-    // RTE pops CCR from the high byte of mem[SP].
-    ccr.io.ldVal   := (udec.io.aSel === ASel.Mem.U(2)).?(
-      biu.io.rdata.asBits.bits(15, 8).asUInt, bcdFinal.?(bcdCcrByte, ccrImmByte))
+    def connectWriteback() =
+      wb.io.size := sizeWord
+      wb.io.wsel := udec.io.wsel
+      wb.io.aSel := udec.io.aSel
+      wb.io.intIdx := udec.io.intIdx
+      wb.io.h8IdxCtl := udec.io.h8Idx
+      wb.io.busCtl := udec.io.busCtl
+      wb.io.h8Idx := h8Idx
+      wb.io.h8Sel3 := h8Sel3
+      wb.io.bitAluOp := aluctl.io.bitAluOp
+      wb.io.bitRegWe := aluctl.io.bitRegWe
+      wb.io.bitMemStore := bitMemStore
+      wb.io.aluY := alu.io.y
+      wb.io.busAddr := busAddr
+      wb.io.iregData := intrf.io.iregData
+      wb.io.divPack := div.io.pack
+      wb.io.divPackData := div.io.packData
+      wb.io.divStep := div.io.step
+      wb.io.divStepData := div.io.stepData
+      h8rf.io.waddr := wb.io.h8Waddr
+      h8rf.io.wdata := wb.io.h8Wdata
+      h8rf.io.wmask := wb.io.h8Wmask
+      h8rf.io.we := wb.io.h8We
+      intrf.io.waddr := wb.io.intWaddr
+      intrf.io.wdata := wb.io.intWdata
+      intrf.io.we := wb.io.intWe
+      biu.io.addr := wb.io.biuAddr
+      biu.io.wdata := wb.io.biuWdata
+      biu.io.busCtl := wb.io.biuBusCtl
+      biu.io.word := wb.io.biuWord
 
-    // writeback: WSel picks the H8 or internal file (shared index/data). Byte ops
-    // replicate the result byte and let wmask place it into the selected half.
-    val toInternal = udec.io.wsel
-    val yByte = alu.io.y.asBits.bits(7, 0)
-    h8rf.io.waddr  := h8Idx
-    h8rf.io.wdata  := sizeWord.?(alu.io.y, (yByte ## yByte).asUInt)
-    h8rf.io.wmask  := sizeWord.?(3.U(parameter.wmaskWidth),
-      h8Sel3.?(1.U(parameter.wmaskWidth), 2.U(parameter.wmaskWidth)))
-    h8rf.io.we     := bitRegWe & (!toInternal) & (!bitMemStore)
-    // H8Idx.RsReg tags the internal move that reads IREG and writes PC.
-    val pcFromIReg = toInternal & bitRegWe & (udec.io.aSel === ASel.Int.U(2)) &
-      (udec.io.intIdx === IntIdx.IReg.U(2)) & (bitAluOp === AluOp.PassA.U(4)) &
-      (udec.io.h8Idx === H8Idx.RsReg.U(2))
-    val intWaddr = pcFromIReg.?(IntIdx.PC.U(2), udec.io.intIdx)
-    // PC is architecturally even: clear bit0 on a PC write so an odd branch/jump
-    // displacement aligns the target down (matches the model, no trap).
-    val toPc = intWaddr === IntIdx.PC.U(2)
-    intrf.io.waddr := intWaddr
-    intrf.io.wdata := toPc.?((alu.io.y.asBits.bits(parameter.dataWidth - 1, 1) ## 0.B(1)).asUInt,
-      alu.io.y)
-    intrf.io.we    := bitRegWe & toInternal
+    connectWriteback()
 
-    val bitMemWdata = (yByte ## yByte).asUInt
-    val normalWdata = sizeWord.?(alu.io.y, (yByte ## yByte).asUInt)
-    // SP stack bus ops address R7 while write data can come from the internal file.
-    biu.io.addr   := bitMemStore.?(intrf.io.iregData, busAddr)
-    biu.io.wdata  := bitMemStore.?(bitMemWdata, normalWdata)
-    biu.io.busCtl := bitMemStore.?(BusCtl.Write.U(2), udec.io.busCtl)
-    biu.io.word   := bitMemStore.?(false.B, sizeWord)
-
-    // memory is big-endian; the decoder-visible IR is byte-swapped (first byte in
-    // [7:0]). Byte data reads select the lane from the requested address.
     val doFetch      = udec.io.busCtl === BusCtl.Fetch.U(2)
     val bitMemExtLoad = bitMemActive & (udec.io.busCtl === BusCtl.Read.U(2)) &
       (udec.io.intIdx === IntIdx.PC.U(2))
     val fetchSwapped = biu.io.rdata.asBits.bits(7, 0) ## biu.io.rdata.asBits.bits(15, 8)
-    when((doFetch | bitMemExtLoad) & biu.io.rdy)(ir := fetchSwapped.asUInt)
-    when(bitMemActive & (udec.io.busCtl === BusCtl.Read.U(2)) &
-      (udec.io.intIdx === IntIdx.IReg.U(2)) & biu.io.rdy)(bitMemByte := memByte.asUInt)
+    def connectFetchAndSequencer() =
+      when((doFetch | bitMemExtLoad) & biu.io.rdy)(ir := fetchSwapped.asUInt)
+      when(bitMemActive & (udec.io.busCtl === BusCtl.Read.U(2)) &
+        (udec.io.intIdx === IntIdx.IReg.U(2)) & biu.io.rdy)(bitMemByte := memByte.asUInt)
+      useq.io.seqSrc   := udec.io.seqSrc
+      useq.io.cond     := udec.io.cond
+      useq.io.call     := udec.io.call
+      useq.io.literal  := udec.io.literal
+      useq.io.dispatch := bitctl.io.dispatch
+      useq.io.condZ    := ccr.io.zFlag
+      useq.io.condC    := preds.io.condC
+      useq.io.busRdy   := biu.io.rdy
+      useq.io.wordBad := preds.io.wordBad
+      useq.io.nibbleBad := preds.io.nibbleBad
+      when(bitctl.io.memReturn) {
+        bitMemActive := false.B
+        bitMemWrite := false.B
+      }
+      when(bitctl.io.prefixHead) {
+        bitMemActive := true.B
+        bitMemWrite := firstOp.bit(0)
+      }
+      bcond.io.cc := opx.io.rdImm
+      bcond.io.hnzvc := ccr.io.hnzvc
+      useq.io.ccTaken := bcond.io.taken
 
-    // sequencer inputs
-    useq.io.seqSrc   := udec.io.seqSrc
-    useq.io.cond     := udec.io.cond
-    useq.io.call     := udec.io.call
-    useq.io.literal  := udec.io.literal
-    val bitExtInv = ir.asBits.bit(15)
-    val bitDispatch = Wire(UInt(parameter.dispatchBits))
-    bitDispatch := coarse.io.dispatch
-    when(bitRegIndexOp)(bitDispatch := 0x60.U(parameter.dispatchBits))
-    when(bitBstOp | (bitImmOp & (!firstOp.bit(2)) & (!bitExtInv)))(
-      bitDispatch := 0x70.U(parameter.dispatchBits))
-    when(bitImmOp & firstOp.bit(2))(bitDispatch := 0x74.U(parameter.dispatchBits))
-    when(bitPrefixOp & (!firstOp.bit(1)) & (!bitExtInv))(
-      bitDispatch := 0x7c.U(parameter.dispatchBits))
-    when(bitPrefixOp & firstOp.bit(1))(bitDispatch := 0x7e.U(parameter.dispatchBits))
-    useq.io.dispatch := bitDispatch
-    useq.io.condZ    := ccr.io.zFlag
-    useq.io.condC    := preds.io.condC
-    useq.io.busRdy   := biu.io.rdy
-    useq.io.wordBad := preds.io.wordBad
-    useq.io.nibbleBad := preds.io.nibbleBad
-    val bitMemReturn = bitMemActive & (udec.io.seqSrc === SeqSrc.Literal.U(2)) &
-      (udec.io.literal === Ucode.FetchEntry.U(parameter.upcBits)) &
-      ((udec.io.cond =/= Cond.NibbleBad.U(3)) | preds.io.bitMemExtBad)
-    when(bitMemReturn) {
-      bitMemActive := false.B
-      bitMemWrite := false.B
-    }
-    when(bitPrefixHead) {
-      bitMemActive := true.B
-      bitMemWrite := firstOp.bit(0)
-    }
+    connectFetchAndSequencer()
 
-    bcond.io.cc := opx.io.rdImm
-    bcond.io.hnzvc := ccr.io.hnzvc
-    useq.io.ccTaken := bcond.io.taken
+    def connectIrqAndBus() =
+      irqctl.io.irq := io.irq
+      irqctl.io.nmi := io.nmi
+      irqctl.io.irqAck := useq.io.irqAck
+      irqctl.io.iFlag := ccr.io.iFlag
+      useq.io.irqPend := irqctl.io.irqPend
+      ccr.io.setI     := useq.io.irqAck
+      io.bus.addr  := biu.io.bus.addr
+      io.bus.wdata := biu.io.bus.wdata
+      io.bus.we    := biu.io.bus.we
+      io.bus.wmask := biu.io.bus.wmask
+      io.bus.req   := biu.io.bus.req
+      biu.io.bus.rdata := io.bus.rdata
+      biu.io.bus.rdy   := io.bus.rdy
 
-    // Interrupt latches, polled by the fetch mainloop (no async hardware entry).
-    // IRQ is maskable by CCR.I; NMI is not. Entry acks the latch and sets I.
-    val irqLatch = RegInit(false.B)
-    val nmiLatch = RegInit(false.B)
-    val nmiAck = useq.io.irqAck & nmiLatch
-    val irqAck = useq.io.irqAck & (!nmiLatch)
-    when(useq.io.irqAck)(
-      irqVectorAddr := nmiLatch.?(6.U(parameter.dataWidth), 8.U(parameter.dataWidth)))
-    when(irqAck)(irqLatch := false.B) // ack clears; set below is dominant
-    when(io.irq)(irqLatch := true.B)
-    when(nmiAck)(nmiLatch := false.B)
-    when(io.nmi)(nmiLatch := true.B)
-    useq.io.irqPend := (irqLatch & (!ccr.io.iFlag)) | nmiLatch
-    ccr.io.setI     := useq.io.irqAck
-
-    // external SRAM bus <-> BIU
-    io.bus.addr  := biu.io.bus.addr
-    io.bus.wdata := biu.io.bus.wdata
-    io.bus.we    := biu.io.bus.we
-    io.bus.wmask := biu.io.bus.wmask
-    io.bus.req   := biu.io.bus.req
-    biu.io.bus.rdata := io.bus.rdata
-    biu.io.bus.rdy   := io.bus.rdy
+    connectIrqAndBus()
 
     // retire-trace surface, lowered into the DV layer bind collateral (stripped
     // in production). doFetch marks one fetch per instruction.

@@ -146,6 +146,48 @@ object MicrocodeImage:
                        seq = SeqSrc.Literal, lit = Ucode.FetchEntry)
     )
 
+  private def divxu(base: Int, sub: Int): Seq[(Int, MW)] =
+    def loopChunk(start: Int, count: Int, next: Option[Int]): Seq[(Int, MW)] =
+      val body = (0 until count).flatMap { i =>
+        val t = start + i * 3
+        Seq(
+          t -> MW(aSel = ASel.Int, intIdx = IntIdx.IReg, bSel = BSel.H8,
+                  h8Idx = H8Idx.RdReg, alu = AluOp.Add, size = 1,
+                  wsel = WSel.Int, we = true, vclr = true),
+          (t + 1) -> MW(aSel = ASel.H8, bSel = BSel.H8, h8Idx = H8Idx.RdReg,
+                        alu = AluOp.Add, size = 1, wsel = WSel.H8, we = true),
+          (t + 2) -> MW(cond = Cond.C, seq = SeqSrc.Literal, call = true, lit = sub)
+        )
+      }
+      next.map(n => body :+ ((start + count * 3) -> MW(seq = SeqSrc.Literal, lit = n)))
+        .getOrElse(body)
+
+    Seq(
+      0x51 -> MW(seq = SeqSrc.Literal, lit = base),
+      base -> MW(cond = Cond.WordBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+      (base + 1) -> MW(bSel = BSel.H8, h8Idx = H8Idx.RsReg, alu = AluOp.Pass,
+                       wsel = WSel.Int, intIdx = IntIdx.Temp, we = true),
+      (base + 2) -> MW(aSel = ASel.Int, intIdx = IntIdx.Temp,
+                       flag = FlagCtl.LoadCcr),
+      (base + 3) -> MW(cond = Cond.Z, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+      (base + 4) -> MW(bSel = BSel.Lit, lit = 0, alu = AluOp.Pass,
+                       wsel = WSel.Int, intIdx = IntIdx.IReg, we = true),
+      0x15f -> MW(aSel = ASel.Int, intIdx = IntIdx.IReg, bSel = BSel.H8,
+                  h8Idx = H8Idx.RdReg, alu = AluOp.Or, size = 1,
+                  wsel = WSel.H8, we = true,
+                  seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+      sub -> MW(aSel = ASel.Int, intIdx = IntIdx.IReg, bSel = BSel.Int,
+                alu = AluOp.Sub, size = 1, wsel = WSel.Int, we = true),
+      (sub + 1) -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, bSel = BSel.Lit,
+                      lit = 1, alu = AluOp.Or, size = 1, wsel = WSel.H8,
+                      we = true, seq = SeqSrc.Return)
+    ) ++
+      loopChunk(base + 5, 2, Some(0x123)) ++
+      loopChunk(0x123, 4, Some(0x136)) ++
+      loopChunk(0x136, 3, Some(0x142)) ++
+      loopChunk(0x142, 4, Some(0x156)) ++
+      loopChunk(0x156, 3, None)
+
   /** Routines by ROM address. Instruction routines sit at ROM[dispatch]; the
     * fetch mainloop and multi-step tails live in upper ROM (>= FetchEntry).
     * Unlisted addresses read as the all-zero word (SeqSrc.Next no-op).
@@ -663,6 +705,7 @@ object MicrocodeImage:
     regReg2Word(0x19, Ucode.FetchEntry + 0x78, AluOp.Sub, FlagCtl.AddSub, true).toMap ++
     regReg2Word(0x1d, Ucode.FetchEntry + 0x7b, AluOp.Cmp, FlagCtl.AddSub, false).toMap ++
     mulxu(Ucode.Mulxu).toMap ++
+    divxu(Ucode.Divxu, Ucode.DivxuSub).toMap ++
     // inc.b / dec.b (N,Z,V; C,H preserved)
     unary1(0x0a, Ucode.FetchEntry + 0x1a, AluOp.Add).toMap ++
     unary1(0x1a, Ucode.FetchEntry + 0x1c, AluOp.Sub).toMap ++

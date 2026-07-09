@@ -16,6 +16,8 @@ class CorePredicatesIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val cond         = Flipped(UInt(3))
   val intIdx       = Flipped(UInt(2))
   val intRead      = Flipped(UInt(parameter.dataWidth))
+  val iregData     = Flipped(UInt(parameter.dataWidth))
+  val tempData     = Flipped(UInt(parameter.dataWidth))
   val cFlag        = Flipped(Bool())
   val bitMemActive = Flipped(Bool())
   val bitMemWrite  = Flipped(Bool())
@@ -42,7 +44,12 @@ object CorePredicates
       (io.seqSrc === SeqSrc.Literal.U(2)) &
       (io.cond === Cond.C.U(3)) &
       (io.intIdx === IntIdx.Temp.U(2))
-    io.condC := mulxuBitCond.?(io.intRead.asBits.bit(0), io.cFlag)
+    val divxuSubCond = (io.firstOp === 0x51.U(8)) &
+      (io.seqSrc === SeqSrc.Literal.U(2)) &
+      (io.cond === Cond.C.U(3))
+    io.condC := divxuSubCond.?(
+      io.iregData >= io.tempData,
+      mulxuBitCond.?(io.intRead.asBits.bit(0), io.cFlag))
 
     val wordRegPage = (io.firstOp === 0x09.U(8)) | (io.firstOp === 0x0d.U(8)) |
       (io.firstOp === 0x19.U(8)) | (io.firstOp === 0x1d.U(8))

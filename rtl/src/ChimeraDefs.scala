@@ -133,3 +133,5 @@ object Ucode:
   val Daa = FetchEntry + 0xc0
   val Das = FetchEntry + 0xc2
   val Mulxu = FetchEntry + 0xc4
+  val Divxu = FetchEntry + 0x03
+  val DivxuSub = FetchEntry + 0xe7

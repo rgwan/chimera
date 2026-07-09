@@ -23,7 +23,8 @@ object MicrocodeImage:
     bus:    Int     = BusCtl.None,
     size:   Int     = 0,
     call:   Boolean = false,
-    vclr:   Boolean = false
+    vclr:   Boolean = false,
+    addrH8: Boolean = false
   ):
     def encode: BigInt =
       def f(v: Int, r: (Int, Int)): BigInt =
@@ -35,7 +36,8 @@ object MicrocodeImage:
                                    else BigInt(0)) |
         f(flag, MicroWord.FLAG_CTL) | f(bus, MicroWord.BUS_CTL) | f(size, MicroWord.SIZE) |
         (if call then BigInt(1) << MicroWord.CALL._2 else BigInt(0)) |
-        (if vclr then BigInt(1) << MicroWord.VCLEAR._2 else BigInt(0))
+        (if vclr then BigInt(1) << MicroWord.VCLEAR._2 else BigInt(0)) |
+        (if addrH8 then BigInt(1) << MicroWord.ADDR_H8._2 else BigInt(0))
 
   private def field(w: BigInt, r: (Int, Int)): Int =
     ((w >> r._2) & ((BigInt(1) << (r._1 - r._2 + 1)) - 1)).toInt
@@ -44,10 +46,10 @@ object MicrocodeImage:
   // overlap. Pinned to an independently computed value. Runs at elaboration.
   private val probe = MW(lit = 0x1ab, seq = 3, cond = 5, alu = 9, aSel = 2, bSel = 3,
     h8Idx = 2, intIdx = 1, wsel = 1, we = true, flag = 4, bus = 3, size = 1, call = true,
-    vclr = true)
+    vclr = true, addrH8 = true)
   private val pw = probe.encode
-  require(pw < (BigInt(1) << 36), "microword exceeds 36 bits")
-  require(pw == BigInt("d5f66e79f", 16), "microword encoding value")
+  require(pw < (BigInt(1) << 37), "microword exceeds 37 bits")
+  require(pw == BigInt("1d5f66e79f", 16), "microword encoding value")
   require(
     field(pw, MicroWord.LITERAL) == 0x1ab && field(pw, MicroWord.SEQ_SRC) == 3 &&
       field(pw, MicroWord.COND) == 5 && field(pw, MicroWord.ALU_OP) == 9 &&
@@ -56,7 +58,7 @@ object MicrocodeImage:
       field(pw, MicroWord.WSEL) == 1 && field(pw, MicroWord.REG_WE) == 1 &&
       field(pw, MicroWord.FLAG_CTL) == 4 && field(pw, MicroWord.BUS_CTL) == 3 &&
       field(pw, MicroWord.SIZE) == 1 && field(pw, MicroWord.CALL) == 1 &&
-      field(pw, MicroWord.VCLEAR) == 1,
+      field(pw, MicroWord.VCLEAR) == 1 && field(pw, MicroWord.ADDR_H8) == 1,
     "microword field packing"
   )
 
@@ -246,6 +248,47 @@ object MicrocodeImage:
     (Ucode.FetchEntry + 0x56) ->               // mem[TEMP] = Rs (flags from Rs)
       MW(bus = BusCtl.Write, intIdx = IntIdx.Temp, aSel = ASel.H8, h8Idx = H8Idx.RdReg,
          alu = AluOp.PassA, flag = FlagCtl.Nz, size = 1,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+
+    // Control transfer + stack. Push uses SP = R7 (H8Idx.Ptr + vclr) as the address
+    // (addrH8) while the pushed data (PC) comes from the internal file.
+    // jmp @Rn (0x59): PC = Rn.
+    0x59 -> MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, alu = AluOp.PassA, size = 1,
+               wsel = WSel.Int, intIdx = IntIdx.PC, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    // bsr disp8 (0x55): push PC; PC += signext(disp8).
+    0x55 -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x60),
+    (Ucode.FetchEntry + 0x60) ->               // SP -= 2
+      MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, vclr = true, bSel = BSel.Lit, lit = 2,
+         alu = AluOp.Sub, size = 1, wsel = WSel.H8, we = true),
+    (Ucode.FetchEntry + 0x61) ->               // mem[SP] = PC (return address)
+      MW(bus = BusCtl.Write, h8Idx = H8Idx.Ptr, vclr = true, addrH8 = true,
+         aSel = ASel.Int, intIdx = IntIdx.PC, alu = AluOp.PassA, size = 1),
+    (Ucode.FetchEntry + 0x62) ->               // PC += signext(disp8)
+      MW(aSel = ASel.Int, intIdx = IntIdx.PC, bSel = BSel.Imm8, alu = AluOp.Add,
+         size = 1, wsel = WSel.Int, we = true, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    // rts (0x54): PC = mem[SP]; SP += 2. The final SP+=2 (Lit const) cannot also
+    // branch, so it falls through (seq=Next) to a pure jump back to fetch.
+    0x54 -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x63),
+    (Ucode.FetchEntry + 0x63) ->               // PC = mem[SP]
+      MW(bus = BusCtl.Read, h8Idx = H8Idx.Ptr, vclr = true, addrH8 = true,
+         aSel = ASel.Mem, alu = AluOp.PassA, size = 1, wsel = WSel.Int,
+         intIdx = IntIdx.PC, we = true),
+    (Ucode.FetchEntry + 0x64) ->               // SP += 2
+      MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, vclr = true, bSel = BSel.Lit, lit = 2,
+         alu = AluOp.Add, size = 1, wsel = WSel.H8, we = true),
+    (Ucode.FetchEntry + 0x65) -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    // jsr @Rn (0x5D): push PC; PC = Rn.
+    0x5d -> MW(seq = SeqSrc.Literal, lit = Ucode.FetchEntry + 0x66),
+    (Ucode.FetchEntry + 0x66) ->               // SP -= 2
+      MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, vclr = true, bSel = BSel.Lit, lit = 2,
+         alu = AluOp.Sub, size = 1, wsel = WSel.H8, we = true),
+    (Ucode.FetchEntry + 0x67) ->               // mem[SP] = PC
+      MW(bus = BusCtl.Write, h8Idx = H8Idx.Ptr, vclr = true, addrH8 = true,
+         aSel = ASel.Int, intIdx = IntIdx.PC, alu = AluOp.PassA, size = 1),
+    (Ucode.FetchEntry + 0x68) ->               // PC = Rn
+      MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, alu = AluOp.PassA, size = 1,
+         wsel = WSel.Int, intIdx = IntIdx.PC, we = true,
          seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
 
     // Bcc shared routine: taken -> PC += signext(disp8); not taken -> fetch.

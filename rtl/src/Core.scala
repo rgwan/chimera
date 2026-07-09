@@ -66,7 +66,11 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     h8field := opx.io.rdReg
     when(udec.io.h8Idx === H8Idx.RdImm.U(2))(h8field := opx.io.rdImm)
     when(udec.io.h8Idx === H8Idx.RsReg.U(2))(h8field := opx.io.rsReg)
-    when(udec.io.h8Idx === H8Idx.Ptr.U(2))(h8field := (0.B(1) ## opx.io.bit3.asBits).asUInt)
+    // Ptr indexes Rn (word[6:4]); with vclr set it selects the fixed SP = R7
+    // (stack pushes/pops address SP, which no field encodes). SP microwords don't
+    // update V, so reusing vclr here is free.
+    when(udec.io.h8Idx === H8Idx.Ptr.U(2))(
+      h8field := udec.io.vclr.?(7.U(4), (0.B(1) ## opx.io.bit3.asBits).asUInt))
     val h8Idx  = h8field.asBits.bits(ri, 0).asUInt
     val h8Sel3 = h8field.asBits.bit(3)
 
@@ -132,9 +136,12 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       alu.io.y)
     intrf.io.we    := udec.io.regWe & toInternal
 
-    // BIU: address from the internal read (PC for fetch, IREG for a data address)
-    biu.io.addr   := intrf.io.rdata
-    biu.io.wdata  := sizeWord.?(h8rf.io.rdata, (h8Byte ## h8Byte).asUInt)
+    // BIU: address from the internal read (PC/IREG); or the H8 read port (SP/Rn)
+    // when addrH8 is set, so a push can take addr=SP while data (PC) comes from the
+    // internal file. Word write data = ALU result (source-selectable); byte writes
+    // replicate the low byte and let wmask pick the lane.
+    biu.io.addr   := udec.io.addrH8.?(h8rf.io.rdata, intrf.io.rdata)
+    biu.io.wdata  := sizeWord.?(alu.io.y, (h8Byte ## h8Byte).asUInt)
     biu.io.busCtl := udec.io.busCtl
     biu.io.word   := sizeWord
 

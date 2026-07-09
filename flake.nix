@@ -270,8 +270,9 @@ EOF
           echo "Chimera Zaozi Development Environment"
           echo "========================================"
           echo "Build smoke: build-chimera --smoke"
+          echo "RTL build:    make rtl-verilog"
           echo "Sail model:   make sail-model"
-          echo "Full shell:   nix develop .#full"
+          echo "Smoke shell:  nix develop .#smoke"
           echo "Verify:      nix flake check"
           echo "========================================"
         '';
@@ -331,10 +332,14 @@ EOF
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = smokeBuildInputs;
+          buildInputs = fullBuildInputs;
           env = {
             CHIMERA_PROJECT_NAME = "chimera";
             ZAOZI_SRC = zaozi.outPath;
+            ZAOZI_JAR = zaoziJar;
+            CIRCT_INSTALL_PATH = pkgs.circt-install;
+            MLIR_INSTALL_PATH = pkgs.mlir-install;
+            JAVA_HOME = pkgs.jdk25.home;
             JAVA_TOOL_OPTIONS = "--enable-preview";
           };
           inherit shellHook;
@@ -358,6 +363,7 @@ EOF
             ZAOZI_JAR = zaoziJar;
             CIRCT_INSTALL_PATH = pkgs.circt-install;
             MLIR_INSTALL_PATH = pkgs.mlir-install;
+            JAVA_HOME = pkgs.jdk25.home;
             JAVA_TOOL_OPTIONS = "--enable-preview";
           };
           inherit shellHook;

@@ -38,6 +38,8 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     val intrf  = IntRegFile.instantiate(parameter)
     val alu    = Alu.instantiate(parameter)
     val ccr    = Ccr.instantiate(parameter)
+    val bcd    = BcdAdjust.instantiate(parameter)
+    val bcond  = BranchCond.instantiate(parameter)
     val biu    = Biu.instantiate(parameter)
 
     // instruction register (holds the fetched word microcode reads)
@@ -186,6 +188,14 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     when(firstOp === 0x75.B(8))(bitCResult := ccr.io.cFlag ^ bitValue)
     when(firstOp === 0x76.B(8))(bitCResult := ccr.io.cFlag & bitValue)
 
+    val daaActive = (firstOp === 0x0f.B(8)) & (udec.io.flagCtl === FlagCtl.LoadCcr.U(3))
+    val dasActive = (firstOp === 0x1f.B(8)) & (udec.io.flagCtl === FlagCtl.LoadCcr.U(3))
+    val bcdActive = (daaActive | dasActive) & udec.io.regWe & (!udec.io.wsel)
+    bcd.io.value := h8Byte.asUInt
+    bcd.io.ccrHnzvc := ccr.io.hnzvc
+    bcd.io.ccrByte := ccr.io.ccrByte
+    bcd.io.isDaa := daaActive
+
     val stackBus = (udec.io.h8Idx === H8Idx.Ptr.U(2)) & udec.io.vclr &
       ((udec.io.busCtl === BusCtl.Read.U(2)) | (udec.io.busCtl === BusCtl.Write.U(2)))
     val h8BusAddr = (udec.io.busCtl === BusCtl.Write.U(2)) & (!udec.io.vclr) &
@@ -235,13 +245,13 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       (udec.io.aSel === ASel.H8.U(2)).?(ccrRegByte, opx.io.imm8))
     // RTE pops CCR from the high byte of mem[SP].
     ccr.io.ldVal   := (udec.io.aSel === ASel.Mem.U(2)).?(
-      biu.io.rdata.asBits.bits(15, 8).asUInt, ccrImmByte)
+      biu.io.rdata.asBits.bits(15, 8).asUInt, bcdActive.?(bcd.io.ccrOut, ccrImmByte))
 
     // writeback: WSel picks the H8 or internal file (shared index/data). Byte ops
     // replicate the result byte and let wmask place it into the selected half.
     val toInternal = udec.io.wsel
     val yByte = alu.io.y.asBits.bits(7, 0)
-    val wbByte = bitWriteActive.?(bitWriteByte.asBits, yByte)
+    val wbByte = bcdActive.?(bcd.io.result.asBits, bitWriteActive.?(bitWriteByte.asBits, yByte))
     h8rf.io.waddr  := h8Idx
     h8rf.io.wdata  := sizeWord.?(alu.io.y, (wbByte ## wbByte).asUInt)
     h8rf.io.wmask  := sizeWord.?(3.U(parameter.wmaskWidth),
@@ -294,10 +304,12 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     val secondHigh = ir.asBits.bits(15, 12)
     val byteCcrPage = (firstOp === 0x02.B(8)) | (firstOp === 0x03.B(8))
     val addsSubsPage = (firstOp === 0x0b.B(8)) | (firstOp === 0x1b.B(8))
+    val daaDasPage = (firstOp === 0x0f.B(8)) | (firstOp === 0x1f.B(8))
     val normalNibbleBad = byteCcrPage.?(
       secondHigh =/= 0.B(4),
-      addsSubsPage.?(ir.asBits.bits(14, 11) =/= 0.B(4),
-        ir.asBits.bits(14, 12) =/= 0.B(3)))
+      daaDasPage.?(secondHigh =/= 0.B(4),
+        addsSubsPage.?(ir.asBits.bits(14, 11) =/= 0.B(4),
+          ir.asBits.bits(14, 12) =/= 0.B(3))))
     val bitPrefixR16 = (!bitMemActive) & ((firstOp === 0x7c.B(8)) | (firstOp === 0x7d.B(8)))
     val bitPrefixR16Bad = ir.asBits.bit(15) | (ir.asBits.bits(11, 8) =/= 0.B(4))
     val bitExtInv = ir.asBits.bit(15)
@@ -326,30 +338,9 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       bitMemWrite := (firstOp === 0x7d.B(8)) | (firstOp === 0x7f.B(8))
     }
 
-    // Bcc condition evaluator: cond nibble = instr[3:0], flags from CCR.
-    val fN = ccr.io.hnzvc.asBits.bit(3)
-    val fZ = ccr.io.hnzvc.asBits.bit(2)
-    val fV = ccr.io.hnzvc.asBits.bit(1)
-    val fC = ccr.io.hnzvc.asBits.bit(0)
-    val cc = opx.io.rdImm
-    val taken = Wire(Bool())
-    taken := true.B                                       // 0 BRA
-    when(cc === 0x1.U(4))(taken := false.B)               // BRN
-    when(cc === 0x2.U(4))(taken := !(fC | fZ))            // BHI
-    when(cc === 0x3.U(4))(taken := fC | fZ)               // BLS
-    when(cc === 0x4.U(4))(taken := !fC)                   // BCC
-    when(cc === 0x5.U(4))(taken := fC)                    // BCS
-    when(cc === 0x6.U(4))(taken := !fZ)                   // BNE
-    when(cc === 0x7.U(4))(taken := fZ)                    // BEQ
-    when(cc === 0x8.U(4))(taken := !fV)                   // BVC
-    when(cc === 0x9.U(4))(taken := fV)                    // BVS
-    when(cc === 0xa.U(4))(taken := !fN)                   // BPL
-    when(cc === 0xb.U(4))(taken := fN)                    // BMI
-    when(cc === 0xc.U(4))(taken := !(fN ^ fV))            // BGE
-    when(cc === 0xd.U(4))(taken := fN ^ fV)               // BLT
-    when(cc === 0xe.U(4))(taken := !(fZ | (fN ^ fV)))     // BGT
-    when(cc === 0xf.U(4))(taken := fZ | (fN ^ fV))        // BLE
-    useq.io.ccTaken := taken
+    bcond.io.cc := opx.io.rdImm
+    bcond.io.hnzvc := ccr.io.hnzvc
+    useq.io.ccTaken := bcond.io.taken
 
     // Interrupt latches, polled by the fetch mainloop (no async hardware entry).
     // IRQ is maskable by CCR.I; NMI is not. Entry acks the latch and sets I.

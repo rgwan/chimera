@@ -124,6 +124,8 @@ object Dispatch:
   */
 object Ucode:
   val FetchEntry = 0x100
+  val Daa = FetchEntry + 0x23
+  val Das = FetchEntry + 0x25
   val BitPrefixExt = FetchEntry + 0xaf
   val BitPrefixPc = FetchEntry + 0xb0
   val BitPrefixGuard = FetchEntry + 0xb1

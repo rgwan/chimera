@@ -59,6 +59,7 @@ IMPLEMENTED = {
     "h8_band_imm3_r8", "h8_biand_imm3_r8",
     "h8_bit_abs8_read", "h8_bit_abs8_write",
     "h8_bit_r16i_read", "h8_bit_r16i_write",
+    "h8_daa8_r8", "h8_das8_r8",
 }
 
 MEM_PROBE_LIMIT = 16
@@ -174,13 +175,19 @@ def expected_state(initial, expected):
     return words, exp_ccr
 
 
+def ccr_matches(actual, expected):
+    return len(actual) == len(expected) and all(
+        e == "x" or a == e for a, e in zip(actual, expected)
+    )
+
+
 def check_case(sim, case):
     try:
         exp_mem = memory_expected(case)
         image = image_memory(case)
         regs, ccr, mem = run(sim, image, sorted(exp_mem))
         exp_regs, exp_ccr = expected_state(case["initial"], case["expected"])
-        ok = regs is not None and ccr == exp_ccr \
+        ok = regs is not None and ccr_matches(ccr, exp_ccr) \
             and all(regs[n] == exp_regs[n] for n in range(8)) \
             and all(mem.get(a) == v for a, v in exp_mem.items())
         if ok:

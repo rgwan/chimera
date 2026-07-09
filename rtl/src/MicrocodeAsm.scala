@@ -287,6 +287,18 @@ object MicrocodeImage:
       MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, alu = AluOp.PassA, size = 1,
          wsel = WSel.Int, intIdx = IntIdx.IReg, we = true,
          seq = SeqSrc.Literal, lit = Ucode.BitPrefixExt),
+    0x0f -> MW(seq = SeqSrc.Literal, lit = Ucode.Daa),
+    Ucode.Daa -> MW(cond = Cond.NibbleBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    (Ucode.Daa + 1) ->
+      MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.PassA,
+         flag = FlagCtl.LoadCcr, wsel = WSel.H8, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    0x1f -> MW(seq = SeqSrc.Literal, lit = Ucode.Das),
+    Ucode.Das -> MW(cond = Cond.NibbleBad, seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+    (Ucode.Das + 1) ->
+      MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.PassA,
+         flag = FlagCtl.LoadCcr, wsel = WSel.H8, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
     Ucode.BitPrefixExt ->
       MW(bus = BusCtl.Read, intIdx = IntIdx.PC, size = 1,
          seq = SeqSrc.Literal, lit = Ucode.BitPrefixPc),

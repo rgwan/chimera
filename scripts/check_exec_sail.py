@@ -28,6 +28,7 @@ IMPLEMENTED = {
     "h8_add8_r8_r8", "h8_sub8_r8_r8", "h8_mov16_imm_r16", "h8_ldc_imm_ccr",
     "h8_or8_r8_r8", "h8_xor8_r8_r8", "h8_and8_r8_r8", "h8_cmp8_r8_r8",
     "h8_addx8_imm_r8", "h8_subx8_imm_r8",
+    "h8_mov8_r8_r8", "h8_addx8_r8_r8", "h8_subx8_r8_r8",
 }
 
 

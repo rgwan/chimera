@@ -56,17 +56,18 @@ object MicrocodeImage:
     "microword field packing"
   )
 
-  /** Two-source reg-reg byte op: stage rs into TEMP, then rd = rd OP TEMP. AH=1
-    * ops dispatch to both `disp` and its m-class alias {0xC0 | disp[5:0]}. */
-  private def regReg2(disp: Int, tail: Int, op: Int, flag: Int, writes: Boolean)
-      : Seq[(Int, MW)] =
+  /** Two-source reg-reg byte op: stage rs into TEMP, then rd = rd OP TEMP.
+    * AH=1 ops (mclass=true) also dispatch via the m-class alias {0xC0|disp[5:0]}. */
+  private def regReg2(disp: Int, tail: Int, op: Int, flag: Int, writes: Boolean,
+                      mclass: Boolean = true): Seq[(Int, MW)] =
     val stage = MW(bSel = BSel.H8, h8Idx = H8Idx.RsReg, alu = AluOp.Pass,
                    wsel = WSel.Int, intIdx = IntIdx.Temp, we = true,
                    seq = SeqSrc.Literal, lit = tail)
-    Seq(disp -> stage, (0xc0 | (disp & 0x3f)) -> stage,
-        tail -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, bSel = BSel.Int,
-                   intIdx = IntIdx.Temp, alu = op, flag = flag, wsel = WSel.H8,
-                   we = writes, seq = SeqSrc.Literal, lit = Ucode.FetchEntry))
+    val entries = if mclass then Seq(disp, 0xc0 | (disp & 0x3f)) else Seq(disp)
+    entries.map(_ -> stage) :+
+      (tail -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, bSel = BSel.Int,
+                  intIdx = IntIdx.Temp, alu = op, flag = flag, wsel = WSel.H8,
+                  we = writes, seq = SeqSrc.Literal, lit = Ucode.FetchEntry))
 
   /** Routines by ROM address. Instruction routines sit at ROM[dispatch]; the
     * fetch mainloop and multi-step tails live in upper ROM (>= FetchEntry).
@@ -164,7 +165,11 @@ object MicrocodeImage:
     regReg2(0x14, Ucode.FetchEntry + 0x13, AluOp.Or,  FlagCtl.Nz,     true).toMap ++
     regReg2(0x15, Ucode.FetchEntry + 0x14, AluOp.Xor, FlagCtl.Nz,     true).toMap ++
     regReg2(0x16, Ucode.FetchEntry + 0x15, AluOp.And, FlagCtl.Nz,     true).toMap ++
-    regReg2(0x1c, Ucode.FetchEntry + 0x16, AluOp.Cmp, FlagCtl.AddSub, false).toMap
+    regReg2(0x1c, Ucode.FetchEntry + 0x16, AluOp.Cmp, FlagCtl.AddSub, false).toMap ++
+    // reg-reg mov/addx (ooo=0, single dispatch) and subx (m-class)
+    regReg2(0x0c, Ucode.FetchEntry + 0x17, AluOp.Pass, FlagCtl.Nz, true, false).toMap ++
+    regReg2(0x0e, Ucode.FetchEntry + 0x18, AluOp.Adc, FlagCtl.AddSub, true, false).toMap ++
+    regReg2(0x1e, Ucode.FetchEntry + 0x19, AluOp.Sbc, FlagCtl.StickyZ, true).toMap
 
   /** Sparse image: only authored addresses; the ROM defaults the rest to zero. */
   val sparse: Seq[(Int, BigInt)] =

@@ -129,7 +129,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
 
     // BIU: address from the internal read (PC for fetch, IREG for a data address)
     biu.io.addr   := intrf.io.rdata
-    biu.io.wdata  := h8rf.io.rdata
+    biu.io.wdata  := sizeWord.?(h8rf.io.rdata, (h8Byte ## h8Byte).asUInt)
     biu.io.busCtl := udec.io.busCtl
     biu.io.word   := sizeWord
 

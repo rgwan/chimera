@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
 
-.PHONY: build smoke rtl-verilog check-decode-table check-decode gnu-oracle gdb-oracle isa-cases sail-coverage sail-model verify-smoke check clean
+.PHONY: build smoke rtl-verilog check-decode-table check-decode check-biu gnu-oracle gdb-oracle isa-cases sail-coverage sail-model verify-smoke check clean
 
 build: smoke
 
@@ -22,6 +22,11 @@ check-alu:
 	TOP=Alu bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/tb_alu test/alu/tb_alu.v rtl/generated/Alu.sv
 	vvp rtl/generated/tb_alu
+
+check-biu:
+	TOP=Biu bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/tb_biu test/biu/tb_biu.v rtl/generated/Biu.sv
+	vvp rtl/generated/tb_biu
 
 check-core:
 	bash rtl/build.sh

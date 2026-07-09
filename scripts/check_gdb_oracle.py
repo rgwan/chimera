@@ -74,12 +74,15 @@ SIM_DIVERGENT_CASES = {
 # even alignment by clearing bit0. Cases whose pointer register is odd are
 # abstained rather than compared.
 UNALIGNED_WORD_REASON = "gdb_sim_unaligned_word_access"
+ODD_BRANCH_TARGET_REASON = "gdb_sim_odd_branch_target"
 ABSTAIN_REASON_LIMITS = {
     EXPECTED_TRAP_REASON: 1,
     REJECTED_ENCODING_REASON: 4,
     SIM_DIVERGENT_REASON: 3,
     UNALIGNED_WORD_REASON: 1,
+    ODD_BRANCH_TARGET_REASON: 2,
 }
+REL8_BRANCH_INSTRUCTIONS = frozenset({"h8_branch_rel8", "h8_bsr_rel8"})
 
 # CCR bit position of each flag in the HNZVC string order.
 CCR_BITS = (5, 3, 2, 1, 0)
@@ -127,6 +130,13 @@ def unaligned_word_access(case: dict[str, object]) -> bool:
     return any(int(str(v), 16) == odd_ptr for v in case["initial"].get("regs", {}).values())
 
 
+def odd_branch_target(case: dict[str, object]) -> bool:
+    if str(case.get("instruction")) not in REL8_BRANCH_INSTRUCTIONS:
+        return False
+    words = case.get("words", [])
+    return bool(words) and (int(str(words[0]), 16) & 1) == 1
+
+
 def applicability(case: dict[str, object]) -> str | None:
     if str(case.get("status")) == "rejected":
         return REJECTED_ENCODING_REASON
@@ -140,6 +150,8 @@ def applicability(case: dict[str, object]) -> str | None:
         return SIM_DIVERGENT_REASON
     if unaligned_word_access(case):
         return UNALIGNED_WORD_REASON
+    if odd_branch_target(case):
+        return ODD_BRANCH_TARGET_REASON
     return None
 
 
@@ -154,6 +166,7 @@ def abstain_reason_text(case: dict[str, object], reason_code: str) -> str:
         "extended_registers_absent": "extended registers absent from H8/300 sim",
         REJECTED_ENCODING_REASON: "rejected encoding has no sim trap semantics",
         UNALIGNED_WORD_REASON: "sim does not force even alignment on word access",
+        ODD_BRANCH_TARGET_REASON: "sim does not force even alignment on branch target",
     }[reason_code]
 
 

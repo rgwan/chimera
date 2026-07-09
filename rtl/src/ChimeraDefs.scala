@@ -21,6 +21,7 @@ object MicroWord:
   val BUS_CTL  = (4, 3)   // BusCtl
   val SIZE     = (2, 2)   // 0 = byte, 1 = word
   val CALL     = (1, 1)   // with SeqSrc.Literal, push uPC+1 (subroutine call)
+  val VCLEAR   = (0, 0)   // force V=0 (SHLL/SHLR/SHAR/ROT*); SHAL keeps hardware V
 
 /** next-uPC source select. */
 object SeqSrc:

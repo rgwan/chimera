@@ -30,6 +30,8 @@ IMPLEMENTED = {
     "h8_addx8_imm_r8", "h8_subx8_imm_r8",
     "h8_mov8_r8_r8", "h8_addx8_r8_r8", "h8_subx8_r8_r8",
     "h8_not8_r8", "h8_neg8_r8", "h8_inc8_r8", "h8_dec8_r8",
+    "h8_shll8_r8", "h8_shal8_r8", "h8_shlr8_r8", "h8_shar8_r8",
+    "h8_rotxl8_r8", "h8_rotl8_r8", "h8_rotxr8_r8", "h8_rotr8_r8",
 }
 
 

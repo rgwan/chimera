@@ -109,7 +109,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     ccr.io.resZ    := sizeWord.?(alu.io.y.asBits.bits(15, 0) === 0.B(16),
       alu.io.y.asBits.bits(7, 0) === 0.B(8))
     ccr.io.resH    := alu.io.hout
-    ccr.io.hwV     := alu.io.vout
+    ccr.io.hwV     := udec.io.vclr.?(false.B, alu.io.vout) // SHLL/SHLR/SHAR/ROT* force V=0
     ccr.io.hwC     := alu.io.cout
     ccr.io.ldWe    := udec.io.flagCtl === FlagCtl.LoadCcr.U(3)
     ccr.io.ldVal   := opx.io.imm8

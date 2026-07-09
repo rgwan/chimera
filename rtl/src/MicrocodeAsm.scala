@@ -22,7 +22,8 @@ object MicrocodeImage:
     flag:   Int     = FlagCtl.None,
     bus:    Int     = BusCtl.None,
     size:   Int     = 0,
-    call:   Boolean = false
+    call:   Boolean = false,
+    vclr:   Boolean = false
   ):
     def encode: BigInt =
       def f(v: Int, r: (Int, Int)): BigInt =
@@ -33,7 +34,8 @@ object MicrocodeImage:
         f(wsel, MicroWord.WSEL) | (if we then BigInt(1) << MicroWord.REG_WE._2
                                    else BigInt(0)) |
         f(flag, MicroWord.FLAG_CTL) | f(bus, MicroWord.BUS_CTL) | f(size, MicroWord.SIZE) |
-        (if call then BigInt(1) << MicroWord.CALL._2 else BigInt(0))
+        (if call then BigInt(1) << MicroWord.CALL._2 else BigInt(0)) |
+        (if vclr then BigInt(1) << MicroWord.VCLEAR._2 else BigInt(0))
 
   private def field(w: BigInt, r: (Int, Int)): Int =
     ((w >> r._2) & ((BigInt(1) << (r._1 - r._2 + 1)) - 1)).toInt
@@ -41,10 +43,11 @@ object MicrocodeImage:
   // Round-trip self-check: distinct value in every field survives encode with no
   // overlap. Pinned to an independently computed value. Runs at elaboration.
   private val probe = MW(lit = 0x1ab, seq = 3, cond = 5, alu = 9, aSel = 2, bSel = 3,
-    h8Idx = 2, intIdx = 1, wsel = 1, we = true, flag = 4, bus = 3, size = 1, call = true)
+    h8Idx = 2, intIdx = 1, wsel = 1, we = true, flag = 4, bus = 3, size = 1, call = true,
+    vclr = true)
   private val pw = probe.encode
   require(pw < (BigInt(1) << 36), "microword exceeds 36 bits")
-  require(pw == BigInt("d5f66e79e", 16), "microword encoding value")
+  require(pw == BigInt("d5f66e79f", 16), "microword encoding value")
   require(
     field(pw, MicroWord.LITERAL) == 0x1ab && field(pw, MicroWord.SEQ_SRC) == 3 &&
       field(pw, MicroWord.COND) == 5 && field(pw, MicroWord.ALU_OP) == 9 &&
@@ -52,7 +55,8 @@ object MicrocodeImage:
       field(pw, MicroWord.H8_IDX) == 2 && field(pw, MicroWord.INT_IDX) == 1 &&
       field(pw, MicroWord.WSEL) == 1 && field(pw, MicroWord.REG_WE) == 1 &&
       field(pw, MicroWord.FLAG_CTL) == 4 && field(pw, MicroWord.BUS_CTL) == 3 &&
-      field(pw, MicroWord.SIZE) == 1 && field(pw, MicroWord.CALL) == 1,
+      field(pw, MicroWord.SIZE) == 1 && field(pw, MicroWord.CALL) == 1 &&
+      field(pw, MicroWord.VCLEAR) == 1,
     "microword field packing"
   )
 
@@ -104,6 +108,32 @@ object MicrocodeImage:
     0xd7 -> MW(aSel = ASel.Zero, bSel = BSel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.Sub,
                flag = FlagCtl.AddSub, wsel = WSel.H8, we = true,
                seq = SeqSrc.Literal, lit = Ucode.FetchEntry),
+
+    // shift/rotate by 1 (left = adder reuse: b=a). vclr forces V=0 except SHAL.
+    0x10 -> MW(aSel = ASel.H8, bSel = BSel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.Add,
+               flag = FlagCtl.Shift, vclr = true, wsel = WSel.H8, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry),   // shll.b
+    0xd0 -> MW(aSel = ASel.H8, bSel = BSel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.Add,
+               flag = FlagCtl.Shift, wsel = WSel.H8, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry),   // shal.b (V=sign change)
+    0x11 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.Shr1,
+               flag = FlagCtl.Shift, vclr = true, wsel = WSel.H8, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry),   // shlr.b
+    0xd1 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.Shar,
+               flag = FlagCtl.Shift, vclr = true, wsel = WSel.H8, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry),   // shar.b
+    0x12 -> MW(aSel = ASel.H8, bSel = BSel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.Adc,
+               flag = FlagCtl.Shift, vclr = true, wsel = WSel.H8, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry),   // rotxl.b
+    0xd2 -> MW(aSel = ASel.H8, bSel = BSel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.Rol,
+               flag = FlagCtl.Shift, vclr = true, wsel = WSel.H8, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry),   // rotl.b
+    0x13 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.Rorc,
+               flag = FlagCtl.Shift, vclr = true, wsel = WSel.H8, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry),   // rotxr.b
+    0xd3 -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.Ror,
+               flag = FlagCtl.Shift, vclr = true, wsel = WSel.H8, we = true,
+               seq = SeqSrc.Literal, lit = Ucode.FetchEntry),   // rotr.b
 
     // Immediate-ALU page (dispatch 0x80|ooo). rd is instr[3:0]; imm8 the 2nd byte.
     // add.b #imm,Rd

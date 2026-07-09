@@ -136,7 +136,7 @@ sail-coverage:
 sail-model:
 	python3 scripts/check_sail_model.py
 
-verify-smoke: smoke isa-cases sail-coverage check-decode-table gnu-oracle gdb-oracle sail-model
+verify-smoke: smoke isa-cases sail-coverage check-decode-table gnu-oracle gdb-oracle gcc-footprint sail-model
 
 check:
 	nix flake check

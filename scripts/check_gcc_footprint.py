@@ -2,14 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
 
-"""Compiler footprint: what H8/300 instructions does h8300-elf-gcc emit for a
-tiny C smoke, and which of them the RTL core does not yet implement.
-
-Compiles freestanding snippets, disassembles the objects with objdump, maps
-each emitted opcode to an isa instruction id (isa mask/match) and to the RTL
-coarse-decode dispatch, and reports the ids the microcode program does not
-cover. Consumes isa/*.yaml only as read-only metadata; touches no cases.
-"""
+"""Emit the first h8300-elf-gcc instruction footprint under result/."""
 
 import json
 import re
@@ -28,33 +21,56 @@ AS = "h8300-elf-as"
 OBJDUMP = "h8300-elf-objdump"
 MICROCODE = REPO_ROOT / "rtl" / "src" / "MicrocodeAsm.scala"
 
-# First compiler smoke: freestanding snippets (no libc, no libgcc link).
 SNIPPETS = {
-    "mov_imm": "int mov_imm(void) { return 0x2a; }",
-    "add_reg": "int add_reg(int a, int b) { return a + b; }",
-    "sub_reg": "int sub_reg(int a, int b) { return a - b; }",
-    "logic": "unsigned char logic(unsigned char a, unsigned char b)"
-             " { return (a & b) | (a ^ b); }",
-    "shift": "unsigned char shift(unsigned char a) { return a << 1; }",
-    "branch": "int pick(int a, int b) { return a > b ? a : b; }",
-    "loop": "int accumulate(int n) { int s = 0;"
-            " for (int i = 0; i < n; i++) s += i; return s; }",
+    "leaf_int": (
+        "int leaf_int(int a, int b, int c) {"
+        " int x = a + b; int y = x - c; return y > b ? y : b; }"
+    ),
+    "byte_ptr": (
+        "unsigned char byte_ptr(unsigned char *p, unsigned char v) {"
+        " unsigned char x = p[1]; p[0] = (unsigned char)(x + v); return p[0]; }"
+    ),
+    "word_ptr": (
+        "unsigned int word_ptr(unsigned int *p, unsigned int v) {"
+        " unsigned int x = p[1]; p[0] = x + v; return p[0]; }"
+    ),
 }
+COMPILE_FLAGS = [
+    "-Os", "-S", "-ffreestanding", "-fno-builtin", "-fomit-frame-pointer",
+]
 
 OBJDUMP_RE = re.compile(r"^\s*[0-9a-f]+:\s+([0-9a-f]{2}(?: [0-9a-f]{2})*)\s+(\S+)")
 DISPATCH_KEY_RE = re.compile(r"^\s*(0x[0-9a-f]{2}) ->", re.M)
 DISPATCH_RANGE_RE = re.compile(r"\((0x[0-9a-f]+) to (0x[0-9a-f]+)\)\.map")
 REGREG_RE = re.compile(r"regReg2\(\s*(0x[0-9a-f]+)")
+FORBIDDEN_RE = re.compile(r"(movfpe|movtpe|eepmov|mul|div)", re.I)
 
 
 def run(cmd, cwd):
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False)
 
 
+def tool_info(tool):
+    path = shutil.which(tool)
+    if path is None:
+        return {"available": False}
+    version = run([tool, "--version"], REPO_ROOT)
+    line = version.stdout.strip().splitlines()[0] if version.stdout.strip() else ""
+    return {"available": True, "path": path, "version": line}
+
+
+def unique_in_order(items):
+    seen = set()
+    out = []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
 def rtl_dispatch_set():
-    """Coarse-decode dispatch values the microcode program implements, or None
-    when the RTL source is absent. Covers literal `0xNN ->` entry points and
-    `regReg2(0xNN, ...)` reg-reg ops (base plus their 0xC0 m-class alias)."""
+    """Return coarse dispatch values present in the microcode source."""
     if not MICROCODE.is_file():
         return None
     text = MICROCODE.read_text(encoding="utf-8")
@@ -68,15 +84,12 @@ def rtl_dispatch_set():
 
 
 def disassemble(name, source, encodings, rtl_dispatch, work):
-    # Compile to assembly with gcc, then assemble with the target as directly:
-    # gcc's driver resolves an unprefixed `as` and would miss h8300-elf-as.
     src = work / f"{name}.c"
     asm = work / f"{name}.s"
     obj = work / f"{name}.o"
     src.write_text(source + "\n", encoding="utf-8")
     compile_step = run(
-        [GCC, "-Os", "-S", "-ffreestanding", "-fno-builtin", "-fomit-frame-pointer",
-         "-o", str(asm), str(src)],
+        [GCC, *COMPILE_FLAGS, "-o", str(asm), str(src)],
         work,
     )
     if compile_step.returncode != 0 or not asm.is_file():
@@ -87,6 +100,9 @@ def disassemble(name, source, encodings, rtl_dispatch, work):
         return {"snippet": name, "status": "assemble_failed",
                 "error": assemble_step.stderr.strip().splitlines()[-1:] or [""]}
     dump = run([OBJDUMP, "-d", str(obj)], work)
+    if dump.returncode != 0:
+        return {"snippet": name, "status": "objdump_failed",
+                "error": dump.stderr.strip().splitlines()[-1:] or [""]}
     instructions = []
     for line in dump.stdout.splitlines():
         m = OBJDUMP_RE.match(line)
@@ -98,6 +114,7 @@ def disassemble(name, source, encodings, rtl_dispatch, work):
         isa_id = cdd.isa_dispatch(encodings, first, second)
         dispatch = cdd.coarse_dispatch(first, second)
         instructions.append({
+            "snippet": name,
             "words": "".join(byte_list),
             "mnemonic": m.group(2),
             "isa_id": isa_id,
@@ -109,16 +126,19 @@ def disassemble(name, source, encodings, rtl_dispatch, work):
 
 def main() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    if shutil.which(GCC) is None:
+    tools = {tool: tool_info(tool) for tool in (GCC, AS, OBJDUMP)}
+    missing_tools = sorted(tool for tool, info in tools.items() if not info["available"])
+    if missing_tools:
         report = {
             "status": "blocked",
-            "blocker": f"{GCC} not on PATH; see doc note on the Nix cross-gcc build",
+            "missing_tools": missing_tools,
+            "compiler": tools[GCC],
             "snippets": sorted(SNIPPETS),
         }
         (OUT_DIR / "gcc-footprint.json").write_text(
             json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        print(f"gcc footprint blocked: {GCC} unavailable")
-        return 0
+        print("gcc footprint blocked: missing " + ", ".join(missing_tools))
+        return 1
 
     encodings = cdd.load_encodings()
     rtl_dispatch = rtl_dispatch_set()
@@ -129,33 +149,54 @@ def main() -> int:
                for name, src in sorted(SNIPPETS.items())]
 
     emitted = [i for r in results if r["status"] == "ok" for i in r["instructions"]]
-    mapped = sorted({i["isa_id"] for i in emitted if i["isa_id"] != "illegal"})
-    unmapped = sorted({i["mnemonic"] for i in emitted if i["isa_id"] == "illegal"})
-    missing_rtl = sorted({
+    mapped = unique_in_order(i["isa_id"] for i in emitted if i["isa_id"] != "illegal")
+    unmapped = [
+        {k: i[k] for k in ("snippet", "words", "mnemonic", "dispatch")}
+        for i in emitted if i["isa_id"] == "illegal"
+    ]
+    forbidden = [
+        {k: i[k] for k in ("snippet", "words", "mnemonic", "isa_id")}
+        for i in emitted
+        if FORBIDDEN_RE.search(i["mnemonic"]) or FORBIDDEN_RE.search(i["isa_id"])
+    ]
+    missing_rtl = unique_in_order(
         i["isa_id"] for i in emitted
         if i["isa_id"] != "illegal" and i["rtl_implemented"] is False
-    })
+    )
+    failed = [r for r in results if r["status"] != "ok"]
+    status = "ok" if not failed and not unmapped and not forbidden else "failed"
 
     report = {
-        "status": "ok",
-        "compiler": GCC,
+        "status": status,
+        "compiler": tools[GCC],
+        "compile_flags": COMPILE_FLAGS,
+        "assembler": tools[AS],
+        "objdump": tools[OBJDUMP],
         "rtl_coverage_source": None if rtl_dispatch is None
         else str(MICROCODE.relative_to(REPO_ROOT)),
         "emitted_instruction_ids": mapped,
-        "unmapped_mnemonics": unmapped,
+        "unmapped_encodings": unmapped,
+        "forbidden_instructions": forbidden,
         "missing_rtl_instruction_ids": missing_rtl,
+        "smallest_next_rtl_slice": missing_rtl,
         "snippets": results,
     }
     (OUT_DIR / "gcc-footprint.json").write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
-    print(f"gcc footprint ok: {len(mapped)} isa ids emitted, "
+    tag = "ok" if status == "ok" else "failed"
+    print(f"gcc footprint {tag}: {len(mapped)} isa ids emitted, "
           f"{len(missing_rtl)} missing in RTL, {len(unmapped)} unmapped")
+    if failed:
+        print("failed snippets: " + ", ".join(f"{r['snippet']}:{r['status']}" for r in failed))
     if missing_rtl:
         print("missing RTL instruction ids: " + ", ".join(missing_rtl))
     if unmapped:
-        print("unmapped mnemonics: " + ", ".join(unmapped))
-    return 0
+        print("unmapped encodings: " + ", ".join(f"{u['words']}:{u['mnemonic']}" for u in unmapped))
+    if forbidden:
+        print("forbidden instructions: " + ", ".join(
+            f"{i['words']}:{i['mnemonic']}:{i['isa_id']}" for i in forbidden))
+    return 0 if status == "ok" else 1
 
 
 if __name__ == "__main__":

@@ -1458,6 +1458,19 @@ instructions:
       execute: h8_exec_rte
     effects: [pc, addr_update, ccr_hnzvc, mem_read]
 
+  - id: h8_trapa
+    assembler_template: "trapa #{trap_no}"
+    length_bytes: 2
+    encoding:
+      mask: "0xffcf"
+      match: "0x5700"
+      fields:
+        trap_no: "word[5:4]"
+    sail:
+      decode: H8_TRAPA
+      execute: h8_exec_trapa
+    effects: [pc, addr_update, mem_read, mem_write]
+
   - id: h8_bsr_rel8
     assembler_template: "bsr {rel8}"
     length_bytes: 2

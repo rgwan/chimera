@@ -57,6 +57,7 @@ union H8Inst = {
   H8_JMP_R16I : h8_r16,
   H8_JMP_ABS16 : word,
   H8_JMP_ABS8I : byte,
+  H8_TRAPA : bits(2),
   H8_RTE : unit,
   H8_RTS : unit,
   H8_BSR_REL8 : byte,
@@ -1024,6 +1025,32 @@ function h8_exec_rte(m : H8Machine) -> H8Machine = {
   {m with st = {st1 with pc = align_word_addr(target), ccr = h8_ccr_from_byte(ccr_word[15 .. 8])}, trap = false}
 }
 
+function h8_trapa_vector_addr(trap_no : bits(2)) -> word =
+  match trap_no {
+    0b00 => 0x0008,
+    0b01 => 0x000A,
+    0b10 => 0x000C,
+    0b11 => 0x000E
+  }
+
+function h8_exec_trapa(m : H8Machine, trap_no : bits(2)) -> H8Machine = {
+  let return_pc : word = m.st.pc + 0x0002;
+  if trap_no == 0b10 then
+    {m with st = {m.st with pc = return_pc}, trap = true}
+  else {
+    let pc_sp : word = read_r16(m.st, 7) - 0x0002;
+    let st1 = write_r16(m.st, 7, pc_sp);
+    let mem1 = h8_mem_write16(m.mem, pc_sp, return_pc);
+    let ccr_sp : word = pc_sp - 0x0002;
+    let st2 = write_r16(st1, 7, ccr_sp);
+    let mem2 = h8_mem_write16(mem1, ccr_sp, h8_ccr_to_byte(m.st.ccr) @ 0x00);
+    let target = h8_mem_read16(mem2, h8_trapa_vector_addr(trap_no));
+    let ccr1 = {m.st.ccr with i = 0b1};
+    {m with st = {st2 with pc = align_word_addr(target), ccr = ccr1},
+            mem = mem2, trap = false}
+  }
+}
+
 function h8_exec_bsr_rel8(m : H8Machine, disp : byte) -> H8Machine = {
   let return_pc : word = m.st.pc + 0x0002;
   h8_exec_call16(m, align_word_addr(return_pc + sign_extend8_to16(disp)), return_pc)
@@ -1270,6 +1297,8 @@ function h8_decode_profile(profile : H8Profile, first : word, ext : word) -> opt
              Some(H8_RTS())
            else if op0 == 0x56 & op1 == 0x70 then
              Some(H8_RTE())
+           else if op0 == 0x57 & op1[7 .. 6] == 0b00 & op1[3 .. 0] == 0x0 then
+             Some(H8_TRAPA(op1[5 .. 4]))
            else if op0 == 0x55 then
              Some(H8_BSR_REL8(op1))
            else if op0 == 0x59 & op1[7] == 0b0 & op1[3 .. 0] == 0x0 then
@@ -1395,6 +1424,7 @@ function h8_execute(st : H8State, inst : H8Inst) -> H8ExecResult =
     H8_JMP_R16I(rs_addr) => struct {st = h8_exec_jmp_r16_ind(st, rs_addr), trap = false},
     H8_JMP_ABS16(target) => struct {st = h8_exec_jmp_abs16(st, target), trap = false},
     H8_JMP_ABS8I(_) => struct {st = st, trap = true},
+    H8_TRAPA(_) => struct {st = st, trap = true},
     H8_RTE() => struct {st = st, trap = true},
     H8_RTS() => struct {st = st, trap = true},
     H8_BSR_REL8(_) => struct {st = st, trap = true},
@@ -1503,6 +1533,7 @@ function h8_decode_execute(st : H8State, first : word, ext : word) -> H8ExecResu
 function h8_execute_machine(m : H8Machine, inst : H8Inst) -> H8Machine =
   match inst {
     H8_JMP_ABS8I(addr) => h8_exec_jmp_abs8_ind(m, addr),
+    H8_TRAPA(trap_no) => h8_exec_trapa(m, trap_no),
     H8_RTE() => h8_exec_rte(m),
     H8_RTS() => h8_exec_rts(m),
     H8_BSR_REL8(disp) => h8_exec_bsr_rel8(m, disp),

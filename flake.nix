@@ -277,6 +277,53 @@ EOF
           echo "========================================"
         '';
 
+        # Named RTL configurations, selectable as `nix build .#rtl-<name>`.
+        # asic packages a synthesis-ready file set: no DV collateral, a
+        # filelist, and the self-contained when-chain microcode ROM.
+        chimeraConfigs = {
+          lean   = { strictDecode = false; romHex = false; asic = false; };
+          strict = { strictDecode = true;  romHex = false; asic = false; };
+          fpga   = { strictDecode = false; romHex = true;  asic = false; };
+          asic   = { strictDecode = false; romHex = false; asic = true;  };
+        };
+
+        chimeraIvyCache = pkgs.ivy-gather zaoziIvyLock;
+
+        rtlBuild = name: cfg: pkgs.runCommand "chimera-rtl-${name}" {
+          nativeBuildInputs = [
+            pkgs.scala-cli
+            pkgs.circt-install
+            pkgs.mlir-install
+            pkgs.jdk25
+            zaoziAssembly
+          ];
+          JAVA_TOOL_OPTIONS = "--enable-preview";
+        } ''
+          cp -R ${self} src
+          chmod -R u+w src
+          cd src
+          export HOME=$TMPDIR
+          export COURSIER_CACHE=$TMPDIR/coursier
+          export COURSIER_MODE=offline
+          mkdir -p "$COURSIER_CACHE"
+          cp -r ${chimeraIvyCache}/cache/. "$COURSIER_CACHE/"
+          chmod -R u+w "$COURSIER_CACHE"
+          export ZAOZI_JAR=${zaoziJar}
+          export CIRCT_INSTALL_PATH=${pkgs.circt-install}
+          export MLIR_INSTALL_PATH=${pkgs.mlir-install}
+          export JAVA_HOME=${pkgs.jdk25}
+          mkdir -p $out
+          CHIMERA_RTL_OUT=$out \
+            STRICT_DECODE=${pkgs.lib.boolToString cfg.strictDecode} \
+            ROM_HEX=${pkgs.lib.boolToString cfg.romHex} \
+            bash rtl/build.sh
+          rm -f $out/*.mlirbc
+          ${pkgs.lib.optionalString cfg.asic ''
+            rm -f $out/layers-*.sv $out/ref_*.sv
+            (cd $out && ls *.sv | sort > filelist.f)
+          ''}
+        '';
+
         smokeBuildInputs = [
           buildScript
           pkgs.git
@@ -300,6 +347,10 @@ EOF
       in
       {
         packages.default = smokeCheck;
+        packages.rtl-lean = rtlBuild "lean" chimeraConfigs.lean;
+        packages.rtl-strict = rtlBuild "strict" chimeraConfigs.strict;
+        packages.rtl-fpga = rtlBuild "fpga" chimeraConfigs.fpga;
+        packages.rtl-asic = rtlBuild "asic" chimeraConfigs.asic;
         packages.h8300-binutils = h8300Binutils;
         packages.h8300-gdb = h8300Gdb;
         packages.h8300-gcc = h8300Gcc;

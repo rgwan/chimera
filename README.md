@@ -18,7 +18,15 @@ H8/300 instruction set is implemented and verified against a Sail model.
 | Illegal encodings | undefined behavior | guarded, retire as no-op |
 | Core area (LUT4, µROM as BRAM) | 751 | 802 |
 
-`STRICT_DECODE=true` selects `strict`. Details and the full comparison are in
+One line per configuration; flags compose:
+
+```bash
+make rtl-verilog                       # lean (default)
+STRICT_DECODE=true make rtl-verilog    # strict
+ROM_HEX=true make rtl-verilog          # readmemh microcode ROM (BRAM)
+```
+
+Details and the full comparison are in
 [doc/microarchitecture.md](doc/microarchitecture.md).
 
 ## Build and verify

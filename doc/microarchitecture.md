@@ -17,9 +17,9 @@ first byte in `word[7:0]` (`d ooo pppp`, `d=word[7]`) and second byte in
 
 | Bucket | Condition | Address |
 |---|---|---|
-| A | `d=1` | `{0x80 \| ooo}` — 0x80–0x87, immediate ALU |
-| B | `d=0`, `ooo ∈ {1,6,7}` (plus `0` when H8/300H) | `{2'b11, word[5:0]}` — 0xC0–0xFF |
-| C | otherwise | `{1'b0, word[7:0]}` — 0x00–0x7F |
+| A | `d=1` | `{0x80 \| ooo}` (0x80..0x87, immediate ALU) |
+| B | `d=0`, `ooo ∈ {1,6,7}` (plus `0` when H8/300H) | `{2'b11, word[5:0]}` (0xC0..0xFF) |
+| C | otherwise | `{1'b0, word[7:0]}` (0x00..0x7F) |
 
 `word[7]` in bucket B is an address bit, not a gate. 192 dispatch targets
 (compressible to 160–184). Coarse LUT < 10 LUT4/5. Second-level dispatch
@@ -77,9 +77,9 @@ saved CCR across the divide loop and gives microcode a fourth scratch slot.
 
 ## Fetch and memory access
 
-Fully microcode-driven. The bus master presents a microcode-selected address —
-`PC` (in the internal file) for fetch, or a computed address in an internal
-register for data — and does not distinguish instruction from data. Microcode
+Fully microcode-driven. The bus master does not distinguish instruction from
+data: it presents a microcode-selected address, `PC` (in the internal file)
+for fetch or a computed address in an internal register for data. Microcode
 increments `PC` (`+2`/`+4`) or loads it through the ALU; there is no hardware
 next-PC path.
 
@@ -122,9 +122,8 @@ MOVFPE, MOVTPE, EEPMOV. In the default base config they decode as illegal
 
 Native SRAM-style master: `addr[15:0]`, `di[15:0]`, `do[15:0]`, `we`,
 `wmask[1:0]`, `req`, `rdy`. `we == 0` is a read; on a write `wmask` selects bytes.
-One outstanding request. Big-endian, 16-bit data. An optional AXI4-Lite wrapper
-(32-bit width-convert, one outstanding SRAM request) is available for ASIC use;
-the core never speaks AXI.
+One outstanding request. Big-endian, 16-bit data. The core never speaks AXI;
+a bus wrapper is a planned SoC-side addition.
 
 ## Module decomposition (zaozi)
 
@@ -154,16 +153,22 @@ the core never speaks AXI.
 
 At instruction-retire granularity:
 
-1. Decoder ≡ ISA table — the pre-decode mapping equals `isa/*.yaml` `mask`/`match`,
+1. Decoder ≡ ISA table: the pre-decode mapping equals `isa/*.yaml` `mask`/`match`,
    exhaustive over 256 first bytes and relevant second-byte bits.
-2. Microcode execution ≡ Sail — retire trace by canonical `instruction_id`, `pc`,
+2. Microcode execution ≡ Sail: retire trace by canonical `instruction_id`, `pc`,
    register writes, and `ccr_hnzvc`, against the `isa/*.yaml` cases and
    flag-boundary set.
 
 ## Configuration
 
 `ChimeraParameter` selects the build; `rtl/build.sh` reads the matching
-environment variables (`STRICT_DECODE`, `H8300H`, `RESET_VECTOR`).
+environment variables. One line per configuration:
+
+```bash
+make rtl-verilog                       # lean (default)
+STRICT_DECODE=true make rtl-verilog    # strict
+ROM_HEX=true make rtl-verilog          # readmemh microcode ROM
+```
 
 | | `lean` (default) | `strict` (`STRICT_DECODE=true`) |
 |---|---|---|
@@ -173,15 +178,21 @@ environment variables (`STRICT_DECODE`, `H8300H`, `RESET_VECTOR`).
 | Logic depth (LUT5 levels) | 19 | 19 |
 
 `strict` adds the `CorePredicates` guards and their guard microwords; `lean`
-reuses the freed cond code for the sleep wake test. Guard checks are identical
-to the Sail model's reject cases, so `strict` is the configuration for
-decoder-equivalence work; `lean` is the area target. H8/300H stays disabled by
-default and the area target is measured with it off.
+reuses the freed cond code for the sleep wake test and drops one cycle from
+every guarded routine. Guard checks are identical to the Sail model's reject
+cases, so `strict` is the configuration for decoder-equivalence work; `lean`
+is the area target. H8/300H stays disabled by default.
+
+`ROM_HEX=true` composes with either configuration: elaboration writes the
+microcode image to `urom.memh` and the build swaps in
+`rtl/verilog/MicrocodeRomHex.sv`, a drop-in `MicrocodeRom` that loads the
+image with `readmemh` so FPGA tools infer block RAM. The default when-chain
+ROM stays self-contained for simulation.
 
 ## Deferred
 
-- Platform vector table (reset SP/PC in the table, NMI/TRAPA/IRQ slots) —
+- Platform vector table (reset SP/PC in the table, NMI/TRAPA/IRQ slots):
   layout agreed, adoption pending; changes every boot image.
-- Debug module and unified TRAPA #2 / hardware-breakpoint behavior — waiting
+- Debug module and unified TRAPA #2 / hardware-breakpoint behavior: waiting
   on the debug specification. The debug entry, retire priority, and reserved
   microcode region are already in place.

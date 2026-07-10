@@ -35,7 +35,8 @@ scala_args=(
 echo "[chimera-rtl] config"
 scala-cli run "${scala_args[@]}" "$src" -- \
   config "$out/config.json" --h8300h "${H8300H:-false}" \
-  --strictDecode "${STRICT_DECODE:-false}" --resetVector "${RESET_VECTOR:-0}"
+  --strictDecode "${STRICT_DECODE:-false}" --romHex "${ROM_HEX:-false}" \
+  --resetVector "${RESET_VECTOR:-0}"
 
 echo "[chimera-rtl] design"
 ( cd "$out" && scala-cli run "${scala_args[@]}" "$src" -- design "$out/config.json" )
@@ -49,5 +50,10 @@ for f in "$out"/*.mlirbc; do
     --lowering-options=disallowLocalVariables,disallowPackedArrays,locationInfoStyle=none \
     -o "$out"
 done
+
+if [ "${ROM_HEX:-false}" = "true" ]; then
+  cp "$here/verilog/MicrocodeRomHex.sv" "$out/MicrocodeRom.sv"
+  rm -f "$out"/layers-MicrocodeRom-DV.sv
+fi
 
 echo "[chimera-rtl] wrote SystemVerilog to $out"

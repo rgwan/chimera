@@ -13,6 +13,7 @@ import me.jiuyang.zaozi.default.{*, given}
 case class ChimeraParameter(
   h8300h:       Boolean = false,
   strictDecode: Boolean = false,
+  romHex:       Boolean = false,
   resetVector:  Int = 0
 ) extends Parameter:
   require(resetVector >= 0, "resetVector must be non-negative")

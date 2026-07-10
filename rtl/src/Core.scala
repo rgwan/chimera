@@ -30,7 +30,12 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     given Ref[Reset] = io.reset
 
     val coarse = CoarseDecoder.instantiate(parameter)
-    val urom   = MicrocodeRom.instantiate(parameter)
+    if parameter.romHex then
+      val image = MicrocodeImage.sparse(parameter.strictDecode).toMap
+      os.write.over(os.pwd / "urom.memh",
+        (0 until parameter.uromDepth).map(a =>
+          f"${image.getOrElse(a, BigInt(0))}%09x").mkString("\n") + "\n")
+    val urom = MicrocodeRom.instantiate(parameter)
     val udec   = MicroDecode.instantiate(parameter)
     val useq   = Microsequencer.instantiate(parameter)
     val opx    = OperandExtract.instantiate(parameter)

@@ -150,5 +150,6 @@ object Ucode:
   val Divxu = FetchEntry + 0xcf
   val DivxuSub = Divxu + 20
   val Trapa = FetchEntry + 0xac
+  val Sleep = FetchEntry + 0x3b
   val Daa = FetchEntry + 0xe7
   val DaaDecision = Daa + 2

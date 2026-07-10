@@ -138,6 +138,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       preds.io.ir := ir
       preds.io.bitMemActive := bitMemActive
       preds.io.bitMemWrite := bitMemWrite
+      preds.io.wakePend := irqctl.io.nmiPend | irqctl.io.irqPend
 
     connectPredicates()
 

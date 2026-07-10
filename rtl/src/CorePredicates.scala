@@ -14,6 +14,7 @@ class CorePredicatesIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val ir           = Flipped(UInt(parameter.dataWidth))
   val bitMemActive = Flipped(Bool())
   val bitMemWrite  = Flipped(Bool())
+  val wakePend     = Flipped(Bool())
   val wordBad      = Aligned(Bool())
   val nibbleBad    = Aligned(Bool())
   val bitMemExtBad = Aligned(Bool())
@@ -34,7 +35,10 @@ object CorePredicates
 
     val wordRegPage = (io.firstOp === 0x09.U(8)) | (io.firstOp === 0x0d.U(8)) |
       (io.firstOp === 0x19.U(8)) | (io.firstOp === 0x1d.U(8))
-    io.wordBad := wordRegPage.?(irBits.bit(15) | irBits.bit(11), irBits.bit(11))
+    val sleepPage = io.firstOp === 0x01.U(8)
+    // On the sleep page WordBad means "no wake event yet" and holds the wait loop.
+    io.wordBad := sleepPage.?(!io.wakePend,
+      wordRegPage.?(irBits.bit(15) | irBits.bit(11), irBits.bit(11)))
 
     val secondHigh = irBits.bits(15, 12)
     val byteCcrPage = (io.firstOp === 0x02.U(8)) | (io.firstOp === 0x03.U(8))
@@ -43,12 +47,14 @@ object CorePredicates
     val trapaPage = io.firstOp === 0x57.U(8)
     val trapaBad = (irBits.bits(15, 14) =/= 0.B(2)) |
       (irBits.bits(11, 8) =/= 0.B(4))
+    val sleepBad = (!irBits.bit(15)) | (irBits.bits(14, 8) =/= 0.B(7))
     val normalNibbleBad = byteCcrPage.?(
       secondHigh =/= 0.B(4),
-      trapaPage.?(trapaBad,
-        daaDasPage.?(secondHigh =/= 0.B(4),
-          addsSubsPage.?(irBits.bits(14, 11) =/= 0.B(4),
-            irBits.bits(14, 12) =/= 0.B(3)))))
+      sleepPage.?(sleepBad,
+        trapaPage.?(trapaBad,
+          daaDasPage.?(secondHigh =/= 0.B(4),
+            addsSubsPage.?(irBits.bits(14, 11) =/= 0.B(4),
+              irBits.bits(14, 12) =/= 0.B(3))))))
     val bitPrefixR16 = (!io.bitMemActive) & bitPrefixOp & (!opBits.bit(1))
     val bitPrefixR16Bad = irBits.bit(15) | (irBits.bits(11, 8) =/= 0.B(4))
     val bitMemExtLowBad = irBits.bits(11, 8) =/= 0.B(4)

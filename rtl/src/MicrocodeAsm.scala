@@ -784,6 +784,13 @@ object MicrocodeImage:
       MW(cond = Cond.NibbleBad, seq = SeqSrc.Literal, lit = Ucode.Retire),
     (Ucode.Trapa + 1) -> MW(seq = SeqSrc.Dispatch, aux = true),
 
+    0x01 -> MW(seq = SeqSrc.Literal, lit = Ucode.Sleep),
+    Ucode.Sleep ->
+      MW(cond = Cond.NibbleBad, seq = SeqSrc.Literal, lit = Ucode.Retire),
+    (Ucode.Sleep + 1) ->                       // wait here until a wake event
+      MW(cond = Cond.WordBad, seq = SeqSrc.Literal, lit = Ucode.Sleep + 1),
+    (Ucode.Sleep + 2) -> retire(),
+
     // Bcc shared routine: taken -> PC += signext(disp8); not taken -> fetch.
     // cond nibble drives the CcInstr predicate (evaluated in Core).
     (Ucode.FetchEntry + 0x20) ->

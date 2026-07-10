@@ -40,7 +40,8 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     val ccr    = Ccr.instantiate(parameter)
     val bitop  = BitOperand.instantiate(parameter)
     val bcond  = BranchCond.instantiate(parameter)
-    val preds  = CorePredicates.instantiate(parameter)
+    val preds  = Option.when(parameter.strictDecode)(
+      CorePredicates.instantiate(parameter))
     val aluctl = CoreAluControl.instantiate(parameter)
     val ccrctl = CoreCcrControl.instantiate(parameter)
     val wb     = CoreWriteback.instantiate(parameter)
@@ -133,12 +134,15 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     val bitPrefixHead = (udec.io.seqSrc === SeqSrc.Literal.U(2)) & udec.io.seqAux
     val bitMemReturn = bitMemActive & (udec.io.seqSrc === SeqSrc.Return.U(2))
 
-    def connectPredicates() =
-      preds.io.firstOp := firstOp.asUInt
-      preds.io.ir := ir
-      preds.io.bitMemActive := bitMemActive
-      preds.io.bitMemWrite := bitMemWrite
-      preds.io.wakePend := irqctl.io.nmiPend | irqctl.io.irqPend
+    val wakePend = irqctl.io.nmiPend | irqctl.io.irqPend
+
+    def connectPredicates() = preds.foreach { p =>
+      p.io.firstOp := firstOp.asUInt
+      p.io.ir := ir
+      p.io.bitMemActive := bitMemActive
+      p.io.bitMemWrite := bitMemWrite
+      p.io.wakePend := wakePend
+    }
 
     connectPredicates()
 
@@ -260,8 +264,9 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
         udec.io.vclr.?(intRead.asBits.bit(5), intRead.asBits.bit(0)))
       useq.io.trapNum  := ir.asBits.bits(13, 12).asUInt
       useq.io.stepEn   := stepEn
-      useq.io.wordBad := preds.io.wordBad
-      useq.io.nibbleBad := preds.io.nibbleBad
+      useq.io.wordBad := preds.fold(false.B)(_.io.wordBad)
+      useq.io.nibbleBad := preds.fold(false.B)(_.io.nibbleBad)
+      useq.io.wakePend := wakePend
       when(stepEn & bitMemReturn) {
         bitMemActive := false.B
         bitMemWrite := false.B

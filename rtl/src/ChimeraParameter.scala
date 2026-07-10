@@ -6,11 +6,14 @@ import me.jiuyang.zaozi.*
 import me.jiuyang.zaozi.default.{*, given}
 
 /** Core parameters. H8/300H is disabled by default; the LUT budget is measured
-  * with it off.
+  * with it off. strictDecode adds the illegal-encoding guards (WordBad and
+  * NibbleBad predicates plus their guard microwords); without it the guards
+  * are elided and their cond code tests the sleep wake signal instead.
   */
 case class ChimeraParameter(
-  h8300h:      Boolean = false,
-  resetVector: Int = 0
+  h8300h:       Boolean = false,
+  strictDecode: Boolean = false,
+  resetVector:  Int = 0
 ) extends Parameter:
   require(resetVector >= 0, "resetVector must be non-negative")
 

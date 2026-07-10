@@ -34,7 +34,8 @@ scala_args=(
 
 echo "[chimera-rtl] config"
 scala-cli run "${scala_args[@]}" "$src" -- \
-  config "$out/config.json" --h8300h "${H8300H:-false}" --resetVector "${RESET_VECTOR:-0}"
+  config "$out/config.json" --h8300h "${H8300H:-false}" \
+  --strictDecode "${STRICT_DECODE:-false}" --resetVector "${RESET_VECTOR:-0}"
 
 echo "[chimera-rtl] design"
 ( cd "$out" && scala-cli run "${scala_args[@]}" "$src" -- design "$out/config.json" )

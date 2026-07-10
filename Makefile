@@ -47,7 +47,7 @@ check-sleep:
 	vvp rtl/generated/sim_sleep
 
 check-trapa:
-	RESET_VECTOR=256 bash rtl/build.sh
+	RESET_VECTOR=256 STRICT_DECODE=true bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/sim_trapa test/core/tb_core_trapa.v \
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_trapa
@@ -71,7 +71,7 @@ check-flags:
 	vvp rtl/generated/sim_flags
 
 check-ccr:
-	bash rtl/build.sh
+	STRICT_DECODE=true bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/sim_ccr test/core/tb_core_ccr.v \
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_ccr
@@ -155,19 +155,19 @@ check-mem-disp:
 	vvp rtl/generated/sim_mem_disp
 
 check-mem-abs:
-	bash rtl/build.sh
+	STRICT_DECODE=true bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/sim_mem_abs test/core/tb_core_mem_abs.v \
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_mem_abs
 
 check-word-reg:
-	bash rtl/build.sh
+	STRICT_DECODE=true bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/sim_word_reg test/core/tb_core_word_reg.v \
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_word_reg
 
 check-adds-subs:
-	bash rtl/build.sh
+	STRICT_DECODE=true bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/sim_adds_subs test/core/tb_core_adds_subs.v \
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_adds_subs
@@ -191,13 +191,13 @@ check-daa-das:
 	vvp rtl/generated/sim_daa_das
 
 check-mulxu:
-	bash rtl/build.sh
+	STRICT_DECODE=true bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/sim_mulxu test/core/tb_core_mulxu.v \
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_mulxu
 
 check-divxu:
-	bash rtl/build.sh
+	STRICT_DECODE=true bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/sim_divxu test/core/tb_core_divxu.v \
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_divxu

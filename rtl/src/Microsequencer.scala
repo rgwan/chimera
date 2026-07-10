@@ -31,6 +31,7 @@ class MicrosequencerIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val trapNum  = Flipped(UInt(2))
   val wordBad  = Flipped(Bool())
   val nibbleBad = Flipped(Bool())
+  val wakePend = Flipped(Bool())
   val upc      = Aligned(UInt(parameter.upcBits))
   val retire   = Aligned(Bool())
   val irqAck   = Aligned(Bool())
@@ -75,8 +76,12 @@ object Microsequencer
     when(io.cond === Cond.IntBit.U(3))(pred := io.intBit)
     when(io.cond === Cond.CcInstr.U(3))(pred := io.ccTaken)
     when(io.cond === Cond.LoopNZ.U(3))(pred := loopCount =/= 0.U(4))
-    when(io.cond === Cond.WordBad.U(3))(pred := io.wordBad)
-    when(io.cond === Cond.NibbleBad.U(3))(pred := io.nibbleBad)
+    if parameter.strictDecode then
+      when(io.cond === Cond.WordBad.U(3))(pred := io.wordBad)
+      when(io.cond === Cond.NibbleBad.U(3))(pred := io.nibbleBad)
+    else
+      // guards elided: the WordBad code holds the sleep wait loop instead
+      when(io.cond === Cond.WordBad.U(3))(pred := !io.wakePend)
 
     val nxt = Wire(UInt(parameter.upcBits))
     nxt := seqNext

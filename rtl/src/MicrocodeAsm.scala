@@ -361,11 +361,12 @@ object MicrocodeImage:
       (sub + 2) -> MW(seq = SeqSrc.Literal, lit = base + 13)
     )
 
-  /** Routines by ROM address. Instruction routines sit at ROM[dispatch]; the
-    * fetch mainloop and multi-step tails live in upper ROM (>= FetchEntry).
-    * Unlisted addresses read as the all-zero word (SeqSrc.Next no-op).
+  /** Routines by ROM address, authored in strict-decode form. Instruction
+    * routines sit at ROM[dispatch]; the fetch mainloop and multi-step tails
+    * live in upper ROM (>= FetchEntry). Unlisted addresses read as the
+    * all-zero word (SeqSrc.Next no-op).
     */
-  val program: Map[Int, MW] = Map(
+  private val strictProgram: Map[Int, MW] = Map(
     Ucode.Retire -> MW(seq = SeqSrc.Return),
     Ucode.DebugEntry -> debugEntryWord,
     Ucode.FetchEntry ->                       // issue fetch at PC
@@ -863,33 +864,57 @@ object MicrocodeImage:
       we = true, seq = SeqSrc.Literal, lit = Ucode.BitPrefixExt, aux = true)) ++
     bitDispatchEntries
   fixedEntries.foreach { case (address, word) =>
-    require(program.get(address).contains(word),
+    require(strictProgram.get(address).contains(word),
       f"microcode entry 0x$address%03x was overwritten")
   }
   private val debugRange = (Ucode.DebugEntry until
     (Ucode.DebugEntry + Ucode.DebugSlots)).toSet
-  require(program.keySet.intersect(debugRange) == Set(Ucode.DebugEntry),
+  require(strictProgram.keySet.intersect(debugRange) == Set(Ucode.DebugEntry),
     "reserved debug microcode range is occupied")
-  private val missingTargets = program.collect {
-    case (address, word) if word.seq == SeqSrc.Literal && !program.contains(word.lit) =>
+  private val missingTargets = strictProgram.collect {
+    case (address, word) if word.seq == SeqSrc.Literal && !strictProgram.contains(word.lit) =>
       f"0x$address%03x -> 0x${word.lit}%03x"
   }
   require(missingTargets.isEmpty,
     s"microcode literal targets are missing: ${missingTargets.toSeq.sorted.mkString(", ")}")
-  require(program.collect {
+  require(strictProgram.collect {
     case (address, word) if word.seq == SeqSrc.Return && !word.aux => address
   }.toSet == Set(Ucode.Retire), "retire-point encoding is not unique")
-  require(program.collect {
+  require(strictProgram.collect {
     case (address, word) if word.seq == SeqSrc.Literal && word.aux => address
   }.toSet == Set(0x7e, 0x7f, 0xfe, 0xff, Ucode.BitPrefixR16 + 1),
     "bit-prefix encoding is not unique")
-  require(program.collect {
+  require(strictProgram.collect {
     case (address, word) if word.bSel == BSel.Lit && (word.lit & 0x100) != 0 =>
       address -> (word.lit & 1)
   } == Map(Ucode.FetchEntry + 0x34 -> 1,
     Ucode.FetchEntry + 0xa2 -> 0, Ucode.FetchEntry + 0xa5 -> 0),
     "special-literal encoding is not unique")
 
+  /** Without strict decode the guard words vanish. A removed word reads as the
+    * all-zero no-op, so fall-through chains still work; jumps that entered a
+    * routine at its guard are retargeted past it. The sleep wait word also
+    * carries Cond.WordBad but branches to itself, so it survives and the
+    * freed cond code tests the wake signal.
+    */
+  private val leanProgram: Map[Int, MW] =
+    val guards = strictProgram.collect {
+      case (addr, w)
+          if (w.cond == Cond.WordBad || w.cond == Cond.NibbleBad) &&
+            w.seq == SeqSrc.Literal && w.lit != addr =>
+        require(!w.we && w.bus == BusCtl.None && !w.aux,
+          f"guard word 0x$addr%03x does more than branch")
+        addr
+    }.toSet
+    def past(target: Int): Int = if guards(target) then past(target + 1) else target
+    strictProgram.collect {
+      case (addr, w) if !guards(addr) =>
+        addr -> (if w.seq == SeqSrc.Literal then w.copy(lit = past(w.lit)) else w)
+    }
+
+  def program(strictDecode: Boolean): Map[Int, MW] =
+    if strictDecode then strictProgram else leanProgram
+
   /** Sparse image: only authored addresses; the ROM defaults the rest to zero. */
-  val sparse: Seq[(Int, BigInt)] =
-    program.toSeq.sortBy(_._1).map { case (a, mw) => (a, mw.encode) }
+  def sparse(strictDecode: Boolean): Seq[(Int, BigInt)] =
+    program(strictDecode).toSeq.sortBy(_._1).map { case (a, mw) => (a, mw.encode) }

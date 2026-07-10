@@ -161,33 +161,22 @@ At instruction-retire granularity:
 
 ## Configuration
 
-`ChimeraParameter` selects the build; `rtl/build.sh` reads the matching
-environment variables. One line per configuration:
+`ChimeraParameter` selects the build. `strict` (`STRICT_DECODE=true`) adds
+the `CorePredicates` guards and their guard microwords, so illegal encodings
+retire as no-ops exactly like the Sail model's reject cases; it is the
+configuration for decoder-equivalence work. `lean` (default) elides the
+guards, reuses the freed cond code for the sleep wake test, and drops one
+cycle from every guarded routine; illegal encodings are undefined. H8/300H
+stays disabled by default.
 
-```bash
-make rtl-verilog                       # lean (default)
-STRICT_DECODE=true make rtl-verilog    # strict
-ROM_HEX=true make rtl-verilog          # readmemh microcode ROM
-```
+`ROM_HEX=true` composes with either: elaboration writes the microcode image
+to `urom.memh` and the build swaps in `rtl/verilog/MicrocodeRomHex.sv`, a
+drop-in `MicrocodeRom` that loads the image with `readmemh` so FPGA tools
+infer block RAM. The default when-chain ROM stays self-contained for
+simulation and synthesizes to gates for ASIC.
 
-| | `lean` (default) | `strict` (`STRICT_DECODE=true`) |
-|---|---|---|
-| Illegal encodings | undefined behavior | guarded, retire as no-op |
-| LUT4 / LUT5 (yosys generic, µROM as BRAM) | 751 / 612 | 802 / 620 |
-| Microcode words | 371 / 512 | 393 / 512 |
-| Logic depth (LUT5 levels) | 19 | 19 |
-
-`strict` adds the `CorePredicates` guards and their guard microwords; `lean`
-reuses the freed cond code for the sleep wake test and drops one cycle from
-every guarded routine. Guard checks are identical to the Sail model's reject
-cases, so `strict` is the configuration for decoder-equivalence work; `lean`
-is the area target. H8/300H stays disabled by default.
-
-`ROM_HEX=true` composes with either configuration: elaboration writes the
-microcode image to `urom.memh` and the build swaps in
-`rtl/verilog/MicrocodeRomHex.sv`, a drop-in `MicrocodeRom` that loads the
-image with `readmemh` so FPGA tools infer block RAM. The default when-chain
-ROM stays self-contained for simulation.
+Build commands are in the README; measured area, timing, and power per
+configuration are in [metrics.md](metrics.md).
 
 ## Deferred
 

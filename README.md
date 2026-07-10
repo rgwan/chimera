@@ -13,21 +13,24 @@ H8/300 instruction set is implemented and verified against a Sail model.
 
 ## Configurations
 
-| | `lean` (default) | `strict` |
+| Config | For | Headline |
 |---|---|---|
-| Illegal encodings | undefined behavior | guarded, retire as no-op |
-| Core area (LUT4, µROM as BRAM) | 751 | 802 |
+| `lean` (default) | smallest core | 751 LUT4 |
+| `strict` | illegal encodings retire as no-op | 802 LUT4 |
+| `fpga` | lean with a block-RAM microcode ROM | 751 LUT4 + 2 BRAM |
+| `asic` | synthesis-ready file set | 7.4k gates, 1 GHz post-route |
 
-One line per configuration; flags compose:
+Each builds with one line:
 
 ```bash
-make rtl-verilog                       # lean (default)
-STRICT_DECODE=true make rtl-verilog    # strict
-ROM_HEX=true make rtl-verilog          # readmemh microcode ROM (BRAM)
+nix build .#rtl-lean                   # lean (default)
+nix build .#rtl-strict                 # strict
+nix build .#rtl-fpga                   # lean + block-RAM microcode ROM
+nix build .#rtl-asic                   # synthesis file set
 ```
 
-Details and the full comparison are in
-[doc/microarchitecture.md](doc/microarchitecture.md).
+Full numbers and methods are in [doc/metrics.md](doc/metrics.md); the
+design itself is in [doc/microarchitecture.md](doc/microarchitecture.md).
 
 ## Build and verify
 

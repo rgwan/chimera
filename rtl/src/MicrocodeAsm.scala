@@ -150,7 +150,7 @@ object MicrocodeImage:
                        target: Int): Seq[(Int, MW)] =
     Seq(
       addr -> MW(aSel = ASel.Int, intIdx = idx, bSel = BSel.Lit,
-                 lit = threshold, alu = AluOp.Cmp, cond = Cond.AluGe),
+                 lit = threshold, alu = AluOp.Sub, cond = Cond.AluGe),
       (addr + 1) -> MW(cond = Cond.AluGe, seq = SeqSrc.Literal, lit = target)
     )
 
@@ -331,7 +331,7 @@ object MicrocodeImage:
                         intIdx = IntIdx.IReg, alu = AluOp.Adc, size = 1,
                         wsel = WSel.Int, we = true),
       (base + 11) -> MW(aSel = ASel.Int, bSel = BSel.Int,
-                        intIdx = IntIdx.IReg, alu = AluOp.Cmp, size = 1,
+                        intIdx = IntIdx.IReg, alu = AluOp.Sub, size = 1,
                         vclr = true, cond = Cond.AluGe),
       (base + 12) -> MW(cond = Cond.AluGe, seq = SeqSrc.Literal,
                         lit = sub),
@@ -418,9 +418,9 @@ object MicrocodeImage:
     0x06 -> retire(MW(aSel = ASel.Special, bSel = BSel.Imm8,
                alu = AluOp.And, flag = FlagCtl.LoadCcr)),
 
-    // not.b Rd (0x17): Rd = ~Rd, set N/Z clear V
-    0x17 -> retire(MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.Not, flag = FlagCtl.Nz,
-               wsel = WSel.H8, we = true)),
+    // not.b Rd (0x17): Rd = Rd ^ 0xff, set N/Z clear V
+    0x17 -> retire(MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, bSel = BSel.Lit, lit = 0xff,
+               alu = AluOp.Xor, flag = FlagCtl.Nz, wsel = WSel.H8, we = true)),
     // neg.b Rd (m-class 0xD7): Rd = 0 - Rd
     0xd7 -> retire(MW(aSel = ASel.Zero, bSel = BSel.H8, h8Idx = H8Idx.RdReg, alu = AluOp.Sub,
                flag = FlagCtl.AddSub, wsel = WSel.H8, we = true)),
@@ -473,7 +473,7 @@ object MicrocodeImage:
     0x83 -> retire(MW(aSel = ASel.H8, bSel = BSel.Imm8, h8Idx = H8Idx.RdImm, alu = AluOp.Sbc,
                flag = FlagCtl.StickyZ, wsel = WSel.H8, we = true)),
     // cmp.b #imm,Rd (flags only, no writeback)
-    0x82 -> retire(MW(aSel = ASel.H8, bSel = BSel.Imm8, h8Idx = H8Idx.RdImm, alu = AluOp.Cmp,
+    0x82 -> retire(MW(aSel = ASel.H8, bSel = BSel.Imm8, h8Idx = H8Idx.RdImm, alu = AluOp.Sub,
                flag = FlagCtl.AddSub)),
     // or.b #imm,Rd
     0x84 -> retire(MW(aSel = ASel.H8, bSel = BSel.Imm8, h8Idx = H8Idx.RdImm, alu = AluOp.Or,
@@ -813,7 +813,7 @@ object MicrocodeImage:
     regReg2(0x14, Ucode.FetchEntry + 0x13, AluOp.Or,  FlagCtl.Nz,     true).toMap ++
     regReg2(0x15, Ucode.FetchEntry + 0x14, AluOp.Xor, FlagCtl.Nz,     true).toMap ++
     regReg2(0x16, Ucode.FetchEntry + 0x15, AluOp.And, FlagCtl.Nz,     true).toMap ++
-    regReg2(0x1c, Ucode.FetchEntry + 0x16, AluOp.Cmp, FlagCtl.AddSub, false).toMap ++
+    regReg2(0x1c, Ucode.FetchEntry + 0x16, AluOp.Sub, FlagCtl.AddSub, false).toMap ++
     // reg-reg mov/addx (ooo=0, single dispatch) and subx (m-class)
     regReg2(0x0c, Ucode.FetchEntry + 0x17, AluOp.Pass, FlagCtl.Nz, true, false).toMap ++
     regReg2(0x0e, Ucode.FetchEntry + 0x18, AluOp.Adc, FlagCtl.AddSub, true, false).toMap ++
@@ -822,7 +822,7 @@ object MicrocodeImage:
     regReg2Word(0x09, Ucode.FetchEntry + 0x72, AluOp.Add, FlagCtl.AddSub, true).toMap ++
     regReg2Word(0x0d, Ucode.FetchEntry + 0x75, AluOp.Pass, FlagCtl.Nz, true).toMap ++
     regReg2Word(0x19, Ucode.FetchEntry + 0x78, AluOp.Sub, FlagCtl.AddSub, true).toMap ++
-    regReg2Word(0x1d, Ucode.FetchEntry + 0x7b, AluOp.Cmp, FlagCtl.AddSub, false).toMap ++
+    regReg2Word(0x1d, Ucode.FetchEntry + 0x7b, AluOp.Sub, FlagCtl.AddSub, false).toMap ++
     bcd().toMap ++
     mulxu(Ucode.Mulxu).toMap ++
     divxu(Ucode.Divxu, Ucode.DivxuSub).toMap ++

@@ -34,7 +34,7 @@ object Alu extends Generator[ChimeraParameter, ChimeraLayers, AluIO, ChimeraProb
     val b  = io.b.asBits
 
     def isOp(c: Int) = io.op === c.U(4)
-    val isSub = isOp(AluOp.Sub) | isOp(AluOp.Cmp) | isOp(AluOp.Sbc)
+    val isSub = isOp(AluOp.Sub) | isOp(AluOp.Sbc)
     val isAdd = isOp(AluOp.Add) | isOp(AluOp.Adc)
     val isRol = isOp(AluOp.Rol)
 
@@ -45,7 +45,7 @@ object Alu extends Generator[ChimeraParameter, ChimeraLayers, AluIO, ChimeraProb
     val cinEff = Wire(Bool())
     cinEff := false.B
     when(isOp(AluOp.Adc))(cinEff := io.cin)
-    when(isOp(AluOp.Sub) | isOp(AluOp.Cmp))(cinEff := true.B)
+    when(isOp(AluOp.Sub))(cinEff := true.B)
     when(isOp(AluOp.Sbc))(cinEff := !io.cin)
     when(isRol)(cinEff := a.bit(7))
 
@@ -67,29 +67,28 @@ object Alu extends Generator[ChimeraParameter, ChimeraLayers, AluIO, ChimeraProb
     val rawH = io.word.?(wordHalf, byteHalf)
     io.hout := isSub.?((!rawH), rawH)              // half-borrow = ~carry on subtract
 
-    // right shift / rotate keep a dedicated 1-bit path (byte datapath)
-    val shlr = 0.B(1) ## a.bits(7, 1)              // logical right
-    val shar = a.bit(7).asBits ## a.bits(7, 1)     // arithmetic right
-    val ror  = a.bit(0).asBits ## a.bits(7, 1)
-    val rorc = io.cin.asBits ## a.bits(7, 1)
+    // right shift / rotate share one 1-bit path; only the injected MSB differs
+    val shiftMsb = Wire(Bool())
+    shiftMsb := false.B                            // Shr1: logical right
+    when(isOp(AluOp.Shar))(shiftMsb := a.bit(7))
+    when(isOp(AluOp.Ror))(shiftMsb := a.bit(0))
+    when(isOp(AluOp.Rorc))(shiftMsb := io.cin)
+    val shiftY = shiftMsb.asBits ## a.bits(7, 1)
 
     val logic = Wire(UInt(parameter.dataWidth))
     logic := (a & b).asUInt
     when(isOp(AluOp.Or))(logic := (a | b).asUInt)
     when(isOp(AluOp.Xor))(logic := (a ^ b).asUInt)
-    when(isOp(AluOp.Not))(logic := (~a).asUInt)
     when(isOp(AluOp.Pass))(logic := io.b)
     when(isOp(AluOp.PassA))(logic := io.a)
 
-    // result: adder ops (add/sub/adc/sbc/cmp and rol) default to addY
+    // result: adder ops (add/sub/adc/sbc and rol) default to addY
     val y = Wire(UInt(parameter.dataWidth))
     y := addY.asUInt
-    when(isOp(AluOp.And) | isOp(AluOp.Or) | isOp(AluOp.Xor) | isOp(AluOp.Not) |
+    when(isOp(AluOp.And) | isOp(AluOp.Or) | isOp(AluOp.Xor) |
       isOp(AluOp.Pass) | isOp(AluOp.PassA))(y := logic)
-    when(isOp(AluOp.Shar))(y := shar.asUInt)
-    when(isOp(AluOp.Shr1))(y := shlr.asUInt)
-    when(isOp(AluOp.Ror))(y := ror.asUInt)
-    when(isOp(AluOp.Rorc))(y := rorc.asUInt)
+    when(isOp(AluOp.Shar) | isOp(AluOp.Shr1) | isOp(AluOp.Ror) |
+      isOp(AluOp.Rorc))(y := shiftY.asUInt)
     io.y := y
 
     // carry-out: add carry / sub borrow / rol carry (old bit7) / right shift-out

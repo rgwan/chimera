@@ -15,9 +15,9 @@ module tb_alu;
   Alu dut (.a(a), .b(b), .cin(cin), .op(op), .word(word),
            .y(y), .cout(cout), .vout(vout), .hout(hout));
 
-  // op codes
-  localparam ADD=0, SUB=1, ADC=2, SBC=3, ANDo=4, ORo=5, XORo=6, NOTo=7,
-             PASS=8, CMP=9, SHAR=10, SHR1=11, ROL=12, ROR=13, RORC=14;
+  // op codes; compare = SUB without writeback, not = XOR with 0xff
+  localparam ADD=0, SUB=1, ADC=2, SBC=3, ANDo=4, ORo=5, XORo=6,
+             PASS=8, SHAR=10, SHR1=11, ROL=12, ROR=13, RORC=14;
 
   task chk(input [3:0] o, input [15:0] ia, input [15:0] ib, input ic, input iw,
            input [15:0] ey, input ec, input ev, input eh, input ckh);
@@ -52,14 +52,14 @@ module tb_alu;
     chk(SUB, 16'h05, 16'h03, 0, 0, 16'h02, 0,0,0, 1);
     chk(SUB, 16'h00, 16'h01, 0, 0, 16'hFF, 1,0,1, 1);
     chk(SUB, 16'h80, 16'h01, 0, 0, 16'h7F, 0,1,1, 1);
-    chk(CMP, 16'h05, 16'h05, 0, 0, 16'h00, 0,0,0, 1);
+    chk(SUB, 16'h05, 16'h05, 0, 0, 16'h00, 0,0,0, 1); // compare form
     chk(SBC, 16'h05, 16'h03, 1, 0, 16'h01, 0,0,0, 1);
     chk(SBC, 16'h05, 16'h03, 0, 0, 16'h02, 0,0,0, 1);
     chk(SBC, 16'h00, 16'h00, 1, 0, 16'hFF, 1,0,1, 1);
     chk(ANDo,16'h0F, 16'hF0, 0, 0, 16'h00, 1,0,0, 0); // cout=a[0]=1 (unused)
     chk(ORo, 16'h0F, 16'hF0, 0, 0, 16'hFF, 1,0,0, 0);
     chk(XORo,16'hFF, 16'h0F, 0, 0, 16'hF0, 1,0,0, 0);
-    chk(NOTo,16'h0F, 16'h00, 0, 0, 16'hF0, 1,0,0, 0);
+    chk(XORo,16'h0F, 16'hFF, 0, 0, 16'hF0, 1,0,0, 0); // not form
     chk(ADD, 16'h81, 16'h81, 0, 0, 16'h02, 1,1,0, 1); // left shift SHLL/SHAL raw
     chk(SHR1,16'h81, 16'h00, 0, 0, 16'h40, 1,0,0, 0); // SHLR
     chk(SHAR,16'h81, 16'h00, 0, 0, 16'hC0, 1,0,0, 0);

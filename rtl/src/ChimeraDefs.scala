@@ -47,15 +47,13 @@ object Cond:
   */
 object AluOp:
   val Add   = 0
-  val Sub   = 1
+  val Sub   = 1 // compare = Sub without writeback
   val Adc   = 2
   val Sbc   = 3
   val And   = 4
   val Or    = 5
-  val Xor   = 6
-  val Not   = 7
+  val Xor   = 6 // not = Xor with lit 0xff
   val Pass  = 8
-  val Cmp   = 9
   val Shar  = 10 // arithmetic right
   val Shr1  = 11 // logical right
   val Rol   = 12 // rotate left (adder with cin = old bit7)

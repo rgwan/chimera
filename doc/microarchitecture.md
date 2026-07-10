@@ -2,10 +2,11 @@
 
 Hybrid-microcode, multi-cycle H8/300 core. Hardware coarse pre-decode produces
 a microcode-ROM dispatch address; microcode does fine decode and execution.
-FPGA-first, minimal area. H8/300H is disabled by default; the area budget is
-measured with it off.
+FPGA-first, minimal area. Two configurations: `lean` (default) omits the
+illegal-encoding guards, `strict` keeps them. H8/300H is disabled by default;
+the area budget is measured with it off.
 
-![Datapath](diagrams/datapath.drawio.svg)
+![Core](diagrams/chimera-core.drawio.svg)
 
 ## Coarse pre-decode
 
@@ -28,27 +29,35 @@ microcode via the next-µPC jump table.
 ## Microsequencer
 
 - `µPC` (9-bit) indexes the microcode ROM (512 × 36, 2 × M9K).
-- next-µPC sources: `seq+1`, `literal` (absolute micro-branch to the microword
-  literal field, gated by `cond`), coarse `dispatch` / `jump-table` (second-level,
-  folds `word[7:4]`/`ext[15:8]` in one step), `return`.
-- One-level call/return stack. Enables the memory-bit prefix family as a called
-  subroutine.
+- next-µPC sources: `seq+1`, `literal` (absolute micro-branch gated by `cond`),
+  coarse `dispatch` (second-level jump-table), `return` (two-word retire).
+- `seq_aux` qualifies the source: `next`+aux loads the 4-bit loop counter from
+  `literal[3:0]`, `dispatch`+aux arms a trap, `return`+aux requests retire.
+- At retire a fixed-priority selector picks the next entry:
+  debug > NMI > trap > IRQ > fetch.
 
 ## Microword (36 bit = 4 × 9)
 
 | Bits | Field | Encoding |
 |---|---|---|
 | 35:27 | literal | absolute next-µPC target / immediate constant |
-| 26:25 | seq_src | seq+1 / literal / dispatch·jump-table / return |
-| 24:22 | cond | micro-branch predicate (none, Z, C, bus-rdy, cc-from-instr, irq) |
-| 21:18 | alu_op | add sub adc sbc and or xor not pass cmp shl1 shr1 rol ror rolc rorc |
-| 17:15 | a_sel | ALU A source |
-| 14:12 | b_sel | ALU B source |
-| 11:10 | rd_grp | destination group (H8 / internal, rd / rs2) |
-| 9 | reg_we | register write enable |
-| 8:6 | flag_ctl | flag update group |
-| 5:3 | bus_ctl | none / fetch / read / write / rmw |
-| 2:0 | misc | PC step (+2 / +4 / load), operand size (B/W), call/ret |
+| 26:25 | seq_src | seq+1 / literal / dispatch / return |
+| 24:22 | cond | none, Z, alu-ge, int-bit, cc-from-instr, loop-nz, word-guard, nibble-guard |
+| 21:18 | alu_op | add sub adc sbc and or xor pass shar shr1 rol ror rorc pass-a |
+| 17:16 | a_sel | H8 / internal / zero / special (BIU read or CCR) |
+| 15:14 | b_sel | H8 / imm8 / internal / literal |
+| 13:12 | h8_idx | which extracted field indexes the H8 file |
+| 11:10 | int_idx | internal file index (PC / IREG / TEMP / AUX) |
+| 9 | wsel | writeback target (H8 / internal) |
+| 8 | reg_we | register write enable |
+| 7:5 | flag_ctl | flag update group |
+| 4:3 | bus_ctl | none / fetch / read / write |
+| 2 | size | byte / word |
+| 1 | seq_aux | loop init / trap arm / retire (by seq_src) |
+| 0 | vclear | force V=0; with the pointer index also selects SP |
+
+In the `lean` configuration the two guard predicates are removed and the
+word-guard code holds the sleep wait loop (branch while no wake event).
 
 ## Operands
 
@@ -60,10 +69,11 @@ bit. The instruction word is a readable internal register.
 ## Register files
 
 Two separate 1R1W files: the H8 file (`R0–R7`, 8 × 16, byte-addressable as
-`RnH`/`RnL`) and the microsequencer internal file (`PC`, `IREG`, `TEMP`). They are
-split because a 2R1W file equals 2 × 1R1W in FPGA area and microcode never
-dual-reads the H8 file; one operand is read from each file in parallel. Two
-H8-source ops read the H8 file over two cycles (+1 step).
+`RnH`/`RnL`) and the microsequencer internal file (`PC`, `IREG`, `TEMP`, `AUX`).
+They are split because a 2R1W file equals 2 × 1R1W in FPGA area and microcode
+never dual-reads the H8 file; one operand is read from each file in parallel.
+Two H8-source ops read the H8 file over two cycles (+1 step). `AUX` holds the
+saved CCR across the divide loop and gives microcode a fourth scratch slot.
 
 ## Fetch and memory access
 
@@ -75,23 +85,24 @@ next-PC path.
 
 ## Execution
 
-- ALU: add, sub, logic, compare, and 1-bit shift/rotate through C. No barrel
-  shifter. Left shift = `r + r`; right shift and rotate-through-carry use the
-  shift path.
+- ALU: add, sub, logic, and 1-bit shift/rotate through C. No barrel shifter.
+  Left shift = `r + r`; the right shifts and rotates share one path that only
+  muxes the injected MSB. Compare = sub without writeback; not = xor `0xff`.
 - No hardware multiply/divide. MULXU (8 iterations) and DIVXU (16 iterations,
-  restoring) are microcode loops.
+  restoring) are microcode loops driven by the 4-bit loop counter.
 - Flags: V and C in hardware; N, Z, H in microcode. CCR order `H N Z V C`.
 
-## Interrupts
+## Interrupts, traps, sleep
 
-`irq`/`nmi` are latched into a status bit exposed as one µbranch predicate
-(alongside Z/C). The microcode main loop issues a conditional micro-call at
-instruction-retire boundaries (`if(irq) call irq_proc`); when taken (and, for
-`irq`, allowed by `CCR.I`), `irq_proc` performs the H8 exception sequence — push
-PC, push CCR, set `I`, load the vector. The only interrupt hardware is the latch;
-priority and context save are microcode, and `irq` reaches µPC only through that
-conditional call, never as an async hardware steer. Per-instruction retire
-equivalence is therefore unaffected.
+`irq` and `nmi` latch separately; `irq` pending is gated by `CCR.I`. The retire
+selector routes the next entry by fixed priority (debug > NMI > trap > IRQ >
+fetch), so exceptions are taken only at retire boundaries and per-instruction
+retire equivalence with Sail is unaffected. The shared exception microcode
+pushes PC and CCR, sets `I`, and loads the latched vector. TRAPA (`0x57`)
+arms a synchronous trap serviced at its own retire; trap #2 routes to the
+reserved debug entry ahead of NMI. SLEEP parks in a one-word microcode wait
+loop with no bus traffic until any wake source (NMI, unmasked IRQ, debug)
+ends it; the stacked PC is the next instruction address.
 
 ## Memory-bit prefix family
 
@@ -121,17 +132,22 @@ the core never speaks AXI.
 |---|---|
 | `Biu` | µcode-driven bus master, fetch + data |
 | `SramBus` | `addr/di/do/we/wmask/req/rdy` bundle |
-| `AxiLiteWrapper` | optional 32-bit AXI4-Lite front |
 | `CoarseDecoder` | 3-way pre-decode → 8-bit dispatch |
-| `Microsequencer` | µPC, next-µPC mux, call/return stack |
-| `MicrocodeRom` | 512 × 36 |
+| `Microsequencer` | µPC, next-µPC mux, loop counter, retire selector |
+| `MicrocodeRom` | 512 × 36, image selected by configuration |
 | `MicroDecode` | µword field decode |
 | `OperandExtract` | hardwired field muxes |
 | `H8RegFile` | R0–R7, 1R1W |
-| `IntRegFile` | PC / IREG / TEMP, 1R1W |
+| `IntRegFile` | PC / IREG / TEMP / AUX, 1R1W |
 | `Alu` | add/sub/logic, 1-bit shift |
-| `FlagUnit` | V/C hardware |
+| `BitOperand` | bit-op mask and bit extraction |
+| `BranchCond` | 16-condition Bcc evaluator |
 | `Ccr` | CCR register |
+| `CoreAluControl` | operand muxes |
+| `CoreCcrControl` | flag update routing |
+| `CoreIrqControl` | pending latches, vector address |
+| `CorePredicates` | illegal-encoding guards (`strict` only) |
+| `CoreWriteback` | write path, byte lanes |
 | `Core` | top |
 
 ## Verification obligations
@@ -146,5 +162,26 @@ At instruction-retire granularity:
 
 ## Configuration
 
-H8/300H disabled by default (`H8_300H_ENABLE = 0`); the area target is measured in
-this configuration.
+`ChimeraParameter` selects the build; `rtl/build.sh` reads the matching
+environment variables (`STRICT_DECODE`, `H8300H`, `RESET_VECTOR`).
+
+| | `lean` (default) | `strict` (`STRICT_DECODE=true`) |
+|---|---|---|
+| Illegal encodings | undefined behavior | guarded, retire as no-op |
+| LUT4 / LUT5 (yosys generic, µROM as BRAM) | 751 / 612 | 802 / 620 |
+| Microcode words | 371 / 512 | 393 / 512 |
+| Logic depth (LUT5 levels) | 19 | 19 |
+
+`strict` adds the `CorePredicates` guards and their guard microwords; `lean`
+reuses the freed cond code for the sleep wake test. Guard checks are identical
+to the Sail model's reject cases, so `strict` is the configuration for
+decoder-equivalence work; `lean` is the area target. H8/300H stays disabled by
+default and the area target is measured with it off.
+
+## Deferred
+
+- Platform vector table (reset SP/PC in the table, NMI/TRAPA/IRQ slots) —
+  layout agreed, adoption pending; changes every boot image.
+- Debug module and unified TRAPA #2 / hardware-breakpoint behavior — waiting
+  on the debug specification. The debug entry, retire priority, and reserved
+  microcode region are already in place.

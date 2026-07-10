@@ -149,5 +149,6 @@ object Ucode:
   val Mulxu = FetchEntry + 0xc4
   val Divxu = FetchEntry + 0xcf
   val DivxuSub = Divxu + 20
+  val Trapa = FetchEntry + 0xac
   val Daa = FetchEntry + 0xe7
   val DaaDecision = Daa + 2

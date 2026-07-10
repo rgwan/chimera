@@ -779,6 +779,11 @@ object MicrocodeImage:
          alu = AluOp.Add, size = 1, wsel = WSel.H8, we = true),
     (Ucode.FetchEntry + 0x6d) -> retire(),
 
+    0x57 -> MW(seq = SeqSrc.Literal, lit = Ucode.Trapa),
+    Ucode.Trapa ->
+      MW(cond = Cond.NibbleBad, seq = SeqSrc.Literal, lit = Ucode.Retire),
+    (Ucode.Trapa + 1) -> MW(seq = SeqSrc.Dispatch, aux = true),
+
     // Bcc shared routine: taken -> PC += signext(disp8); not taken -> fetch.
     // cond nibble drives the CcInstr predicate (evaluated in Core).
     (Ucode.FetchEntry + 0x20) ->

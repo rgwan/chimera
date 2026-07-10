@@ -40,11 +40,15 @@ object CorePredicates
     val byteCcrPage = (io.firstOp === 0x02.U(8)) | (io.firstOp === 0x03.U(8))
     val addsSubsPage = (io.firstOp === 0x0b.U(8)) | (io.firstOp === 0x1b.U(8))
     val daaDasPage = (io.firstOp === 0x0f.U(8)) | (io.firstOp === 0x1f.U(8))
+    val trapaPage = io.firstOp === 0x57.U(8)
+    val trapaBad = (irBits.bits(15, 14) =/= 0.B(2)) |
+      (irBits.bits(11, 8) =/= 0.B(4))
     val normalNibbleBad = byteCcrPage.?(
       secondHigh =/= 0.B(4),
-      daaDasPage.?(secondHigh =/= 0.B(4),
-        addsSubsPage.?(irBits.bits(14, 11) =/= 0.B(4),
-          irBits.bits(14, 12) =/= 0.B(3))))
+      trapaPage.?(trapaBad,
+        daaDasPage.?(secondHigh =/= 0.B(4),
+          addsSubsPage.?(irBits.bits(14, 11) =/= 0.B(4),
+            irBits.bits(14, 12) =/= 0.B(3)))))
     val bitPrefixR16 = (!io.bitMemActive) & bitPrefixOp & (!opBits.bit(1))
     val bitPrefixR16Bad = irBits.bit(15) | (irBits.bits(11, 8) =/= 0.B(4))
     val bitMemExtLowBad = irBits.bits(11, 8) =/= 0.B(4)

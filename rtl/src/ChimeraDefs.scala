@@ -20,7 +20,7 @@ object MicroWord:
   val FLAG_CTL = (7, 5)
   val BUS_CTL  = (4, 3)   // BusCtl
   val SIZE     = (2, 2)   // 0 = byte, 1 = word
-  val CALL     = (1, 1)   // with SeqSrc.Literal, push uPC+1 (subroutine call)
+  val SEQ_AUX  = (1, 1)   // Next=loop init, Dispatch=trap, Return=retire
   val VCLEAR   = (0, 0)   // force V=0; with H8Idx.Ptr, also selects SP = R7
 
 /** next-uPC source select. */
@@ -28,16 +28,16 @@ object SeqSrc:
   val Next     = 0 // uPC + 1
   val Literal  = 1 // absolute branch to the literal field (gated by cond)
   val Dispatch = 2 // coarse dispatch / second-level jump-table
-  val Return   = 3 // pop the call/return stack
+  val Return   = 3 // two-word retire protocol
 
 /** Micro-branch predicate. */
 object Cond:
   val None     = 0
   val Z        = 1
-  val C        = 2
-  val BusRdy   = 3
+  val AluGe    = 2
+  val IntBit   = 3 // internal bit 0/5/6 selected by vclr/size
   val CcInstr  = 4 // branch condition selected from instr[11:8]
-  val Irq      = 5 // pending interrupt latched
+  val LoopNZ   = 5
   val WordBad  = 6 // word-form guard selected from the current opcode page
   val NibbleBad = 7 // page-specific second-byte high-nibble guard
 
@@ -86,7 +86,7 @@ object ASel:
   val H8   = 0 // H8 register read (index from H8_IDX)
   val Int  = 1 // internal register read (index from INT_IDX)
   val Zero = 2
-  val Mem  = 3 // BIU read data (natural big-endian, for loads / ext words)
+  val Special = 3 // BIU read data for reads, otherwise CCR
 
 /** ALU B source. */
 object BSel:
@@ -107,7 +107,7 @@ object IntIdx:
   val PC   = 0
   val IReg = 1
   val Temp = 2
-  val CcrSrc = 3 // saved interrupt CCR source, not stored in IntRegFile
+  val Aux = 3
 
 /** Writeback target. */
 object WSel:
@@ -123,15 +123,31 @@ object Dispatch:
   * the reset/fetch mainloop lives in the upper half so the two never collide.
   */
 object Ucode:
+  val Retire = 0x88
   val FetchEntry = 0x100
+  val DebugEntry = 0x89
+  val DebugSlots = 32
+  val NmiEntry = FetchEntry + 0xab
+  val IrqEntry = FetchEntry + 0x30
   val BitPrefixExt = FetchEntry + 0xaf
   val BitPrefixPc = FetchEntry + 0xb0
   val BitPrefixGuard = FetchEntry + 0xb1
   val BitPrefixRead = FetchEntry + 0xb2
   val BitPrefixR16 = FetchEntry + 0xb3
-  val BitRegIndex = FetchEntry + 0xb5
-  val Daa = FetchEntry + 0xc0
-  val Das = FetchEntry + 0xc2
+  val BitBstStart = FetchEntry + 0xbe
+  val BitBstFinish = FetchEntry + 0xbf
+  val BcdFinish = FetchEntry + 0x02
+  val BcdAdjust = FetchEntry + 0x23
+  val DaaC1H1 = FetchEntry + 0x36
+  val Das = FetchEntry + 0x42
+  val DasDecision = FetchEntry + 0x45
+  val BcdCommon = FetchEntry + 0xb6
+  val BitRegBset = FetchEntry + 0xc0
+  val BitRegBnot = FetchEntry + 0xc1
+  val BitRegBclr = FetchEntry + 0xc2
+  val BitRegBtst = FetchEntry + 0xc3
   val Mulxu = FetchEntry + 0xc4
-  val Divxu = FetchEntry + 0x03
-  val DivxuSub = FetchEntry + 0xe7
+  val Divxu = FetchEntry + 0xcf
+  val DivxuSub = Divxu + 20
+  val Daa = FetchEntry + 0xe7
+  val DaaDecision = Daa + 2

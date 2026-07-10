@@ -55,22 +55,16 @@ object Alu extends Generator[ChimeraParameter, ChimeraLayers, AluIO, ChimeraProb
     val sum  = (a17 + be17 + ci).asBits            // 17-bit
     val addY = sum.bits(15, 0)
 
-    // byte carry needs its own low-byte add: bit8 of the 17-bit sum is polluted
-    // by the register high byte. Word carry is bit16.
-    val sumB = ((0.B(1) ## a.bits(7, 0)).asUInt + (0.B(1) ## bEff.bits(7, 0)).asUInt +
-      cinEff.?(1.U(9), 0.U(9))).asBits
-    val rawC = io.word.?(sum.bit(16), sumB.bit(8))
+    val byteCarry = sum.bit(8) ^ a.bit(8) ^ bEff.bit(8)
+    val rawC = io.word.?(sum.bit(16), byteCarry)
     val arithC = isSub.?((!rawC), rawC)            // borrow = ~carry on subtract
     // signed overflow via bEff (correct for both add and sub)
     val vB = (a.bit(7) === bEff.bit(7)) & (addY.bit(7) =/= a.bit(7))
     val vW = (a.bit(15) === bEff.bit(15)) & (addY.bit(15) =/= a.bit(15))
     val arithV = io.word.?(vW, vB)
-    // half carry/borrow using bEff/cinEff
-    val loNib = ((0.B(1) ## a.bits(3, 0)).asUInt + (0.B(1) ## bEff.bits(3, 0)).asUInt +
-      cinEff.?(1.U(5), 0.U(5))).asBits
-    val hiNib = ((0.B(1) ## a.bits(11, 0)).asUInt + (0.B(1) ## bEff.bits(11, 0)).asUInt +
-      cinEff.?(1.U(13), 0.U(13))).asBits
-    val rawH = io.word.?(hiNib.bit(12), loNib.bit(4))
+    val byteHalf = sum.bit(4) ^ a.bit(4) ^ bEff.bit(4)
+    val wordHalf = sum.bit(12) ^ a.bit(12) ^ bEff.bit(12)
+    val rawH = io.word.?(wordHalf, byteHalf)
     io.hout := isSub.?((!rawH), rawH)              // half-borrow = ~carry on subtract
 
     // right shift / rotate keep a dedicated 1-bit path (byte datapath)

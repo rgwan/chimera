@@ -12,16 +12,8 @@ import java.lang.foreign.Arena
 class CorePredicatesIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val firstOp      = Flipped(UInt(8))
   val ir           = Flipped(UInt(parameter.dataWidth))
-  val seqSrc       = Flipped(UInt(2))
-  val cond         = Flipped(UInt(3))
-  val intIdx       = Flipped(UInt(2))
-  val intRead      = Flipped(UInt(parameter.dataWidth))
-  val iregData     = Flipped(UInt(parameter.dataWidth))
-  val tempData     = Flipped(UInt(parameter.dataWidth))
-  val cFlag        = Flipped(Bool())
   val bitMemActive = Flipped(Bool())
   val bitMemWrite  = Flipped(Bool())
-  val condC        = Aligned(Bool())
   val wordBad      = Aligned(Bool())
   val nibbleBad    = Aligned(Bool())
   val bitMemExtBad = Aligned(Bool())
@@ -39,17 +31,6 @@ object CorePredicates
     val bitImmOp = opBits.bits(7, 3) === 0x0e.B(5)
     val bitBstOp = io.firstOp === 0x67.U(8)
     val bitPrefixOp = opBits.bits(7, 2) === 0x1f.B(6)
-
-    val mulxuBitCond = (io.firstOp === 0x50.U(8)) &
-      (io.seqSrc === SeqSrc.Literal.U(2)) &
-      (io.cond === Cond.C.U(3)) &
-      (io.intIdx === IntIdx.Temp.U(2))
-    val divxuSubCond = (io.firstOp === 0x51.U(8)) &
-      (io.seqSrc === SeqSrc.Literal.U(2)) &
-      (io.cond === Cond.C.U(3))
-    io.condC := divxuSubCond.?(
-      io.iregData >= io.tempData,
-      mulxuBitCond.?(io.intRead.asBits.bit(0), io.cFlag))
 
     val wordRegPage = (io.firstOp === 0x09.U(8)) | (io.firstOp === 0x0d.U(8)) |
       (io.firstOp === 0x19.U(8)) | (io.firstOp === 0x1d.U(8))

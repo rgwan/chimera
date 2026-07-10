@@ -9,7 +9,7 @@ import me.jiuyang.zaozi.valuetpe.*
 import org.llvm.mlir.scalalib.capi.ir.{Block, Context}
 import java.lang.foreign.Arena
 
-/** Microsequencer internal register file: PC, IREG, TEMP. 1R1W. */
+/** Microsequencer internal register file: PC, IREG, TEMP and AUX. 1R1W. */
 class IntRegFileIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val clock = Flipped(Clock())
   val reset = Flipped(Reset())
@@ -21,6 +21,7 @@ class IntRegFileIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val pcData = Aligned(UInt(parameter.dataWidth))
   val iregData = Aligned(UInt(parameter.dataWidth))
   val tempData = Aligned(UInt(parameter.dataWidth))
+  val auxData = Aligned(UInt(parameter.dataWidth))
   val dbgPc = Aligned(UInt(parameter.dataWidth)) // verify tap
 
 @generator
@@ -36,17 +37,21 @@ object IntRegFile
     val pc   = RegInit((parameter.resetVector & ~1).U(parameter.dataWidth))
     val ireg = RegInit(0.U(parameter.dataWidth))
     val temp = RegInit(0.U(parameter.dataWidth))
+    val aux  = RegInit(0.U(parameter.dataWidth))
 
     when(io.we & (io.waddr === 0.U(2)))(pc := io.wdata)
     when(io.we & (io.waddr === 1.U(2)))(ireg := io.wdata)
     when(io.we & (io.waddr === 2.U(2)))(temp := io.wdata)
+    when(io.we & (io.waddr === 3.U(2)))(aux := io.wdata)
 
     val rd = Wire(UInt(parameter.dataWidth))
     rd := pc
     when(io.raddr === 1.U(2))(rd := ireg)
     when(io.raddr === 2.U(2))(rd := temp)
+    when(io.raddr === 3.U(2))(rd := aux)
     io.rdata := rd
     io.pcData := pc
     io.iregData := ireg
     io.tempData := temp
+    io.auxData := aux
     io.dbgPc := pc

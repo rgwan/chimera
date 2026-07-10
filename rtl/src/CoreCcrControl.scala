@@ -12,7 +12,7 @@ import java.lang.foreign.Arena
 class CoreCcrControlIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val size = Flipped(Bool())
   val aSel = Flipped(UInt(2))
-  val bitASelInt = Flipped(Bool())
+  val bitCcrOp = Flipped(Bool())
   val bitFlagCtl = Flipped(UInt(3))
   val bitVclr = Flipped(Bool())
   val aluY = Flipped(UInt(parameter.dataWidth))
@@ -22,11 +22,7 @@ class CoreCcrControlIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val h8Read = Flipped(UInt(parameter.dataWidth))
   val imm8 = Flipped(UInt(8))
   val memData = Flipped(UInt(parameter.dataWidth))
-  val oldCcr = Flipped(UInt(8))
-  val daaFinal = Flipped(Bool())
-  val bcdFinal = Flipped(Bool())
-  val divFlagLoad = Flipped(Bool())
-  val divCcrByte = Flipped(UInt(8))
+  val specialMem = Flipped(Bool())
   val flagCtl = Aligned(UInt(3))
   val resN = Aligned(Bool())
   val resZ = Aligned(Bool())
@@ -49,21 +45,17 @@ object CoreCcrControl
     io.resZ := bitFlag.?(io.aluY.asBits.bits(7, 0) === 0.B(8),
       io.size.?(io.aluY.asBits.bits(15, 0) === 0.B(16),
       io.aluY.asBits.bits(7, 0) === 0.B(8)))
-    io.resH := bitFlag.?(io.bitASelInt, io.aluH)
+    io.resH := bitFlag.?(io.bitCcrOp, io.aluH)
     io.hwV := io.bitVclr.?(false.B, io.aluV)
     io.hwC := bitFlag.?(io.aluY.asBits.bit(0), io.aluC)
     io.ldWe := io.bitFlagCtl === FlagCtl.LoadCcr.U(3)
 
     val ccrRegByte = io.h8Read.asBits.bits(7, 0).asUInt
     val ccrLogicByte = io.aluY.asBits.bits(7, 0).asUInt
-    val ccrImmByte = (io.aSel === ASel.Int.U(2)).?(ccrLogicByte,
+    val ccrLogicSource = (io.aSel === ASel.Special.U(2)) |
+      (io.aSel === ASel.Int.U(2))
+    val ccrImmByte = ccrLogicSource.?(ccrLogicByte,
       (io.aSel === ASel.H8.U(2)).?(ccrRegByte, io.imm8))
-    val old = io.oldCcr.asBits
-    val bcdC = io.daaFinal.?((old.bit(0) | io.aluC), old.bit(0))
-    val bcdCcrByte = (old.bit(7).asBits ## 0.B(1) ## old.bit(5).asBits ##
-      0.B(1) ## io.aluY.asBits.bit(7).asBits ##
-      (io.aluY.asBits.bits(7, 0) === 0.B(8)).asBits ##
-      old.bit(1).asBits ## bcdC.asBits).asUInt
-    io.ldVal := (io.aSel === ASel.Mem.U(2)).?(
+    io.ldVal := io.specialMem.?(
       io.memData.asBits.bits(15, 8).asUInt,
-      io.divFlagLoad.?(io.divCcrByte, io.bcdFinal.?(bcdCcrByte, ccrImmByte)))
+      ccrImmByte)

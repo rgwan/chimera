@@ -15,7 +15,10 @@ class CoreIrqControlIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val irq = Flipped(Bool())
   val nmi = Flipped(Bool())
   val irqAck = Flipped(Bool())
+  val trapAck = Flipped(Bool())
+  val trapIndex = Flipped(UInt(2))
   val iFlag = Flipped(Bool())
+  val nmiPend = Aligned(Bool())
   val irqPend = Aligned(Bool())
   val irqVectorAddr = Aligned(UInt(parameter.dataWidth))
 
@@ -32,13 +35,17 @@ object CoreIrqControl
     val irqVectorAddr = RegInit(8.U(parameter.dataWidth))
     val irqLatch = RegInit(false.B)
     val nmiLatch = RegInit(false.B)
-    val nmiAck = io.irqAck & nmiLatch
-    val irqAck = io.irqAck & (!nmiLatch)
+    val nmiAck = io.irqAck & (!io.trapAck) & nmiLatch
+    val irqAck = io.irqAck & (!io.trapAck) & (!nmiLatch)
+    val trapVectorAddr =
+      (0.B(parameter.dataWidth - 4) ## 1.B(1) ## io.trapIndex.asBits ## 0.B(1)).asUInt
     when(io.irqAck)(
-      irqVectorAddr := nmiLatch.?(6.U(parameter.dataWidth), 8.U(parameter.dataWidth)))
+      irqVectorAddr := io.trapAck.?(trapVectorAddr,
+        nmiLatch.?(6.U(parameter.dataWidth), 8.U(parameter.dataWidth))))
     when(irqAck)(irqLatch := false.B)
     when(io.irq)(irqLatch := true.B)
     when(nmiAck)(nmiLatch := false.B)
     when(io.nmi)(nmiLatch := true.B)
-    io.irqPend := (irqLatch & (!io.iFlag)) | nmiLatch
+    io.nmiPend := nmiLatch
+    io.irqPend := irqLatch & (!io.iFlag)
     io.irqVectorAddr := irqVectorAddr

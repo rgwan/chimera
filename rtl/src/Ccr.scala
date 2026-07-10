@@ -40,39 +40,47 @@ object Ccr extends Generator[ChimeraParameter, ChimeraLayers, CcrIO, ChimeraProb
     given Ref[Clock] = io.clock
     given Ref[Reset] = io.reset
 
-    val c = RegInit(false.B)
-    val v = RegInit(false.B)
-    val z = RegInit(false.B)
-    val n = RegInit(false.B)
-    val h = RegInit(false.B)
-    val i = RegInit(false.B)
+    val state = RegInit(0.U(6)) // I H N Z V C
+    val stateBits = state.asBits
 
     def fc(code: Int) = io.flagCtl === code.U(3)
 
-    when(fc(FlagCtl.Nz) | fc(FlagCtl.AddSub) | fc(FlagCtl.Shift) | fc(FlagCtl.StickyZ) |
-      fc(FlagCtl.Nzv)) {
-      n := io.resN
-    }
-    when(fc(FlagCtl.Nz))(z := io.resZ)
-    when(fc(FlagCtl.AddSub) | fc(FlagCtl.Shift) | fc(FlagCtl.Nzv))(z := io.resZ)
-    when(fc(FlagCtl.StickyZ))(z := io.resZ.?(z, false.B)) // SUBX sticky Z
-    when(fc(FlagCtl.Nz))(v := false.B)
-    when(fc(FlagCtl.AddSub) | fc(FlagCtl.Shift) | fc(FlagCtl.StickyZ) | fc(FlagCtl.Nzv))(v := io.hwV)
-    when(fc(FlagCtl.AddSub) | fc(FlagCtl.Shift) | fc(FlagCtl.StickyZ))(c := io.hwC)
-    when(fc(FlagCtl.AddSub) | fc(FlagCtl.StickyZ))(h := io.resH)
-    when(fc(FlagCtl.Bit) & (!io.resH))(z := io.resZ)
-    when(fc(FlagCtl.Bit) & io.resH)(c := io.hwC)
+    val nz      = fc(FlagCtl.Nz)
+    val addSub  = fc(FlagCtl.AddSub)
+    val shift   = fc(FlagCtl.Shift)
+    val stickyZ = fc(FlagCtl.StickyZ)
+    val bit     = fc(FlagCtl.Bit)
+    val nzv     = fc(FlagCtl.Nzv)
 
-    when(io.ldWe) {
-      val lv = io.ldVal.asBits
-      i := lv.bit(7); h := lv.bit(5); n := lv.bit(3)
-      z := lv.bit(2); v := lv.bit(1); c := lv.bit(0)
-    }
-    when(io.setI)(i := true.B)
+    val bitC = bit & io.resH
+    val bitZ = bit & (!io.resH)
+    val writeH = addSub | stickyZ
+    val writeN = nz | addSub | shift | stickyZ | nzv
+    val writeZ = writeN | bitZ
+    val writeV = writeN
+    val writeC = addSub | shift | stickyZ | bitC
+    val flagWriteMask = (0.B(1) ## writeH.asBits ## writeN.asBits ## writeZ.asBits ##
+      writeV.asBits ## writeC.asBits).asUInt
 
-    io.hnzvc := (h.asBits ## n.asBits ## z.asBits ## v.asBits ## c.asBits).asUInt
-    io.ccrByte := (i.asBits ## 0.B(1) ## h.asBits ## 0.B(1) ## n.asBits ##
-      z.asBits ## v.asBits ## c.asBits).asUInt
-    io.zFlag := z
-    io.cFlag := c
-    io.iFlag := i
+    val nextZ = stickyZ.?((io.resZ & stateBits.bit(2)), io.resZ)
+    val nextV = nz.?(false.B, io.hwV)
+    val flagNext = (0.B(1) ## io.resH.asBits ## io.resN.asBits ## nextZ.asBits ##
+      nextV.asBits ## io.hwC.asBits).asUInt
+
+    val lv = io.ldVal.asBits
+    val loadNext = (lv.bit(7).asBits ## lv.bit(5).asBits ## lv.bits(3, 0)).asUInt
+    val selectedMask = io.ldWe.?(0x3f.U(6), flagWriteMask)
+    val selectedNext = io.ldWe.?(loadNext, flagNext)
+    val setIMask = (io.setI.asBits ## 0.B(5)).asUInt
+    val writeMask = (selectedMask.asBits | setIMask.asBits).asUInt
+    val writeValue = (selectedNext.asBits | setIMask.asBits).asUInt
+    val nextState = ((stateBits & (~writeMask.asBits)) |
+      (writeValue.asBits & writeMask.asBits)).asUInt
+    state := nextState
+
+    io.hnzvc := stateBits.bits(4, 0).asUInt
+    io.ccrByte := (stateBits.bit(5).asBits ## 0.B(1) ## stateBits.bit(4).asBits ##
+      0.B(1) ## stateBits.bits(3, 0)).asUInt
+    io.zFlag := stateBits.bit(2)
+    io.cFlag := stateBits.bit(0)
+    io.iFlag := stateBits.bit(5)

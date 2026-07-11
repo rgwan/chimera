@@ -25,6 +25,15 @@ trend proxy only:
 | Microcode words | 371 / 512 | 393 / 512 |
 | Logic depth (LUT5 levels, ROM register included) | 19 | 19 |
 
+## Benchmarks (rtl cycle-accurate, not certified)
+
+`make bench-dhry` builds Dhrystone 2.1 with the pinned base-H8/300
+gcc-10 toolchain and counts cycles in simulation:
+
+| Metric | Value |
+|---|---|
+| Dhrystone | 6376 cycles/run, 0.089 DMIPS/MHz |
+
 ## ASIC (post-route)
 
 16 nm 9T RVT, tt 0.8 V 25 C, place-and-route complete with zero routing

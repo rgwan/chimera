@@ -94,15 +94,21 @@ next-PC path.
 
 ## Interrupts, traps, sleep
 
-`irq` and `nmi` latch separately; `irq` pending is gated by `CCR.I`. The retire
-selector routes the next entry by fixed priority (debug > NMI > trap > IRQ >
-fetch), so exceptions are taken only at retire boundaries and per-instruction
-retire equivalence with Sail is unaffected. The shared exception microcode
-pushes PC and CCR, sets `I`, and loads the latched vector. TRAPA (`0x57`)
-arms a synchronous trap serviced at its own retire; trap #2 routes to the
-reserved debug entry ahead of NMI. SLEEP parks in a one-word microcode wait
-loop with no bus traffic until any wake source (NMI, unmasked IRQ, debug)
-ends it; the stacked PC is the next instruction address.
+`irq` and `nmi` latch separately; `irq` pending is gated by `CCR.I` and by the
+in-service state (a new IRQ waits for the running handler's RTE; NMI and debug
+may preempt an IRQ, and a nested RTE pops the innermost level first). The
+retire selector routes the next entry by fixed priority (debug > NMI > trap >
+IRQ > fetch), so exceptions are taken only at retire boundaries and
+per-instruction retire equivalence with Sail is unaffected. The shared
+exception microcode pushes PC and CCR, sets `I`, and loads the vector selected
+by the `irq_number` input (IRQ), the trap index, or the NMI slot, offset by
+`vt_base << 8`. Reset runs a dedicated microcode routine that loads SP and PC
+from the table before the first fetch; the vector layout and nesting rules are
+in [boot_interrupts.md](boot_interrupts.md). TRAPA (`0x57`) arms a synchronous
+trap serviced at its own retire; trap #2 routes to the reserved debug entry
+ahead of NMI. SLEEP parks in a one-word microcode wait loop with no bus
+traffic until any wake source (NMI, unmasked IRQ, debug) ends it; the stacked
+PC is the next instruction address.
 
 ## Memory-bit prefix family
 
@@ -144,7 +150,7 @@ a bus wrapper is a planned SoC-side addition.
 | `Ccr` | CCR register |
 | `CoreAluControl` | operand muxes |
 | `CoreCcrControl` | flag update routing |
-| `CoreIrqControl` | pending latches, vector address |
+| `CoreIrqControl` | pending and in-service latches, vector address |
 | `CorePredicates` | illegal-encoding guards (`strict` only) |
 | `CoreWriteback` | write path, byte lanes |
 | `Core` | top |
@@ -180,8 +186,6 @@ configuration are in [metrics.md](metrics.md).
 
 ## Deferred
 
-- Platform vector table (reset SP/PC in the table, NMI/TRAPA/IRQ slots):
-  layout agreed, adoption pending; changes every boot image.
 - Debug module and unified TRAPA #2 / hardware-breakpoint behavior: waiting
   on the debug specification. The debug entry, retire priority, and reserved
   microcode region are already in place.

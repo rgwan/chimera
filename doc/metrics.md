@@ -21,9 +21,14 @@ trend proxy only:
 
 | | `lean` (default) | `strict` |
 |---|---|---|
-| LUT4 / LUT5 | 751 / 612 | 802 / 620 |
-| Microcode words | 371 / 512 | 393 / 512 |
-| Logic depth (LUT5 levels, ROM register included) | 19 | 19 |
+| LUT4 / LUT5 | 803 / 627 | 821 / 678 |
+| Microcode words | 379 / 512 | 401 / 512 |
+| Logic depth (LUT5 levels, ROM register included) | 18 | 18 |
+
+The vector-table boot and IRQ nesting rework costs about 52 LUT4 in this
+proxy over the 594-LUT vendor run's RTL; 20 of those are the `vt_base`
+relocation input (measured by tying it to zero). Vendor numbers predate
+the rework.
 
 ## Benchmarks (rtl cycle-accurate, not certified)
 

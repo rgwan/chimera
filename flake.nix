@@ -159,6 +159,99 @@ EOF
           dontDisableStatic = true;
         };
 
+        # Benchmark toolchain: the last GNU releases with base-H8/300 codegen
+        # (gcc-11's cc0 removal dropped the plain H8/300). Pinned tarballs;
+        # C plus libgcc so 16/32-bit mul/div lower through MULXU/DIVXU helpers.
+        h8300BenchBinutils = pkgs.stdenv.mkDerivation {
+          pname = "h8300-elf-binutils-base";
+          version = "2.34";
+          src = pkgs.fetchurl {
+            url = "https://ftp.gnu.org/gnu/binutils/binutils-2.34.tar.xz";
+            sha256 = "0ll909bcsa0q2v8giarzvwsffnqk522mdgb544gap6yw0f40w2zh";
+          };
+          nativeBuildInputs = [ pkgs.perl pkgs.texinfo pkgs.flex pkgs.bison ];
+          buildInputs = [ pkgs.zlib ];
+          hardeningDisable = [ "format" ];
+          configureFlags = [
+            "--target=h8300-elf"
+            "--program-prefix=h8300-elf-"
+            "--disable-nls"
+            "--disable-werror"
+            "--disable-gdb"
+            "--disable-sim"
+          ];
+          enableParallelBuilding = true;
+          doInstallCheck = false;
+        };
+
+        h8300BenchGcc = pkgs.stdenv.mkDerivation {
+          pname = "h8300-elf-gcc-base";
+          version = "10.5.0";
+          src = pkgs.fetchurl {
+            url = "https://ftp.gnu.org/gnu/gcc/gcc-10.5.0/gcc-10.5.0.tar.xz";
+            sha256 = "1h87lcfaga0ydsf4pkhwlnjr8mky5ix8npbv6iy3jvzlzm1ra415";
+          };
+          nativeBuildInputs = [ h8300BenchBinutils pkgs.perl pkgs.texinfo pkgs.flex pkgs.bison ];
+          buildInputs = [ pkgs.gmp.dev pkgs.mpfr.dev pkgs.libmpc pkgs.isl pkgs.zlib ];
+          hardeningDisable = [ "format" ];
+          CXXFLAGS = "-std=gnu++14";
+          preConfigure = ''
+            mkdir ../objdir
+            cd ../objdir
+            configureScript=../gcc-10.5.0/configure
+          '';
+          configureFlags = [
+            "--target=h8300-elf"
+            "--program-prefix=h8300-elf-"
+            "--enable-languages=c"
+            "--without-headers"
+            "--with-newlib"
+            "--disable-multilib"
+            "--disable-shared"
+            "--disable-threads"
+            "--disable-nls"
+            "--disable-libssp"
+            "--disable-libgomp"
+            "--disable-libquadmath"
+            "--disable-libatomic"
+            "--disable-decimal-float"
+            "--disable-libffi"
+            "--disable-bootstrap"
+            "--with-gmp=${pkgs.gmp.dev}"
+            "--with-mpfr=${pkgs.mpfr.dev}"
+            "--with-mpc=${pkgs.libmpc}"
+            "--with-isl=${pkgs.isl}"
+            "--with-as=${h8300BenchBinutils}/bin/h8300-elf-as"
+            "--with-ld=${h8300BenchBinutils}/bin/h8300-elf-ld"
+          ];
+          buildPhase = ''
+            runHook preBuild
+            make -j"$NIX_BUILD_CORES" all-gcc
+            make -j"$NIX_BUILD_CORES" all-target-libgcc
+            runHook postBuild
+          '';
+          installTargets = [ "install-gcc" "install-target-libgcc" ];
+          enableParallelBuilding = true;
+          dontDisableStatic = true;
+        };
+
+        benchToolchainCheck = pkgs.runCommand "chimera-bench-toolchain-smoke" {
+          nativeBuildInputs = [ h8300BenchBinutils h8300BenchGcc ];
+        } ''
+          cat > t.c <<'CEOF'
+          unsigned mul(unsigned a, unsigned b) { return a * b; }
+          unsigned long lmul(unsigned long a, unsigned long b) { return a * b; }
+          unsigned div16(unsigned a, unsigned b) { return a / b; }
+          CEOF
+          h8300-elf-gcc -Os -S -o t.s t.c
+          grep -q '\.h8300h' t.s && { echo "H8/300H asm emitted"; exit 1; }
+          h8300-elf-gcc -Os -c -o t.o t.c
+          h8300-elf-objdump -d t.o > t.dis
+          grep -qE 'er[0-7]|\.l[[:space:]]' t.dis && { echo "300H-only ops"; exit 1; }
+          h8300-elf-gcc -print-libgcc-file-name | grep -q libgcc.a
+          touch $out
+        '';
+
         gccFootprintCheck = pkgs.runCommand "chimera-gcc-footprint-smoke" {
           nativeBuildInputs = [
             h8300Binutils
@@ -266,6 +359,9 @@ EOF
         zaoziJar = "${zaoziAssembly}/share/java/elaborator.jar";
 
         shellHook = ''
+          export BENCH_CC=${h8300BenchGcc}/bin/h8300-elf-gcc
+          export BENCH_OBJCOPY=${h8300BenchBinutils}/bin/h8300-elf-objcopy
+          export BENCH_OBJDUMP=${h8300BenchBinutils}/bin/h8300-elf-objdump
           echo "========================================"
           echo "Chimera Zaozi Development Environment"
           echo "========================================"
@@ -328,6 +424,7 @@ EOF
           buildScript
           pkgs.git
           pkgs.gnumake
+          pkgs.iverilog
           h8300Binutils
           h8300Gdb
           h8300Gcc
@@ -352,6 +449,8 @@ EOF
         packages.rtl-fpga = rtlBuild "fpga" chimeraConfigs.fpga;
         packages.rtl-asic = rtlBuild "asic" chimeraConfigs.asic;
         packages.h8300-binutils = h8300Binutils;
+        packages.h8300-bench-gcc = h8300BenchGcc;
+        packages.h8300-bench-binutils = h8300BenchBinutils;
         packages.h8300-gdb = h8300Gdb;
         packages.h8300-gcc = h8300Gcc;
         packages.isa-cases = isaCasesCheck;
@@ -371,6 +470,7 @@ EOF
         };
 
         checks = {
+          bench-toolchain = benchToolchainCheck;
           build-smoke = smokeCheck;
           decode-dispatch = decodeDispatchCheck;
           gcc-footprint-smoke = gccFootprintCheck;

@@ -166,7 +166,7 @@ EOF
           pname = "h8300-elf-binutils-base";
           version = "2.34";
           src = pkgs.fetchurl {
-            url = "https://ftp.gnu.org/gnu/binutils/binutils-2.34.tar.xz";
+            url = "https://mirrors.tuna.tsinghua.edu.cn/gnu/binutils/binutils-2.34.tar.xz";
             sha256 = "0ll909bcsa0q2v8giarzvwsffnqk522mdgb544gap6yw0f40w2zh";
           };
           nativeBuildInputs = [ pkgs.perl pkgs.texinfo pkgs.flex pkgs.bison ];
@@ -188,7 +188,7 @@ EOF
           pname = "h8300-elf-gcc-base";
           version = "10.5.0";
           src = pkgs.fetchurl {
-            url = "https://ftp.gnu.org/gnu/gcc/gcc-10.5.0/gcc-10.5.0.tar.xz";
+            url = "https://mirrors.tuna.tsinghua.edu.cn/gnu/gcc/gcc-10.5.0/gcc-10.5.0.tar.xz";
             sha256 = "1h87lcfaga0ydsf4pkhwlnjr8mky5ix8npbv6iy3jvzlzm1ra415";
           };
           nativeBuildInputs = [ h8300BenchBinutils pkgs.perl pkgs.texinfo pkgs.flex pkgs.bison ];

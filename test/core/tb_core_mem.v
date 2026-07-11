@@ -3,6 +3,7 @@
 //
 // Register-indirect word store/load round trip:
 //   R1=0x1234 ; R2=0x0100 ; mov.w R1,@R2 ; mov.w @R2,R3  ->  R3 = 0x1234.
+// Boot follows the platform table: SP from 0x0002, entry PC from 0x0006.
 `timescale 1ns / 1ps
 module tb_core_mem;
   reg         clock, reset, irq, nmi;
@@ -15,6 +16,7 @@ module tb_core_mem;
   integer     i, fails;
 
   Core dut (.clock(clock), .reset(reset), .irq(irq), .nmi(nmi),
+    .irq_number(3'd0), .vt_base(8'd0),
     .bus_addr(bus_addr), .bus_wdata(bus_wdata), .bus_rdata(bus_rdata),
     .bus_we(bus_we), .bus_wmask(bus_wmask), .bus_req(bus_req), .bus_rdy(bus_rdy));
 
@@ -35,14 +37,16 @@ module tb_core_mem;
 
   initial begin
     for (i = 0; i < 65536; i = i + 1) mem[i] = 8'h00;
-    mem[0]=8'h79; mem[1]=8'h01; mem[2]=8'h12; mem[3]=8'h34; // mov.w #0x1234,R1
-    mem[4]=8'h79; mem[5]=8'h02; mem[6]=8'h01; mem[7]=8'h00; // mov.w #0x0100,R2
-    mem[8]=8'h69; mem[9]=8'hA1;                             // mov.w R1,@R2
-    mem[10]=8'h69; mem[11]=8'h23;                           // mov.w @R2,R3
+    mem[16'h0002]=8'h02; mem[16'h0003]=8'h00;  // reset SP = 0x0200
+    mem[16'h0006]=8'h00; mem[16'h0007]=8'h30;  // reset PC = 0x0030
+    mem[16'h0030]=8'h79; mem[16'h0031]=8'h01; mem[16'h0032]=8'h12; mem[16'h0033]=8'h34; // mov.w #0x1234,R1
+    mem[16'h0034]=8'h79; mem[16'h0035]=8'h02; mem[16'h0036]=8'h01; mem[16'h0037]=8'h00; // mov.w #0x0100,R2
+    mem[16'h0038]=8'h69; mem[16'h0039]=8'hA1;                                           // mov.w R1,@R2
+    mem[16'h003A]=8'h69; mem[16'h003B]=8'h23;                                           // mov.w @R2,R3
     fails = 0; irq = 0; nmi = 0; reset = 1;
     repeat (4) @(posedge clock);
     reset = 0;
-    repeat (60) @(posedge clock); #1;
+    repeat (80) @(posedge clock); #1;
     if (r3 !== 16'h1234) begin $display("FAIL R3=%h exp 1234 (load)", r3); fails=fails+1; end
     if (r1 !== 16'h1234) begin $display("FAIL R1=%h exp 1234", r1); fails=fails+1; end
     if (r2 !== 16'h0100) begin $display("FAIL R2=%h exp 0100 (pointer moved?)", r2); fails=fails+1; end

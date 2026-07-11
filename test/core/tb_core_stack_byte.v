@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 //
 // Byte pre-decrement / post-increment round trip.
+// Boot follows the platform table: SP from 0x0002, entry PC from 0x0006.
 `timescale 1ns / 1ps
 module tb_core_stack_byte;
   reg         clock, reset, irq, nmi;
@@ -14,6 +15,7 @@ module tb_core_stack_byte;
   integer     i, fails;
 
   Core dut (.clock(clock), .reset(reset), .irq(irq), .nmi(nmi),
+    .irq_number(3'd0), .vt_base(8'd0),
     .bus_addr(bus_addr), .bus_wdata(bus_wdata), .bus_rdata(bus_rdata),
     .bus_we(bus_we), .bus_wmask(bus_wmask), .bus_req(bus_req), .bus_rdy(bus_rdy));
 
@@ -36,14 +38,16 @@ module tb_core_stack_byte;
 
   initial begin
     for (i = 0; i < 65536; i = i + 1) mem[i] = 8'h00;
-    mem[0] =8'h79; mem[1] =8'h01; mem[2] =8'h02; mem[3] =8'h00; // mov.w #0x0200,R1
-    mem[4] =8'h79; mem[5] =8'h02; mem[6] =8'h02; mem[7] =8'h02; // mov.w #0x0202,R2
-    mem[8] =8'h07; mem[9] =8'h23;                              // ldc #0x23,ccr
-    mem[10]=8'h6c; mem[11]=8'h18;                              // mov.b @R1+,R0L
-    mem[12]=8'h6c; mem[13]=8'ha8;                              // mov.b R0L,@-R2
-    mem[14]=8'h79; mem[15]=8'h03; mem[16]=8'h01; mem[17]=8'h41; // mov.w #0x0141,R3
-    mem[18]=8'h6c; mem[19]=8'hbb;                              // mov.b R3L,@-R3
-    mem[20]=8'h40; mem[21]=8'hfe;                              // halt
+    mem[16'h0002]=8'h02; mem[16'h0003]=8'h20;  // reset SP = 0x0220
+    mem[16'h0006]=8'h00; mem[16'h0007]=8'h30;  // reset PC = 0x0030
+    mem[16'h0030]=8'h79; mem[16'h0031]=8'h01; mem[16'h0032]=8'h02; mem[16'h0033]=8'h00; // mov.w #0x0200,R1
+    mem[16'h0034]=8'h79; mem[16'h0035]=8'h02; mem[16'h0036]=8'h02; mem[16'h0037]=8'h02; // mov.w #0x0202,R2
+    mem[16'h0038]=8'h07; mem[16'h0039]=8'h23;                                           // ldc #0x23,ccr
+    mem[16'h003A]=8'h6c; mem[16'h003B]=8'h18;                                           // mov.b @R1+,R0L
+    mem[16'h003C]=8'h6c; mem[16'h003D]=8'ha8;                                           // mov.b R0L,@-R2
+    mem[16'h003E]=8'h79; mem[16'h003F]=8'h03; mem[16'h0040]=8'h01; mem[16'h0041]=8'h41; // mov.w #0x0141,R3
+    mem[16'h0042]=8'h6c; mem[16'h0043]=8'hbb;                                           // mov.b R3L,@-R3
+    mem[16'h0044]=8'h40; mem[16'h0045]=8'hfe;                                           // halt
     mem[16'h0140] = 8'haa;
     mem[16'h0141] = 8'h55;
     mem[16'h0200] = 8'h80;
@@ -52,7 +56,7 @@ module tb_core_stack_byte;
     fails = 0; irq = 0; nmi = 0; reset = 1;
     repeat (4) @(posedge clock);
     reset = 0;
-    repeat (130) @(posedge clock); #1;
+    repeat (150) @(posedge clock); #1;
 
     if (r0 !== 16'h0080) begin $display("FAIL R0=%h exp 0080", r0); fails=fails+1; end
     if (r1 !== 16'h0201) begin $display("FAIL R1=%h exp 0201", r1); fails=fails+1; end

@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 //
 // Absolute jmp/jsr forms: @aa:16 and @@aa:8.
+// Boot follows the platform table: SP from 0x0002, entry PC from 0x0006.
+// Entry sits at 0x50 so the @@aa:8 cells at 0x40/0x42 stay clear of code.
 `timescale 1ns / 1ps
 module tb_core_jmp_abs;
   reg         clock, reset, irq, nmi;
@@ -14,6 +16,7 @@ module tb_core_jmp_abs;
   integer     i, fails;
 
   Core dut (.clock(clock), .reset(reset), .irq(irq), .nmi(nmi),
+    .irq_number(3'd0), .vt_base(8'd0),
     .bus_addr(bus_addr), .bus_wdata(bus_wdata), .bus_rdata(bus_rdata),
     .bus_we(bus_we), .bus_wmask(bus_wmask), .bus_req(bus_req), .bus_rdy(bus_rdy));
 
@@ -39,32 +42,34 @@ module tb_core_jmp_abs;
 
   initial begin
     for (i = 0; i < 65536; i = i + 1) mem[i] = 8'h00;
-    mem[0] =8'h5a; mem[1] =8'h00; mem[2] =8'h00; mem[3] =8'h10; // jmp @0x0010:16
-    mem[4] =8'hf8; mem[5] =8'hee;                              // skipped
-    mem[16]=8'h79; mem[17]=8'h07; mem[18]=8'h03; mem[19]=8'h00; // mov.w #0x0300,R7
-    mem[20]=8'hf8; mem[21]=8'h11;                              // mov.b #0x11,R0L
-    mem[22]=8'h5b; mem[23]=8'h40;                              // jmp @@0x40:8
-    mem[32]=8'hf9; mem[33]=8'h22;                              // mov.b #0x22,R1L
-    mem[34]=8'h5e; mem[35]=8'h00; mem[36]=8'h00; mem[37]=8'h30; // jsr @0x0030:16
-    mem[38]=8'hfa; mem[39]=8'h33;                              // mov.b #0x33,R2L
-    mem[40]=8'h5f; mem[41]=8'h42;                              // jsr @@0x42:8
-    mem[42]=8'hfb; mem[43]=8'h44;                              // mov.b #0x44,R3L
-    mem[44]=8'h40; mem[45]=8'hfe;                              // halt
-    mem[48]=8'hfc; mem[49]=8'haa;                              // mov.b #0xaa,R4L
-    mem[50]=8'h54; mem[51]=8'h70;                              // rts
-    mem[56]=8'hfd; mem[57]=8'hbb;                              // mov.b #0xbb,R5L
-    mem[58]=8'h54; mem[59]=8'h70;                              // rts
+    mem[16'h0002]=8'h03; mem[16'h0003]=8'h00;  // reset SP = 0x0300
+    mem[16'h0006]=8'h00; mem[16'h0007]=8'h50;  // reset PC = 0x0050
+    mem[16'h0050]=8'h5a; mem[16'h0051]=8'h00; mem[16'h0052]=8'h00; mem[16'h0053]=8'h60; // jmp @0x0060:16
+    mem[16'h0054]=8'hf8; mem[16'h0055]=8'hee;                                           // skipped
+    mem[16'h0060]=8'h79; mem[16'h0061]=8'h07; mem[16'h0062]=8'h03; mem[16'h0063]=8'h00; // mov.w #0x0300,R7
+    mem[16'h0064]=8'hf8; mem[16'h0065]=8'h11;                                           // mov.b #0x11,R0L
+    mem[16'h0066]=8'h5b; mem[16'h0067]=8'h40;                                           // jmp @@0x40:8
+    mem[16'h0070]=8'hf9; mem[16'h0071]=8'h22;                                           // mov.b #0x22,R1L
+    mem[16'h0072]=8'h5e; mem[16'h0073]=8'h00; mem[16'h0074]=8'h00; mem[16'h0075]=8'h80; // jsr @0x0080:16
+    mem[16'h0076]=8'hfa; mem[16'h0077]=8'h33;                                           // mov.b #0x33,R2L
+    mem[16'h0078]=8'h5f; mem[16'h0079]=8'h42;                                           // jsr @@0x42:8
+    mem[16'h007A]=8'hfb; mem[16'h007B]=8'h44;                                           // mov.b #0x44,R3L
+    mem[16'h007C]=8'h40; mem[16'h007D]=8'hfe;                                           // halt
+    mem[16'h0080]=8'hfc; mem[16'h0081]=8'haa;                                           // mov.b #0xaa,R4L
+    mem[16'h0082]=8'h54; mem[16'h0083]=8'h70;                                           // rts
+    mem[16'h0088]=8'hfd; mem[16'h0089]=8'hbb;                                           // mov.b #0xbb,R5L
+    mem[16'h008A]=8'h54; mem[16'h008B]=8'h70;                                           // rts
     mem[16'h0040] = 8'h00;
-    mem[16'h0041] = 8'h20;
+    mem[16'h0041] = 8'h70;
     mem[16'h0042] = 8'h00;
-    mem[16'h0043] = 8'h38;
+    mem[16'h0043] = 8'h88;
     mem[16'h02fe] = 8'haa;
     mem[16'h02ff] = 8'h55;
 
     fails = 0; irq = 0; nmi = 0; reset = 1;
     repeat (4) @(posedge clock);
     reset = 0;
-    repeat (170) @(posedge clock); #1;
+    repeat (190) @(posedge clock); #1;
 
     if (r0 !== 16'h0011) begin $display("FAIL R0=%h exp 0011", r0); fails=fails+1; end
     if (r1 !== 16'h0022) begin $display("FAIL R1=%h exp 0022", r1); fails=fails+1; end
@@ -73,8 +78,8 @@ module tb_core_jmp_abs;
     if (r4 !== 16'h00aa) begin $display("FAIL R4=%h exp 00aa", r4); fails=fails+1; end
     if (r5 !== 16'h00bb) begin $display("FAIL R5=%h exp 00bb", r5); fails=fails+1; end
     if (r7 !== 16'h0300) begin $display("FAIL R7=%h exp 0300 PC=%h", r7, pc); fails=fails+1; end
-    if (mem[16'h02fe] !== 8'h00 || mem[16'h02ff] !== 8'h2a) begin
-      $display("FAIL stack=%h%h exp 002a", mem[16'h02fe], mem[16'h02ff]); fails=fails+1; end
+    if (mem[16'h02fe] !== 8'h00 || mem[16'h02ff] !== 8'h7a) begin
+      $display("FAIL stack=%h%h exp 007a", mem[16'h02fe], mem[16'h02ff]); fails=fails+1; end
 
     if (fails == 0) $display("CORE-JMP-ABS PASS: absolute jmp/jsr forms");
     else            $display("CORE-JMP-ABS FAIL: %0d", fails);

@@ -4,6 +4,7 @@
 // bsr / rts round trip with the H8 stack (SP=R7):
 //   SP=0x0300 ; bsr sub ; (sub: R2=0xCAFE; rts) ; R1=0xBEEF ; halt.
 // After return: R1=0xBEEF (returned), R2=0xCAFE (sub ran), R7=0x0300 (SP restored).
+// Boot follows the platform table: SP from 0x0002, entry PC from 0x0006.
 `timescale 1ns / 1ps
 module tb_core_jsr;
   reg         clock, reset, irq, nmi;
@@ -16,6 +17,7 @@ module tb_core_jsr;
   integer     i, fails;
 
   Core dut (.clock(clock), .reset(reset), .irq(irq), .nmi(nmi),
+    .irq_number(3'd0), .vt_base(8'd0),
     .bus_addr(bus_addr), .bus_wdata(bus_wdata), .bus_rdata(bus_rdata),
     .bus_we(bus_we), .bus_wmask(bus_wmask), .bus_req(bus_req), .bus_rdy(bus_rdy));
 
@@ -36,16 +38,18 @@ module tb_core_jsr;
 
   initial begin
     for (i = 0; i < 65536; i = i + 1) mem[i] = 8'h00;
-    mem[0]=8'h79; mem[1]=8'h07; mem[2]=8'h03; mem[3]=8'h00; // mov.w #0x0300,R7 (SP)
-    mem[4]=8'h55; mem[5]=8'h0A;                             // bsr +0x0A -> 0x10
-    mem[6]=8'h79; mem[7]=8'h01; mem[8]=8'hBE; mem[9]=8'hEF; // mov.w #0xBEEF,R1 (after ret)
-    mem[10]=8'h40; mem[11]=8'hFE;                           // bra -2 (halt)
-    mem[16]=8'h79; mem[17]=8'h02; mem[18]=8'hCA; mem[19]=8'hFE; // sub: mov.w #0xCAFE,R2
-    mem[20]=8'h54; mem[21]=8'h70;                           // rts
+    mem[16'h0002]=8'h03; mem[16'h0003]=8'h00;  // reset SP = 0x0300
+    mem[16'h0006]=8'h00; mem[16'h0007]=8'h30;  // reset PC = 0x0030
+    mem[16'h0030]=8'h79; mem[16'h0031]=8'h07; mem[16'h0032]=8'h03; mem[16'h0033]=8'h00; // mov.w #0x0300,R7 (SP)
+    mem[16'h0034]=8'h55; mem[16'h0035]=8'h0A;                                           // bsr +0x0A -> 0x40
+    mem[16'h0036]=8'h79; mem[16'h0037]=8'h01; mem[16'h0038]=8'hBE; mem[16'h0039]=8'hEF; // mov.w #0xBEEF,R1 (after ret)
+    mem[16'h003A]=8'h40; mem[16'h003B]=8'hFE;                                           // bra -2 (halt)
+    mem[16'h0040]=8'h79; mem[16'h0041]=8'h02; mem[16'h0042]=8'hCA; mem[16'h0043]=8'hFE; // sub: mov.w #0xCAFE,R2
+    mem[16'h0044]=8'h54; mem[16'h0045]=8'h70;                                           // rts
     fails = 0; irq = 0; nmi = 0; reset = 1;
     repeat (4) @(posedge clock);
     reset = 0;
-    repeat (90) @(posedge clock); #1;
+    repeat (110) @(posedge clock); #1;
     if (r1 !== 16'hBEEF) begin $display("FAIL R1=%h exp BEEF (did not return?)", r1); fails=fails+1; end
     if (r2 !== 16'hCAFE) begin $display("FAIL R2=%h exp CAFE (sub not run?)", r2); fails=fails+1; end
     if (r7 !== 16'h0300) begin $display("FAIL R7=%h exp 0300 (SP not restored)", r7); fails=fails+1; end

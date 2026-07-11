@@ -3,6 +3,7 @@
 //
 // Bcc check: mov #1,R0L ; bra +2 (skip the next mov) ; mov #0xFF,R0L (skipped).
 // If the branch is taken, R0 stays 0x01; if not, R0 becomes 0xFF.
+// Boot follows the platform table: SP from 0x0002, entry PC from 0x0006.
 `timescale 1ns / 1ps
 module tb_core_branch;
   reg         clock, reset, irq, nmi;
@@ -15,6 +16,7 @@ module tb_core_branch;
   integer     i, fails;
 
   Core dut (.clock(clock), .reset(reset), .irq(irq), .nmi(nmi),
+    .irq_number(3'd0), .vt_base(8'd0),
     .bus_addr(bus_addr), .bus_wdata(bus_wdata), .bus_rdata(bus_rdata),
     .bus_we(bus_we), .bus_wmask(bus_wmask), .bus_req(bus_req), .bus_rdy(bus_rdy));
 
@@ -29,13 +31,15 @@ module tb_core_branch;
 
   initial begin
     for (i = 0; i < 65536; i = i + 1) mem[i] = 8'h00;
-    mem[0]=8'hF8; mem[1]=8'h01; // mov.b #0x01,R0L
-    mem[2]=8'h40; mem[3]=8'h02; // bra +2  (target = 4+2 = 6, skips addr 4)
-    mem[4]=8'hF8; mem[5]=8'hFF; // mov.b #0xFF,R0L (should be skipped)
+    mem[16'h0002]=8'h02; mem[16'h0003]=8'h00;  // reset SP = 0x0200
+    mem[16'h0006]=8'h00; mem[16'h0007]=8'h30;  // reset PC = 0x0030
+    mem[16'h0030]=8'hF8; mem[16'h0031]=8'h01; // mov.b #0x01,R0L
+    mem[16'h0032]=8'h40; mem[16'h0033]=8'h02; // bra +2 (target = 0x34+2 = 0x36, skips 0x34)
+    mem[16'h0034]=8'hF8; mem[16'h0035]=8'hFF; // mov.b #0xFF,R0L (should be skipped)
     fails = 0; irq = 0; nmi = 0; reset = 1;
     repeat (4) @(posedge clock);
     reset = 0;
-    repeat (40) @(posedge clock); #1;
+    repeat (60) @(posedge clock); #1;
     if (r0 !== 16'h0001) begin $display("FAIL R0=%h exp 0001 (branch not taken?)", r0); fails = fails + 1; end
     if (fails == 0) $display("CORE-BRANCH PASS: R0=%h (bra skipped the mov)", r0);
     else            $display("CORE-BRANCH FAIL: %0d", fails);

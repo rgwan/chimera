@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 //
 // Odd-displacement branch target aligns down to even (no trap):
-//   mov #1,R0L ; bra +5  ->  target (4+5)&~1 = 8, where mov #0x42,R0L lives.
-// An unaligned target (9) would misdecode mem[9..10] and never set R0=0x42.
+//   mov #1,R0L ; bra +5  ->  target (0x34+5)&~1 = 0x38, where mov #0x42,R0L lives.
+// An unaligned target (0x39) would misdecode mem[0x39..0x3A] and never set
+// R0=0x42. Boot follows the platform table: SP from 0x0002, entry PC from 0x0006.
 `timescale 1ns / 1ps
 module tb_core_branch_odd;
   reg         clock, reset, irq, nmi;
@@ -16,6 +17,7 @@ module tb_core_branch_odd;
   integer     i, fails;
 
   Core dut (.clock(clock), .reset(reset), .irq(irq), .nmi(nmi),
+    .irq_number(3'd0), .vt_base(8'd0),
     .bus_addr(bus_addr), .bus_wdata(bus_wdata), .bus_rdata(bus_rdata),
     .bus_we(bus_we), .bus_wmask(bus_wmask), .bus_req(bus_req), .bus_rdy(bus_rdy));
 
@@ -30,15 +32,17 @@ module tb_core_branch_odd;
 
   initial begin
     for (i = 0; i < 65536; i = i + 1) mem[i] = 8'h00;
-    mem[0]=8'hF8; mem[1]=8'h01;  // mov.b #1,R0L
-    mem[2]=8'h40; mem[3]=8'h05;  // bra +5  -> target aligns to 8
-    mem[8]=8'hF8; mem[9]=8'h42;  // mov.b #0x42,R0L (at the even-aligned target)
+    mem[16'h0002]=8'h02; mem[16'h0003]=8'h00;  // reset SP = 0x0200
+    mem[16'h0006]=8'h00; mem[16'h0007]=8'h30;  // reset PC = 0x0030
+    mem[16'h0030]=8'hF8; mem[16'h0031]=8'h01;  // mov.b #1,R0L
+    mem[16'h0032]=8'h40; mem[16'h0033]=8'h05;  // bra +5  -> target aligns to 0x38
+    mem[16'h0038]=8'hF8; mem[16'h0039]=8'h42;  // mov.b #0x42,R0L (at the even-aligned target)
     fails = 0; irq = 0; nmi = 0; reset = 1;
     repeat (4) @(posedge clock);
     reset = 0;
-    repeat (40) @(posedge clock); #1;
+    repeat (60) @(posedge clock); #1;
     if (r0 !== 16'h0042) begin $display("FAIL R0=%h exp 0042 (odd target not aligned?)", r0); fails=fails+1; end
-    if (fails == 0) $display("CORE-BRANCH-ODD PASS: R0=%h (bra +5 aligned to 8)", r0);
+    if (fails == 0) $display("CORE-BRANCH-ODD PASS: R0=%h (bra +5 aligned to 0x38)", r0);
     else            $display("CORE-BRANCH-ODD FAIL: %0d", fails);
     $finish;
   end

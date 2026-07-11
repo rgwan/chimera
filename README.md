@@ -15,9 +15,9 @@ H8/300 instruction set is implemented and verified against a Sail model.
 
 | Config | For | Headline |
 |---|---|---|
-| `lean` (default) | smallest core | 751 LUT4 |
+| `lean` (default) | smallest core | 594 LUT4/5 @ 54 MHz (Anlogic EG4) |
 | `strict` | illegal encodings retire as no-op | 802 LUT4 |
-| `fpga` | lean with a block-RAM microcode ROM | 751 LUT4 + 2 BRAM |
+| `fpga` | lean with a block-RAM microcode ROM | 594 LUT4/5 + 2 BRAM 9K @ 54MHz (Anlogic EG4) |
 | `asic` | synthesis-ready file set | 7.4k gates, 1 GHz post-route |
 
 Each builds with one line:

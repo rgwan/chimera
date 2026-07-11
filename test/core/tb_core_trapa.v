@@ -16,6 +16,7 @@ module tb_core_trapa;
   integer     i, fails, write_count;
 
   Core dut (.clock(clock), .reset(reset), .irq(irq), .nmi(nmi),
+    .irq_number(3'd0), .vt_base(8'd0),
     .bus_addr(bus_addr), .bus_wdata(bus_wdata), .bus_rdata(bus_rdata),
     .bus_we(bus_we), .bus_wmask(bus_wmask), .bus_req(bus_req), .bus_rdy(bus_rdy));
 
@@ -46,11 +47,11 @@ module tb_core_trapa;
       if (bus_wmask[1]) mem[bus_addr] <= bus_wdata[15:8];
       if (bus_wmask[0]) mem[(bus_addr + 16'd1) & 16'hffff] <= bus_wdata[7:0];
     end else begin
-      if (bus_addr == 16'h0006) saw_nmi <= 1'b1;
-      if (bus_addr == 16'h0008) saw_vec0 <= 1'b1;
-      if (bus_addr == 16'h000a) saw_vec1 <= 1'b1;
-      if (bus_addr == 16'h000c) saw_vec2 <= 1'b1;
-      if (bus_addr == 16'h000e) saw_vec3 <= 1'b1;
+      if (bus_addr == 16'h000e) saw_nmi <= 1'b1;
+      if (bus_addr == 16'h0010) saw_vec0 <= 1'b1;
+      if (bus_addr == 16'h0012) saw_vec1 <= 1'b1;
+      if (bus_addr == 16'h0014) saw_vec2 <= 1'b1;
+      if (bus_addr == 16'h0016) saw_vec3 <= 1'b1;
     end
   end
 
@@ -59,11 +60,13 @@ module tb_core_trapa;
 
   initial begin
     for (i = 0; i < 65536; i = i + 1) mem[i] = 8'h00;
-    mem[16'h0006]=8'h01; mem[16'h0007]=8'h60;
-    mem[16'h0008]=8'h01; mem[16'h0009]=8'h20;
-    mem[16'h000a]=8'h01; mem[16'h000b]=8'h30;
-    mem[16'h000c]=8'h01; mem[16'h000d]=8'h50;
-    mem[16'h000e]=8'h01; mem[16'h000f]=8'h40;
+    mem[16'h0002]=8'h02; mem[16'h0003]=8'h00;  // reset SP = 0x0200
+    mem[16'h0006]=8'h01; mem[16'h0007]=8'h00;  // reset PC = 0x0100
+    mem[16'h000e]=8'h01; mem[16'h000f]=8'h60;  // NMI
+    mem[16'h0010]=8'h01; mem[16'h0011]=8'h20;  // trapa #0
+    mem[16'h0012]=8'h01; mem[16'h0013]=8'h30;  // trapa #1
+    mem[16'h0014]=8'h01; mem[16'h0015]=8'h50;  // trapa #2
+    mem[16'h0016]=8'h01; mem[16'h0017]=8'h40;  // trapa #3
 
     mem[16'h0100]=8'h79; mem[16'h0101]=8'h07;
     mem[16'h0102]=8'h02; mem[16'h0103]=8'h00;

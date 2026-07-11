@@ -22,8 +22,11 @@ module tb_core_wait;
   integer     first_pc_commits;
 
   Core dut (.clock(clock), .reset(reset), .irq(irq), .nmi(nmi),
+    .irq_number(3'd0), .vt_base(8'd0),
     .bus_addr(bus_addr), .bus_wdata(bus_wdata), .bus_rdata(bus_rdata),
     .bus_we(bus_we), .bus_wmask(bus_wmask), .bus_req(bus_req), .bus_rdy(bus_rdy));
+
+  localparam [15:0] P = 16'h0030;  // program base, past the vector table
 
   wire [15:0]  pc   = dut.intrf.dbgPc;
   wire [127:0] regs = dut.h8rf.dbg;
@@ -36,7 +39,7 @@ module tb_core_wait;
   always @(*) begin
     bus_rdata = {mem[bus_addr], mem[(bus_addr + 16'd1) & 16'hffff]};
     bus_rdy = 1'b1;
-    if (bus_req && !bus_we && bus_addr == 16'h0000 && stall_fetch)
+    if (bus_req && !bus_we && bus_addr == P && stall_fetch)
       bus_rdy = 1'b0;
     if (bus_req && !bus_we && bus_addr == 16'h0100 && stall_read)
       bus_rdy = 1'b0;
@@ -46,7 +49,7 @@ module tb_core_wait;
 
   always @(posedge clock) begin
     if (!reset && bus_req && bus_rdy) begin
-      if (!bus_we && bus_addr == 16'h0000)
+      if (!bus_we && bus_addr == P)
         fetch_accepts = fetch_accepts + 1;
       if (!bus_we && bus_addr == 16'h0100)
         read_accepts = read_accepts + 1;
@@ -64,7 +67,7 @@ module tb_core_wait;
         dut.ccr.flagCtl != 3'b000)
       write_ccr_commits = write_ccr_commits + 1;
     if (!reset && dut.intrf.we && dut.intrf.waddr == 2'd0 &&
-        dut.intrf.wdata == 16'h0002)
+        dut.intrf.wdata == 16'h0032)
       first_pc_commits = first_pc_commits + 1;
 
     if (!reset && bus_req && bus_we && bus_rdy) begin
@@ -207,11 +210,14 @@ module tb_core_wait;
 
   initial begin
     for (i = 0; i < 65536; i = i + 1) mem[i] = 8'h00;
-    mem[0] =8'h79; mem[1] =8'h01; mem[2] =8'h80; mem[3] =8'h01; // mov.w #0x8001,R1
-    mem[4] =8'h79; mem[5] =8'h02; mem[6] =8'h01; mem[7] =8'h00; // mov.w #0x0100,R2
-    mem[8] =8'h69; mem[9] =8'h23;                              // mov.w @R2,R3
-    mem[10]=8'h79; mem[11]=8'h02; mem[12]=8'h01; mem[13]=8'h02; // mov.w #0x0102,R2
-    mem[14]=8'h69; mem[15]=8'hA1;                              // mov.w R1,@R2
+    // platform vector table: SP from 0x0002, entry PC from 0x0006
+    mem[16'h0002]=8'h02; mem[16'h0003]=8'h00;               // reset SP = 0x0200
+    mem[16'h0006]=8'h00; mem[16'h0007]=8'h30;               // reset PC = 0x0030
+    mem[P+0] =8'h79; mem[P+1] =8'h01; mem[P+2] =8'h80; mem[P+3] =8'h01; // mov.w #0x8001,R1
+    mem[P+4] =8'h79; mem[P+5] =8'h02; mem[P+6] =8'h01; mem[P+7] =8'h00; // mov.w #0x0100,R2
+    mem[P+8] =8'h69; mem[P+9] =8'h23;                              // mov.w @R2,R3
+    mem[P+10]=8'h79; mem[P+11]=8'h02; mem[P+12]=8'h01; mem[P+13]=8'h02; // mov.w #0x0102,R2
+    mem[P+14]=8'h69; mem[P+15]=8'hA1;                              // mov.w R1,@R2
     mem[16'h0100] = 8'hbe;
     mem[16'h0101] = 8'hef;
     mem[16'h0102] = 8'h55;
@@ -226,13 +232,13 @@ module tb_core_wait;
     repeat (4) @(posedge clock);
     @(negedge clock); reset = 0;
 
-    exercise_wait(WAIT_FETCH, 16'h0000, 1'b0, 4, "fetch");
+    exercise_wait(WAIT_FETCH, P, 1'b0, 4, "fetch");
     if (dut.ir !== 16'h0179) begin
       $display("FAIL fetch IR=%h exp=0179", dut.ir);
       fails = fails + 1;
     end
-    if (pc !== 16'h0002 || first_pc_commits != 1) begin
-      $display("FAIL fetch PC=%h commits=%0d exp=0002/1", pc, first_pc_commits);
+    if (pc !== 16'h0032 || first_pc_commits != 1) begin
+      $display("FAIL fetch PC=%h commits=%0d exp=0032/1", pc, first_pc_commits);
       fails = fails + 1;
     end
 

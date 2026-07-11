@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 // SPDX-License-Identifier: MIT
 //
-// IRQ0 entry pushes PC and CCR, vectors through table entry 4, then RTE restores
-// the interrupted context.
+// IRQ0 entry pushes PC and CCR, vectors through the 0x0018 table slot, then RTE
+// restores the interrupted context.
 `timescale 1ns / 1ps
 module tb_core_irq_entry;
   reg         clock, reset, irq, nmi;
@@ -15,6 +15,7 @@ module tb_core_irq_entry;
   integer     i, fails;
 
   Core dut (.clock(clock), .reset(reset), .irq(irq), .nmi(nmi),
+    .irq_number(3'd0), .vt_base(8'd0),
     .bus_addr(bus_addr), .bus_wdata(bus_wdata), .bus_rdata(bus_rdata),
     .bus_we(bus_we), .bus_wmask(bus_wmask), .bus_req(bus_req), .bus_rdy(bus_rdy));
 
@@ -37,7 +38,9 @@ module tb_core_irq_entry;
 
   initial begin
     for (i = 0; i < 65536; i = i + 1) mem[i] = 8'h00;
-    mem[16'h0008]=8'h01; mem[16'h0009]=8'h20;             // IRQ0 vector -> 0x0120
+    mem[16'h0002]=8'h02; mem[16'h0003]=8'h00;             // reset SP = 0x0200
+    mem[16'h0006]=8'h01; mem[16'h0007]=8'h00;             // reset PC = 0x0100
+    mem[16'h0018]=8'h01; mem[16'h0019]=8'h20;             // IRQ0 vector -> 0x0120
     mem[16'h0100]=8'h79; mem[16'h0101]=8'h07;             // mov.w #0x0200,R7
     mem[16'h0102]=8'h02; mem[16'h0103]=8'h00;
     mem[16'h0104]=8'h79; mem[16'h0105]=8'h01;             // mov.w #0xBEEF,R1
@@ -51,7 +54,7 @@ module tb_core_irq_entry;
     fails = 0; irq = 0; nmi = 0; reset = 1;
     repeat (4) @(posedge clock);
     reset = 0;
-    repeat (24) @(posedge clock);
+    repeat (40) @(posedge clock);
     irq = 1; repeat (2) @(posedge clock); irq = 0;
     repeat (120) @(posedge clock); #1;
 

@@ -18,6 +18,8 @@ class CoreIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val reset = Flipped(Reset())
   val irq   = Flipped(Bool())
   val nmi   = Flipped(Bool())
+  val irq_number = Flipped(UInt(parameter.irqNumberWidth))
+  val vt_base = Flipped(UInt(8))
   val bus   = Aligned(new SramBus(parameter))
 
 @generator
@@ -104,8 +106,16 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       vec8Addr.?(imm8zero, (imm8sign ## opx.io.imm8.asBits).asUInt))
     val addsSubsConst = ir.asBits.bit(15).?(2.U(parameter.dataWidth),
       1.U(parameter.dataWidth))
-    val specialValue = udec.io.literal.asBits.bit(0).?(
-      irqctl.io.irqVectorAddr, addsSubsConst)
+    val resetSpAddr = (io.vt_base.asBits ## 0x02.B(8)).asUInt
+    val resetPcAddr = (io.vt_base.asBits ## 0x06.B(8)).asUInt
+    val specialValue = Wire(UInt(parameter.dataWidth))
+    specialValue := addsSubsConst
+    when(udec.io.literal.asBits.bits(1, 0) === 1.B(2))(
+      specialValue := irqctl.io.irqVectorAddr)
+    when(udec.io.literal.asBits.bits(1, 0) === 2.B(2))(
+      specialValue := resetSpAddr)
+    when(udec.io.literal.asBits.bits(1, 0) === 3.B(2))(
+      specialValue := resetPcAddr)
     val litConst = udec.io.literal.asBits.bit(8).?(specialValue,
       (0.B(8) ## udec.io.literal.asBits.bits(7, 0)).asUInt)
 
@@ -289,9 +299,12 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     def connectIrqAndBus() =
       irqctl.io.irq := io.irq
       irqctl.io.nmi := io.nmi
+      irqctl.io.irqNumber := io.irq_number
+      irqctl.io.vtBase := io.vt_base
       irqctl.io.irqAck := useq.io.irqAck
       irqctl.io.trapAck := useq.io.trapAck
       irqctl.io.trapIndex := useq.io.trapIndex
+      irqctl.io.rteAck := useq.io.rteAck
       irqctl.io.iFlag := ccr.io.iFlag
       useq.io.debugPend := false.B
       useq.io.nmiPend := irqctl.io.nmiPend

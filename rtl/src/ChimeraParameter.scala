@@ -11,12 +11,15 @@ import me.jiuyang.zaozi.default.{*, given}
   * are elided and their cond code tests the sleep wake signal instead.
   */
 case class ChimeraParameter(
-  h8300h:       Boolean = false,
-  strictDecode: Boolean = false,
-  romHex:       Boolean = false,
-  resetVector:  Int = 0
+  h8300h:         Boolean = false,
+  strictDecode:   Boolean = false,
+  romHex:         Boolean = false,
+  irqNumberWidth: Int = 3,
+  resetVector:    Int = 0
 ) extends Parameter:
   require(resetVector >= 0, "resetVector must be non-negative")
+  require(irqNumberWidth >= 1 && irqNumberWidth <= 8,
+    "irqNumberWidth must be 1..8")
 
   val dataWidth:    Int = 16
   val addrWidth:    Int = 16

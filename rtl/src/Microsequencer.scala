@@ -37,6 +37,7 @@ class MicrosequencerIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val irqAck   = Aligned(Bool())
   val trapAck  = Aligned(Bool())
   val trapIndex = Aligned(UInt(2))
+  val rteAck   = Aligned(Bool())
 
 @generator
 object Microsequencer
@@ -48,7 +49,7 @@ object Microsequencer
     given Ref[Clock] = io.clock
     given Ref[Reset] = io.reset
 
-    val cur = RegInit(Ucode.FetchEntry.U(parameter.upcBits))
+    val cur = RegInit(Ucode.ResetEntry.U(parameter.upcBits))
     val loopCount = RegInit(0.U(4))
     val aluPred = RegInit(false.B)
     val trapPend = RegInit(false.B)
@@ -113,3 +114,5 @@ object Microsequencer
     io.irqAck := io.retire & (nmiTake | trapTake | irqTake)
     io.trapAck := io.retire & trapTake
     io.trapIndex := trapIndex
+    io.rteAck := io.stepEn & retireRequest &
+      (cur === Ucode.RteEnd.U(parameter.upcBits))

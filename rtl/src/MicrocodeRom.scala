@@ -31,7 +31,7 @@ object MicrocodeRom
       when(io.addr === addr.U(parameter.upcBits))(d := w.U(parameter.uromWidth))
     }
     val resetWord =
-      MicrocodeImage.program(parameter.strictDecode)(Ucode.FetchEntry).encode
+      MicrocodeImage.program(parameter.strictDecode)(Ucode.ResetEntry).encode
     val q = RegInit(resetWord.U(parameter.uromWidth))
     q := d
     io.data := q

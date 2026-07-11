@@ -149,5 +149,12 @@ object Ucode:
   val DivxuSub = Divxu + 20
   val Trapa = FetchEntry + 0xac
   val Sleep = FetchEntry + 0x3b
+  // Reset: word 0 stays the all-zero no-op (ROMs may miss the first read,
+  // and it doubles as the ROM output register's reset value), then a jump
+  // into the vector-load body, which retires into the fetch loop.
+  val ResetEntry = FetchEntry + 0xfe
+  val ResetBody = FetchEntry + 0x2b
+  val ResetTail = FetchEntry + 0x92
+  val RteEnd = FetchEntry + 0x6d
   val Daa = FetchEntry + 0xe7
   val DaaDecision = Daa + 2

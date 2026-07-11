@@ -785,6 +785,29 @@ object MicrocodeImage:
       MW(cond = Cond.NibbleBad, seq = SeqSrc.Literal, lit = Ucode.Retire),
     (Ucode.Trapa + 1) -> MW(seq = SeqSrc.Dispatch, aux = true),
 
+    // Reset: the entry word is the all-zero no-op (some ROMs miss the first
+    // read after reset), then load SP and PC from the platform vector table
+    // through the PC-as-pointer path and retire into the fetch loop.
+    Ucode.ResetEntry -> MW(),
+    (Ucode.ResetEntry + 1) -> MW(seq = SeqSrc.Literal, lit = Ucode.ResetBody),
+    Ucode.ResetBody ->                         // PC = reset-SP vector address
+      MW(aSel = ASel.Zero, bSel = BSel.Lit, lit = 0x102, alu = AluOp.Pass,
+         wsel = WSel.Int, intIdx = IntIdx.PC, we = true),
+    (Ucode.ResetBody + 1) ->                   // PC = mem[PC] (the SP value)
+      MW(bus = BusCtl.Read, intIdx = IntIdx.PC, aSel = ASel.Special,
+         alu = AluOp.PassA, size = 1, wsel = WSel.Int, we = true),
+    (Ucode.ResetBody + 2) ->                   // SP = PC (no bus: Ptr+vclr safe)
+      MW(aSel = ASel.Int, intIdx = IntIdx.PC, alu = AluOp.PassA, size = 1,
+         wsel = WSel.H8, h8Idx = H8Idx.Ptr, vclr = true, we = true),
+    (Ucode.ResetBody + 3) ->                   // PC = reset-PC vector address
+      MW(aSel = ASel.Zero, bSel = BSel.Lit, lit = 0x103, alu = AluOp.Pass,
+         wsel = WSel.Int, intIdx = IntIdx.PC, we = true),
+    (Ucode.ResetBody + 4) ->                   // PC = mem[PC], then retire
+      MW(bus = BusCtl.Read, intIdx = IntIdx.PC, aSel = ASel.Special,
+         alu = AluOp.PassA, size = 1, wsel = WSel.Int, we = true,
+         seq = SeqSrc.Literal, lit = Ucode.ResetTail),
+    Ucode.ResetTail -> retire(),
+
     0x01 -> MW(seq = SeqSrc.Literal, lit = Ucode.Sleep),
     Ucode.Sleep ->
       MW(cond = Cond.NibbleBad, seq = SeqSrc.Literal, lit = Ucode.Retire),
@@ -886,9 +909,10 @@ object MicrocodeImage:
     "bit-prefix encoding is not unique")
   require(strictProgram.collect {
     case (address, word) if word.bSel == BSel.Lit && (word.lit & 0x100) != 0 =>
-      address -> (word.lit & 1)
+      address -> (word.lit & 3)
   } == Map(Ucode.FetchEntry + 0x34 -> 1,
-    Ucode.FetchEntry + 0xa2 -> 0, Ucode.FetchEntry + 0xa5 -> 0),
+    Ucode.FetchEntry + 0xa2 -> 0, Ucode.FetchEntry + 0xa5 -> 0,
+    Ucode.ResetBody -> 2, Ucode.ResetBody + 3 -> 3),
     "special-literal encoding is not unique")
 
   /** Without strict decode the guard words vanish. A removed word reads as the

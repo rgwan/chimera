@@ -38,8 +38,8 @@ base-H8/300 gcc-10 toolchain and count cycles in simulation:
 
 | Metric | Value |
 |---|---|
-| Dhrystone | 6376 cycles/run, 0.089 DMIPS/MHz |
-| CoreMark | 10.57M cycles/iteration, 0.095 CoreMark/MHz |
+| Dhrystone | 4265 cycles/run, 0.134 DMIPS/MHz |
+| CoreMark | 9.69M cycles/iteration, 0.103 CoreMark/MHz |
 
 ## ASIC (post-route)
 

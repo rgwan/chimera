@@ -7,13 +7,15 @@ microarchitecture itself is described in
 ## FPGA (evaluation standard)
 
 The FPGA numbers of record come from the vendor place-and-route flow on
-the EG4 target part. Lean configuration, microcode ROM in block RAM,
-register file as distributed RAM:
+the EG4 target part (high-effort synthesis and physical optimization).
+Lean configuration with the vector-table boot, microcode ROM in block
+RAM, register file as distributed RAM, `irq_number` and `vt_base` as
+live top-level inputs:
 
 | Metric | Value |
 |---|---|
-| Logic | 594 LUT4/5, 2 x 9K block RAM |
-| Clock | 54 MHz |
+| Logic | 674 LUT4/5, 2 x 9K block RAM |
+| Clock | 61 MHz (16.35 ns minimum period) |
 
 yosys generic mapping (`synth -top Core -lut <k> -flatten`,
 `MicrocodeRom` blackboxed, `H8RegFile` counted in) remains a quick local
@@ -26,9 +28,8 @@ trend proxy only:
 | Logic depth (LUT5 levels, ROM register included) | 18 | 18 |
 
 The vector-table boot and IRQ nesting rework costs about 52 LUT4 in this
-proxy over the 594-LUT vendor run's RTL; 20 of those are the `vt_base`
-relocation input (measured by tying it to zero). Vendor numbers predate
-the rework.
+proxy (38 in the vendor flow, whose pre-rework best was 636); 20 of those
+are the `vt_base` relocation input (measured by tying it to zero).
 
 ## Benchmarks (rtl cycle-accurate, not certified)
 

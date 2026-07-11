@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
 
-.PHONY: bench-dhry check-sleep-strict build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-sleep check-rom-hex check-bit-reg check-bit-mem check-daa-das check-adds-subs check-mulxu check-divxu check-stack-byte check-irq-vector check-trapa gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model verify-smoke check clean
+.PHONY: bench-dhry bench-coremark check-sleep-strict build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-sleep check-rom-hex check-bit-reg check-bit-mem check-daa-das check-adds-subs check-mulxu check-divxu check-stack-byte check-irq-vector check-trapa gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model verify-smoke check clean
 
 build: smoke
 
@@ -297,3 +297,27 @@ bench-dhry:
 	vvp rtl/generated/sim_bench +hex=rtl/generated/dhry.hex \
 	  +max_cycles=50000000 | tee rtl/generated/dhry.log
 	python3 scripts/check_bench_dhry.py --score rtl/generated/dhry.log --runs $(BENCH_RUNS)
+
+COREMARK_ITER ?= 1
+bench-coremark:
+	bash rtl/build.sh
+	@test -n "$$COREMARK_SRC" || { echo "COREMARK_SRC not set (enter nix develop)"; exit 1; }
+	$(BENCH_CC) -Os -ffreestanding -fno-builtin -fomit-frame-pointer \
+	  -nostartfiles -nostdlib -Ibench/common -Ibench/common/include \
+	  -Ibench/coremark/port -I$$COREMARK_SRC \
+	  -DITERATIONS=$(COREMARK_ITER) \
+	  -Wl,-T,bench/common/link.ld -o rtl/generated/coremark.elf \
+	  bench/common/crt0.s bench/common/runtime.c \
+	  bench/coremark/port/core_portme.c \
+	  $$COREMARK_SRC/core_main.c $$COREMARK_SRC/core_list_join.c \
+	  $$COREMARK_SRC/core_matrix.c $$COREMARK_SRC/core_state.c \
+	  $$COREMARK_SRC/core_util.c \
+	  -lgcc
+	$(BENCH_OBJCOPY) -O verilog rtl/generated/coremark.elf rtl/generated/coremark.hex
+	python3 scripts/check_bench_dhry.py --audit rtl/generated/coremark.elf
+	iverilog -g2012 -o rtl/generated/sim_bench test/bench/tb_core_bench.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_bench +hex=rtl/generated/coremark.hex \
+	  +max_cycles=60000000 | tee rtl/generated/coremark.log
+	python3 scripts/check_bench_coremark.py --score rtl/generated/coremark.log \
+	  --iterations $(COREMARK_ITER)

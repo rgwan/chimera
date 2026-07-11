@@ -235,6 +235,15 @@ EOF
           dontDisableStatic = true;
         };
 
+        # CoreMark upstream, fetched at build time; never vendored into the
+        # repo. Scores are rtl cycle-accurate estimates, not EEMBC-certified.
+        coremarkSrc = pkgs.fetchFromGitHub {
+          owner = "eembc";
+          repo = "coremark";
+          rev = "1f483d5b8316753a742cbf5590caf5bd0a4e4777";
+          hash = "sha256-QNYMReTx9w+kwTWxizj34McZNE2sbIqJRmUcYn48+T0=";
+        };
+
         benchToolchainCheck = pkgs.runCommand "chimera-bench-toolchain-smoke" {
           nativeBuildInputs = [ h8300BenchBinutils h8300BenchGcc ];
         } ''
@@ -362,6 +371,7 @@ EOF
           export BENCH_CC=${h8300BenchGcc}/bin/h8300-elf-gcc
           export BENCH_OBJCOPY=${h8300BenchBinutils}/bin/h8300-elf-objcopy
           export BENCH_OBJDUMP=${h8300BenchBinutils}/bin/h8300-elf-objdump
+          export COREMARK_SRC=${coremarkSrc}
           echo "========================================"
           echo "Chimera Zaozi Development Environment"
           echo "========================================"

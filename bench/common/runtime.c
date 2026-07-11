@@ -55,20 +55,17 @@ static void putstr(const char *s)
     BENCH_PUTC = (unsigned char)*s++;
 }
 
-static void putnum(long v, unsigned base)
+static void putnum(unsigned long u, unsigned base, int width, int zero)
 {
   char buf[12];
   int i = 0;
-  unsigned long u = v;
-  if (base == 10 && v < 0) {
-    BENCH_PUTC = '-';
-    u = -v;
-  }
   do {
     unsigned d = u % base;
     buf[i++] = d < 10 ? '0' + d : 'a' + d - 10;
     u /= base;
   } while (u);
+  while (i < width && i < (int)sizeof(buf))
+    buf[i++] = zero ? '0' : ' ';
   while (i)
     BENCH_PUTC = buf[--i];
 }
@@ -78,15 +75,40 @@ int bench_printf(const char *fmt, ...)
   va_list ap;
   va_start(ap, fmt);
   for (; *fmt; ++fmt) {
+    int zero = 0, width = 0, lng = 0;
+    long v;
     if (*fmt != '%') {
       BENCH_PUTC = (unsigned char)*fmt;
       continue;
     }
     ++fmt;
+    if (*fmt == '0') {
+      zero = 1;
+      ++fmt;
+    }
+    while (*fmt >= '0' && *fmt <= '9')
+      width = width * 10 + (*fmt++ - '0');
+    if (*fmt == 'l') {
+      lng = 1;
+      ++fmt;
+    }
     switch (*fmt) {
-    case 'd': putnum(va_arg(ap, int), 10); break;
-    case 'l': putnum(va_arg(ap, long), 10); ++fmt; break;  /* %ld */
-    case 'x': putnum(va_arg(ap, int), 16); break;
+    case 'd':
+      v = lng ? va_arg(ap, long) : va_arg(ap, int);
+      if (v < 0) {
+        BENCH_PUTC = '-';
+        v = -v;
+      }
+      putnum(v, 10, width, zero);
+      break;
+    case 'u':
+      putnum(lng ? va_arg(ap, unsigned long) : va_arg(ap, unsigned),
+             10, width, zero);
+      break;
+    case 'x':
+      putnum(lng ? va_arg(ap, unsigned long) : va_arg(ap, unsigned),
+             16, width, zero);
+      break;
     case 'c': BENCH_PUTC = (unsigned char)va_arg(ap, int); break;
     case 's': putstr(va_arg(ap, const char *)); break;
     case '%': BENCH_PUTC = '%'; break;

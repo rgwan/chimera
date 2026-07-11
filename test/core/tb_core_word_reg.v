@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 //
 // Word register-register add/mov/sub/cmp smoke check.
+// Boot follows the platform table: SP from 0x0002, entry PC from 0x0006.
 `timescale 1ns / 1ps
 module tb_core_word_reg;
   reg         clock, reset, irq, nmi;
@@ -14,6 +15,7 @@ module tb_core_word_reg;
   integer     i, fails;
 
   Core dut (.clock(clock), .reset(reset), .irq(irq), .nmi(nmi),
+    .irq_number(3'd0), .vt_base(8'd0),
     .bus_addr(bus_addr), .bus_wdata(bus_wdata), .bus_rdata(bus_rdata),
     .bus_we(bus_we), .bus_wmask(bus_wmask), .bus_req(bus_req), .bus_rdy(bus_rdy));
 
@@ -37,20 +39,26 @@ module tb_core_word_reg;
 
   initial begin
     for (i = 0; i < 65536; i = i + 1) mem[i] = 8'h00;
-    mem[0] =8'h79; mem[1] =8'h01; mem[2] =8'h00; mem[3] =8'h01; // mov.w #0x0001,R1
-    mem[4] =8'h79; mem[5] =8'h00; mem[6] =8'h7f; mem[7] =8'hff; // mov.w #0x7fff,R0
-    mem[8] =8'h09; mem[9] =8'h10;                              // add.w R1,R0
-    mem[10]=8'h0d; mem[11]=8'h02;                              // mov.w R0,R2
-    mem[12]=8'h79; mem[13]=8'h03; mem[14]=8'h80; mem[15]=8'h00; // mov.w #0x8000,R3
-    mem[16]=8'h79; mem[17]=8'h04; mem[18]=8'h00; mem[19]=8'h01; // mov.w #0x0001,R4
-    mem[20]=8'h19; mem[21]=8'h43;                              // sub.w R4,R3
-    mem[22]=8'h1d; mem[23]=8'h20;                              // cmp.w R2,R0
-    mem[24]=8'h09; mem[25]=8'h18;                              // guarded invalid alias
+    mem[16'h0002]=8'h02; mem[16'h0003]=8'h00; // reset SP = 0x0200
+    mem[16'h0006]=8'h00; mem[16'h0007]=8'h30; // reset PC = 0x0030
+    mem[16'h0030]=8'h79; mem[16'h0031]=8'h01; // mov.w #0x0001,R1
+    mem[16'h0032]=8'h00; mem[16'h0033]=8'h01;
+    mem[16'h0034]=8'h79; mem[16'h0035]=8'h00; // mov.w #0x7fff,R0
+    mem[16'h0036]=8'h7f; mem[16'h0037]=8'hff;
+    mem[16'h0038]=8'h09; mem[16'h0039]=8'h10; // add.w R1,R0
+    mem[16'h003a]=8'h0d; mem[16'h003b]=8'h02; // mov.w R0,R2
+    mem[16'h003c]=8'h79; mem[16'h003d]=8'h03; // mov.w #0x8000,R3
+    mem[16'h003e]=8'h80; mem[16'h003f]=8'h00;
+    mem[16'h0040]=8'h79; mem[16'h0041]=8'h04; // mov.w #0x0001,R4
+    mem[16'h0042]=8'h00; mem[16'h0043]=8'h01;
+    mem[16'h0044]=8'h19; mem[16'h0045]=8'h43; // sub.w R4,R3
+    mem[16'h0046]=8'h1d; mem[16'h0047]=8'h20; // cmp.w R2,R0
+    mem[16'h0048]=8'h09; mem[16'h0049]=8'h18; // guarded invalid alias
 
     fails = 0; irq = 0; nmi = 0; reset = 1;
     repeat (4) @(posedge clock);
     reset = 0;
-    repeat (150) @(posedge clock); #1;
+    repeat (170) @(posedge clock); #1;
 
     if (r0 !== 16'h8000) begin $display("FAIL R0=%h exp 8000", r0); fails=fails+1; end
     if (r1 !== 16'h0001) begin $display("FAIL R1=%h exp 0001", r1); fails=fails+1; end

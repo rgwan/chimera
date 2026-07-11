@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 //
 // Core execution smoke: a NOP-filled memory should make the fetch address walk
-// 0,2,4,6,... (fetch -> PC+=2 -> dispatch -> NOP -> fetch). Behavioral
-// single-cycle big-endian SRAM.
+// entry, entry+2, entry+4, ... (fetch -> PC+=2 -> dispatch -> NOP -> fetch).
+// Boot follows the platform table: SP from 0x0002, entry PC from 0x0006.
+// Behavioral single-cycle big-endian SRAM.
 `timescale 1ns / 1ps
 module tb_core;
   reg         clock, reset, irq, nmi;
@@ -17,6 +18,7 @@ module tb_core;
   reg  [15:0] fetches [0:31];
 
   Core dut (.clock(clock), .reset(reset), .irq(irq), .nmi(nmi),
+    .irq_number(3'd0), .vt_base(8'd0),
     .bus_addr(bus_addr), .bus_wdata(bus_wdata), .bus_rdata(bus_rdata),
     .bus_we(bus_we), .bus_wmask(bus_wmask), .bus_req(bus_req), .bus_rdy(bus_rdy));
 
@@ -30,16 +32,20 @@ module tb_core;
 
   initial begin
     for (i = 0; i < 65536; i = i + 1) mem[i] = 8'h00; // all NOP (0x0000)
+    mem[16'h0002] = 8'h02; mem[16'h0003] = 8'h00;  // reset SP = 0x0200
+    mem[16'h0006] = 8'h00; mem[16'h0007] = 8'h30;  // reset PC = 0x0030
     nf = 0; fails = 0; irq = 0; nmi = 0; reset = 1;
     repeat (4) @(posedge clock);
     reset = 0;
     for (i = 0; i < 300; i = i + 1) begin
       @(posedge clock); #1;
-      if (bus_req && !bus_we && nf < 32) begin fetches[nf] = bus_addr; nf = nf + 1; end
+      if (bus_req && !bus_we && bus_addr >= 16'h0030 && nf < 32) begin
+        fetches[nf] = bus_addr; nf = nf + 1;
+      end
     end
     // invariant: each NOP advances PC by 2, so fetch addresses step by 2
-    if (fetches[0] > 2) begin
-      $display("FAIL first fetch=%h (want 0 or 2)", fetches[0]); fails = fails + 1;
+    if (fetches[0] !== 16'h0030) begin
+      $display("FAIL first fetch=%h (want 0030)", fetches[0]); fails = fails + 1;
     end
     for (i = 1; i < 12; i = i + 1)
       if (fetches[i] !== fetches[i-1] + 16'd2) begin

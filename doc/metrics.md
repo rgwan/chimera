@@ -27,12 +27,13 @@ trend proxy only:
 
 ## Benchmarks (rtl cycle-accurate, not certified)
 
-`make bench-dhry` builds Dhrystone 2.1 with the pinned base-H8/300
-gcc-10 toolchain and counts cycles in simulation:
+`make bench-dhry` and `make bench-coremark` build with the pinned
+base-H8/300 gcc-10 toolchain and count cycles in simulation:
 
 | Metric | Value |
 |---|---|
 | Dhrystone | 6376 cycles/run, 0.089 DMIPS/MHz |
+| CoreMark | 10.57M cycles/iteration, 0.095 CoreMark/MHz |
 
 ## ASIC (post-route)
 

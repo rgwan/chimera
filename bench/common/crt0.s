@@ -1,6 +1,7 @@
 ; SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
+; SPDX-FileCopyrightText: 2026 Zhiyuan Wan <hikari@iloli.bid>
 ; SPDX-License-Identifier: MIT
-; Boot loads SP and the entry PC from the vector table, then _start runs
+; CPU loads SP and the entry PC from the vector table, then _start runs
 ; main, reports, and parks in sleep.
 	.section .vectors,"a",@progbits
 	.word	0
@@ -11,7 +12,6 @@
 	.section .init,"ax",@progbits
 	.global	_start
 _start:
-	mov.w	#__stack_top, r7
 	jsr	@_main
 	mov.w	r0, @0xff88:16
 .Lpark:

@@ -14,10 +14,8 @@ case class ChimeraParameter(
   h8300h:         Boolean = false,
   strictDecode:   Boolean = false,
   romHex:         Boolean = false,
-  irqNumberWidth: Int = 3,
-  resetVector:    Int = 0
+  irqNumberWidth: Int = 3
 ) extends Parameter:
-  require(resetVector >= 0, "resetVector must be non-negative")
   require(irqNumberWidth >= 1 && irqNumberWidth <= 8,
     "irqNumberWidth must be 1..8")
 

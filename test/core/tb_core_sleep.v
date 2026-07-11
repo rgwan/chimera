@@ -59,12 +59,13 @@ module tb_core_sleep;
     mem[16'h0006] = 8'h00; mem[16'h0007] = 8'h30;  // reset PC  = 0x0030
     mem[16'h000e] = 8'h01; mem[16'h000f] = 8'h80;  // NMI       = 0x0180
     mem[16'h0018] = 8'h01; mem[16'h0019] = 8'h80;  // IRQ0      = 0x0180
-    // main at 0x30: sleep, mark r0l, mask irq, sleep, mark r0h
-    mem[16'h0030] = 8'h01; mem[16'h0031] = 8'h80;  // sleep
-    mem[16'h0032] = 8'hf8; mem[16'h0033] = 8'h55;  // mov.b #0x55, r0l
-    mem[16'h0034] = 8'h04; mem[16'h0035] = 8'h80;  // orc #0x80, ccr (set I)
-    mem[16'h0036] = 8'h01; mem[16'h0037] = 8'h80;  // sleep
-    mem[16'h0038] = 8'hf0; mem[16'h0039] = 8'haa;  // mov.b #0xaa, r0h
+    // main at 0x30: unmask irq, sleep, mark r0l, mask irq, sleep, mark r0h
+    mem[16'h0030] = 8'h06; mem[16'h0031] = 8'h7f;  // andc #0x7f, ccr (clear I)
+    mem[16'h0032] = 8'h01; mem[16'h0033] = 8'h80;  // sleep
+    mem[16'h0034] = 8'hf8; mem[16'h0035] = 8'h55;  // mov.b #0x55, r0l
+    mem[16'h0036] = 8'h04; mem[16'h0037] = 8'h80;  // orc #0x80, ccr (set I)
+    mem[16'h0038] = 8'h01; mem[16'h0039] = 8'h80;  // sleep
+    mem[16'h003a] = 8'hf0; mem[16'h003b] = 8'haa;  // mov.b #0xaa, r0h
     // handler at 0x0180: rte
     mem[16'h0180] = 8'h56; mem[16'h0181] = 8'h70;
     irq_count = 0; nmi_count = 0; req_count = 0; errors = 0;
@@ -73,7 +74,7 @@ module tb_core_sleep;
     reset = 0;
     // phase 1: boot loads SP/PC from the table, core parks in sleep
     repeat (60) @(posedge clock); #1;
-    check(pc === 16'h0032 && r0[7:0] === 8'h00, "no wake: pc holds after sleep");
+    check(pc === 16'h0034 && r0[7:0] === 8'h00, "no wake: pc holds after sleep");
     req_mark = req_count;
     repeat (20) @(posedge clock); #1;
     check(req_count === req_mark, "no wake: bus idle");
@@ -81,13 +82,13 @@ module tb_core_sleep;
     irq = 1; repeat (2) @(posedge clock); irq = 0;
     repeat (12) @(posedge clock); #1;
     check(irq_count === 1, "irq wake: handler entered");
-    check({mem[16'h01fe], mem[16'h01ff]} === 16'h0032, "irq wake: stacked pc");
+    check({mem[16'h01fe], mem[16'h01ff]} === 16'h0034, "irq wake: stacked pc");
     repeat (40) @(posedge clock); #1;
     check(r0[7:0] === 8'h55, "irq wake: resumed after sleep");
     // phase 3: masked IRQ does not wake, NMI does
     irq = 1; repeat (2) @(posedge clock); irq = 0;
     repeat (30) @(posedge clock); #1;
-    check(pc === 16'h0038 && irq_count === 1, "masked irq: still asleep");
+    check(pc === 16'h003a && irq_count === 1, "masked irq: still asleep");
     nmi = 1; repeat (2) @(posedge clock); nmi = 0;
     repeat (40) @(posedge clock); #1;
     check(nmi_count >= 1, "nmi wake: handler entered");

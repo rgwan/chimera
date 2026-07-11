@@ -22,8 +22,8 @@ extension is hardware SP load and the moved reset PC.
 Reset enters the microcode at its own entry whose first word is the
 all-zero no-op (ROMs may miss the first read after reset). Microcode
 then loads SP from 0x0002 and PC from 0x0006 over the bus and retires
-into the fetch loop. CCR.I resets to 0; boot code configures the
-interrupt sources before raising load.
+into the fetch loop. CCR.I resets to 1: interrupts stay masked until
+boot code has configured the sources and clears I (`andc #0x7f, ccr`).
 
 ## Interrupt behavior
 

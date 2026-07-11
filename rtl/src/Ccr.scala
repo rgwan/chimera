@@ -40,7 +40,7 @@ object Ccr extends Generator[ChimeraParameter, ChimeraLayers, CcrIO, ChimeraProb
     given Ref[Clock] = io.clock
     given Ref[Reset] = io.reset
 
-    val state = RegInit(0.U(6)) // I H N Z V C
+    val state = RegInit(0x20.U(6)) // I H N Z V C; reset masks interrupts
     val stateBits = state.asBits
 
     def fc(code: Int) = io.flagCtl === code.U(3)

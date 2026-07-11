@@ -72,7 +72,8 @@ module tb_core_irq_vector;
     mem[16'h000e]=8'h00; mem[16'h000f]=8'h60;             // NMI      -> 0x0060
     mem[16'h001c]=8'h00; mem[16'h001d]=8'h70;             // IRQ2     -> 0x0070
     mem[16'h0022]=8'h00; mem[16'h0023]=8'h80;             // IRQ5     -> 0x0080
-    mem[16'h0030]=8'h40; mem[16'h0031]=8'hfe;             // main: bra -2
+    mem[16'h0030]=8'h06; mem[16'h0031]=8'h7f;             // main: andc #0x7f, ccr
+    mem[16'h0032]=8'h40; mem[16'h0033]=8'hfe;             //       bra -2
     mem[16'h0060]=8'h79; mem[16'h0061]=8'h02;             // nmi:  mov.w #0x2222,R2
     mem[16'h0062]=8'h22; mem[16'h0063]=8'h22;
     mem[16'h0064]=8'h56; mem[16'h0065]=8'h70;             // rte
@@ -103,7 +104,8 @@ module tb_core_irq_vector;
     mem[16'h0106]=8'h01; mem[16'h0107]=8'h30;             // reset PC = 0x0130
     mem[16'h010e]=8'h01; mem[16'h010f]=8'h60;             // NMI      -> 0x0160
     mem[16'h011c]=8'h01; mem[16'h011d]=8'h70;             // IRQ2     -> 0x0170
-    mem[16'h0130]=8'h40; mem[16'h0131]=8'hfe;             // main: bra -2
+    mem[16'h0130]=8'h06; mem[16'h0131]=8'h7f;             // main: andc #0x7f, ccr
+    mem[16'h0132]=8'h40; mem[16'h0133]=8'hfe;             //       bra -2
     mem[16'h0160]=8'h79; mem[16'h0161]=8'h04;             // nmi:  mov.w #0x4444,R4
     mem[16'h0162]=8'h44; mem[16'h0163]=8'h44;
     mem[16'h0164]=8'h56; mem[16'h0165]=8'h70;             // rte

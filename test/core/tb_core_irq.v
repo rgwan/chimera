@@ -52,8 +52,9 @@ module tb_core_irq;
     mem[16'h0002] = 8'h02; mem[16'h0003] = 8'h00;  // reset SP = 0x0200
     mem[16'h0006] = 8'h00; mem[16'h0007] = 8'h30;  // reset PC = 0x0030
     mem[16'h0018] = 8'h00; mem[16'h0019] = 8'h80;  // IRQ0     = 0x0080
-    // main at 0x30: halt loop
-    mem[16'h0030] = 8'h40; mem[16'h0031] = 8'hfe;  // bra -2
+    // main at 0x30: unmask irq (reset holds I set), then halt loop
+    mem[16'h0030] = 8'h06; mem[16'h0031] = 8'h7f;  // andc #0x7f, ccr
+    mem[16'h0032] = 8'h40; mem[16'h0033] = 8'hfe;  // bra -2
     // handler at 0x80: clear I, nop sled, rte
     mem[16'h0080] = 8'h06; mem[16'h0081] = 8'h7f;  // andc #0x7f, ccr
     mem[16'h008e] = 8'h56; mem[16'h008f] = 8'h70;  // rte
@@ -61,7 +62,8 @@ module tb_core_irq;
     repeat (4) @(posedge clock);
     reset = 0;
     repeat (40) @(posedge clock); #1;
-    check(handler_count == 0 && dut.ccr.iFlag === 1'b0, "boot: I clear, no entry");
+    check(handler_count == 0 && dut.ccr.iFlag === 1'b0,
+          "boot: andc unmasked, no entry");
     // first IRQ: handler entered once, entry sets I
     irq = 1; repeat (2) @(posedge clock); irq = 0;
     wait (bus_req && !bus_we && bus_addr == 16'h0080); #1;
@@ -75,7 +77,7 @@ module tb_core_irq;
     // after RTE the pending IRQ is taken, then the core returns to the loop
     repeat (80) @(posedge clock); #1;
     check(handler_count == 2, "pending: taken after rte");
-    check(dut.ccr.iFlag === 1'b0 && pc >= 16'h0030 && pc <= 16'h0033,
+    check(dut.ccr.iFlag === 1'b0 && pc >= 16'h0032 && pc <= 16'h0035,
           "resume: I restored, halted in main");
     if (fails == 0)
       $display("CORE-IRQ PASS: entry once, irqActive holds nested irq, rte releases");

@@ -242,15 +242,16 @@ module tb_core_wait;
       fails = fails + 1;
     end
 
+    // reset leaves CCR.I set, so the byte carries 0x80 on top of N
     exercise_wait(WAIT_READ, 16'h0100, 1'b0, 3, "read");
-    if (r3 !== 16'hbeef || ccr !== 8'h08) begin
-      $display("FAIL read R3=%h CCR=%h exp=beef/08", r3, ccr);
+    if (r3 !== 16'hbeef || ccr !== 8'h88) begin
+      $display("FAIL read R3=%h CCR=%h exp=beef/88", r3, ccr);
       fails = fails + 1;
     end
 
     exercise_wait(WAIT_WRITE, 16'h0102, 1'b1, 5, "write");
-    if (mem[16'h0102] !== 8'h80 || mem[16'h0103] !== 8'h01 || ccr !== 8'h08) begin
-      $display("FAIL write mem=%h%h CCR=%h exp=8001/08",
+    if (mem[16'h0102] !== 8'h80 || mem[16'h0103] !== 8'h01 || ccr !== 8'h88) begin
+      $display("FAIL write mem=%h%h CCR=%h exp=8001/88",
         mem[16'h0102], mem[16'h0103], ccr);
       fails = fails + 1;
     end

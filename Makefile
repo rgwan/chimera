@@ -281,7 +281,7 @@ BENCH_CC ?= h8300-elf-gcc
 bench-dhry:
 	bash rtl/build.sh
 	@test -n "$$BENCH_CC" || { echo "BENCH_CC not set (enter nix develop)"; exit 1; }
-	$(BENCH_CC) -Os -ffreestanding -fno-builtin -fomit-frame-pointer \
+	$(BENCH_CC) -Ofast -ffreestanding -fno-builtin -fomit-frame-pointer \
 	  -nostartfiles -nostdlib -Ibench/common -Ibench/common/include \
 	  -DBENCH_RUNS=$(BENCH_RUNS) -DTIME=1 -DHZ=1 \
 	  -Dprintf=bench_printf -Dscanf=bench_scanf \
@@ -302,7 +302,7 @@ COREMARK_ITER ?= 1
 bench-coremark:
 	bash rtl/build.sh
 	@test -n "$$COREMARK_SRC" || { echo "COREMARK_SRC not set (enter nix develop)"; exit 1; }
-	$(BENCH_CC) -Os -ffreestanding -fno-builtin -fomit-frame-pointer \
+	$(BENCH_CC) -Ofast -ffreestanding -fno-builtin -fomit-frame-pointer \
 	  -nostartfiles -nostdlib -Ibench/common -Ibench/common/include \
 	  -Ibench/coremark/port -I$$COREMARK_SRC \
 	  -DITERATIONS=$(COREMARK_ITER) \

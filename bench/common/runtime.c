@@ -137,3 +137,8 @@ long bench_time(long *t)
   BENCH_TSTOP = 1;
   return 1;
 }
+
+void abort()
+{
+  
+}

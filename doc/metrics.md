@@ -4,19 +4,20 @@ Measured numbers per configuration. Remeasure after RTL changes; the
 microarchitecture itself is described in
 [microarchitecture.md](microarchitecture.md).
 
-## FPGA (vendor place-and-route, EG4 target)
+## FPGA (evaluation standard)
 
-Lean configuration, microcode ROM in block RAM, register file as
-distributed RAM:
+The FPGA numbers of record come from the vendor place-and-route flow on
+the EG4 target part. Lean configuration, microcode ROM in block RAM,
+register file as distributed RAM:
 
 | Metric | Value |
 |---|---|
 | Logic | 594 LUT4/5, 2 x 9K block RAM |
 | Clock | 54 MHz |
 
-Trend numbers from yosys generic mapping (`synth -top Core -lut <k>
--flatten`, `MicrocodeRom` blackboxed, `H8RegFile` counted in); the vendor
-report above takes precedence:
+yosys generic mapping (`synth -top Core -lut <k> -flatten`,
+`MicrocodeRom` blackboxed, `H8RegFile` counted in) remains a quick local
+trend proxy only:
 
 | | `lean` (default) | `strict` |
 |---|---|---|

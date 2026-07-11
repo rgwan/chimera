@@ -12,8 +12,7 @@ module MicrocodeRom(
 );
   reg [35:0] mem [0:511];
   initial begin
-    $readmemh("urom.memh", mem);
-    data = mem[9'h100];
+    $readmemh("../generated/urom.memh", mem);
   end
   // In reset force the fetch-entry word, like the generated module's reset
   // value; the address mux keeps the single synchronous read BRAM-inferable.

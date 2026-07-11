@@ -52,6 +52,10 @@ object Ccr extends Generator[ChimeraParameter, ChimeraLayers, CcrIO, ChimeraProb
     val bit     = fc(FlagCtl.Bit)
     val nzv     = fc(FlagCtl.Nzv)
 
+    // The result flags arrive late through the ALU; flagCtl/ldWe/setI and the
+    // old state are ready at the cycle start. Fold everything early into one
+    // base term and one result enable per bit, so the late signals cross a
+    // single and-or level.
     val bitC = bit & io.resH
     val bitZ = bit & (!io.resH)
     val writeH = addSub | stickyZ
@@ -59,24 +63,28 @@ object Ccr extends Generator[ChimeraParameter, ChimeraLayers, CcrIO, ChimeraProb
     val writeZ = writeN | bitZ
     val writeV = writeN
     val writeC = addSub | shift | stickyZ | bitC
-    val flagWriteMask = (0.B(1) ## writeH.asBits ## writeN.asBits ## writeZ.asBits ##
-      writeV.asBits ## writeC.asBits).asUInt
-
-    val nextZ = stickyZ.?((io.resZ & stateBits.bit(2)), io.resZ)
-    val nextV = nz.?(false.B, io.hwV)
-    val flagNext = (0.B(1) ## io.resH.asBits ## io.resN.asBits ## nextZ.asBits ##
-      nextV.asBits ## io.hwC.asBits).asUInt
 
     val lv = io.ldVal.asBits
-    val loadNext = (lv.bit(7).asBits ## lv.bit(5).asBits ## lv.bits(3, 0)).asUInt
-    val selectedMask = io.ldWe.?(0x3f.U(6), flagWriteMask)
-    val selectedNext = io.ldWe.?(loadNext, flagNext)
-    val setIMask = (io.setI.asBits ## 0.B(5)).asUInt
-    val writeMask = (selectedMask.asBits | setIMask.asBits).asUInt
-    val writeValue = (selectedNext.asBits | setIMask.asBits).asUInt
-    val nextState = ((stateBits & (~writeMask.asBits)) |
-      (writeValue.asBits & writeMask.asBits)).asUInt
-    state := nextState
+    val notLd = !io.ldWe
+    def flagBit(idx: Int, resEnRaw: Referable[Bool], late: Referable[Bool],
+                loadBit: Referable[Bool], force: Referable[Bool]) =
+      val resEn = notLd & resEnRaw
+      val keep = (!resEn) & notLd
+      (keep & stateBits.bit(idx)) | (io.ldWe & loadBit) | force |
+        (resEn & late)
+
+    val never = Wire(Bool())
+    never := false.B
+    val zLate = io.resZ & (stickyZ.?(stateBits.bit(2), true.B))
+    val vLate = io.hwV & (!nz)
+    val nextI = flagBit(5, never, never, lv.bit(7), io.setI)
+    val nextH = flagBit(4, writeH, io.resH, lv.bit(5), never)
+    val nextN = flagBit(3, writeN, io.resN, lv.bit(3), never)
+    val nextZb = flagBit(2, writeZ, zLate, lv.bit(2), never)
+    val nextV = flagBit(1, writeV, vLate, lv.bit(1), never)
+    val nextC = flagBit(0, writeC, io.hwC, lv.bit(0), never)
+    state := (nextI.asBits ## nextH.asBits ## nextN.asBits ##
+      nextZb.asBits ## nextV.asBits ## nextC.asBits).asUInt
 
     io.hnzvc := stateBits.bits(4, 0).asUInt
     io.ccrByte := (stateBits.bit(5).asBits ## 0.B(1) ## stateBits.bit(4).asBits ##

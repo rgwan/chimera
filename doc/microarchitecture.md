@@ -19,7 +19,7 @@ first byte in `word[7:0]` (`d ooo pppp`, `d=word[7]`) and second byte in
 |---|---|---|
 | A | `d=1` | `{0x80 \| ooo}` (0x80..0x87, immediate ALU) |
 | B | `d=0`, `ooo ∈ {1,6,7}` (plus `0` when H8/300H) | `{2'b11, word[5:0]}` (0xC0..0xFF) |
-| C | otherwise | `{1'b0, word[7:0]}` (0x00..0x7F) |
+| C | otherwise | `{1'b0, word[6:0]}` (0x00..0x7F) |
 
 `word[7]` in bucket B is an address bit, not a gate. 192 dispatch targets
 (compressible to 160–184). Coarse LUT < 10 LUT4/5. Second-level dispatch
@@ -61,10 +61,10 @@ word-guard code holds the sleep wait loop (branch while no wake event).
 
 ## Operands
 
-RISC-like `rd / rs1 / rs2`. Fields extracted from `instr[4:0]`, `instr[7:4]`,
-`instr[11:8]` by hardwired muxes (not ROM). `rs1` selects microsequencer-internal
-registers only. `rd`/`rs2` select H8 or internal registers, distinguished by one
-bit. The instruction word is a readable internal register.
+Flatten style microcode. Fields extracted from `instr[4:0]`, `instr[7:4]`,
+`instr[11:8]` by hardwired muxes (not ROM), using `h8_idx` to select.
+
+`a_sel` and `b_sel` selects input source of ALU, which can be from H8 or IntRegFile.
 
 ## Register files
 

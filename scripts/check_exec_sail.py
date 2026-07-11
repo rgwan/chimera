@@ -4,6 +4,7 @@
 """Execution-equivalence gate: run isa/*.yaml cases on the RTL and compare the
 retired register file and CCR to the Sail-derived expected state.
 
+The image carries reset SP/PC vector entries that boot into the prologue.
 State is preloaded with a mov.w/ldc prologue, so no debug backdoor is needed;
 only cases whose instruction is implemented in microcode are run (others are
 skipped and counted). Env SIM_BIN points at the compiled tb_isa_case runner.
@@ -69,6 +70,7 @@ IMPLEMENTED = {
 }
 
 MEM_PROBE_LIMIT = 16
+PROLOGUE_BASE = 0x0030  # first address past the platform vector table
 ABSOLUTE_PC_INSTRUCTIONS = {
     "h8_jmp_r16i", "h8_jmp_abs16", "h8_jmp_abs8i",
     "h8_jsr_r16i", "h8_jsr_abs16", "h8_jsr_abs8i",
@@ -135,9 +137,11 @@ def instruction_len(case):
     return len(case.get("words", [])) * 2
 
 
-def case_start(case, prologue_len):
-    pc = parse_hex(case["initial"].get("pc", "0x0000"))
-    return pc if pc >= prologue_len else prologue_len
+def boot_vectors(initial):
+    """Reset SP (0x0002) and entry PC (0x0006) halfwords of the vector table."""
+    sp = reg_word(initial.get("regs", {})).get(7, 0)
+    return {0x0002: (sp >> 8) & 0xFF, 0x0003: sp & 0xFF,
+            0x0006: (PROLOGUE_BASE >> 8) & 0xFF, 0x0007: PROLOGUE_BASE & 0xFF}
 
 
 def memory_expected(case, start):
@@ -153,15 +157,17 @@ def memory_expected(case, start):
 
 def prepared_image(case):
     pre = prologue(case["initial"])
+    pre_end = PROLOGUE_BASE + len(pre)
     initial_pc = parse_hex(case["initial"].get("pc", "0x0000"))
-    jump_to_initial = initial_pc >= len(pre)
-    start = initial_pc if jump_to_initial else case_start(case, len(pre))
+    jump_to_initial = initial_pc >= pre_end + 4
+    start = initial_pc if jump_to_initial else pre_end
     if start & 1:
         raise ValueError(f"{case['id']}: odd case start 0x{start:04x}")
-    image = {addr: byte for addr, byte in enumerate(pre)}
+    image = boot_vectors(case["initial"])
+    image.update({PROLOGUE_BASE + off: byte for off, byte in enumerate(pre)})
     if jump_to_initial:
         for offset, byte in enumerate([0x5A, 0x00, (start >> 8) & 0xFF, start & 0xFF]):
-            image[len(pre) + offset] = byte
+            image[pre_end + offset] = byte
     for offset, byte in enumerate(case_words(case["words"])):
         image[start + offset] = byte
     for addr_s, val_s in case.get("memory", {}).get("initial", {}).items():

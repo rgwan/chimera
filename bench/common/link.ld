@@ -7,7 +7,8 @@ ENTRY(_start)
 MEMORY { ram (rwx) : ORIGIN = 0x0000, LENGTH = 0xff80 }
 
 SECTIONS {
-  .text : { KEEP(*(.init)) *(.text*) } > ram
+  .vectors 0x0000 : { KEEP(*(.vectors)) } > ram
+  .text 0x0030 : { KEEP(*(.init)) *(.text*) } > ram
   .rodata : { *(.rodata*) } > ram
   .data : { *(.data*) } > ram
   .bss : { *(.bss*) *(COMMON) } > ram

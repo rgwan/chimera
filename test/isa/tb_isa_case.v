@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 //
 // Generic ISA-case runner: loads a memory image (+hex=<file>) built by
-// check_exec_sail.py (state-preload prologue + the case instruction + NOPs),
-// runs, and dumps architectural state for retire comparison.
+// check_exec_sail.py (boot vectors + state-preload prologue + the case
+// instruction + NOPs), runs, and dumps architectural state for retire
+// comparison.
 `timescale 1ns / 1ps
 module tb_isa_case;
   reg         clock, reset, irq, nmi;
@@ -23,6 +24,7 @@ module tb_isa_case;
   integer     fetch_count;
 
   Core dut (.clock(clock), .reset(reset), .irq(irq), .nmi(nmi),
+    .irq_number(3'd0), .vt_base(8'd0),
     .bus_addr(bus_addr), .bus_wdata(bus_wdata), .bus_rdata(bus_rdata),
     .bus_we(bus_we), .bus_wmask(bus_wmask), .bus_req(bus_req), .bus_rdy(bus_rdy));
 

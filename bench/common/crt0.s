@@ -1,6 +1,13 @@
 ; SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 ; SPDX-License-Identifier: MIT
-; Reset lands at address 0: set SP, run main, report, park in sleep.
+; Boot loads SP and the entry PC from the vector table, then _start runs
+; main, reports, and parks in sleep.
+	.section .vectors,"a",@progbits
+	.word	0
+	.word	__stack_top
+	.word	0
+	.word	_start
+
 	.section .init,"ax",@progbits
 	.global	_start
 _start:

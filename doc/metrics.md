@@ -36,10 +36,13 @@ are the `vt_base` relocation input (measured by tying it to zero).
 `make bench-dhry` and `make bench-coremark` build with the pinned
 base-H8/300 gcc-10 toolchain and count cycles in simulation:
 
-| Metric | Value |
-|---|---|
-| Dhrystone | 4265 cycles/run, 0.134 DMIPS/MHz |
-| CoreMark | 9.69M cycles/iteration, 0.103 CoreMark/MHz |
+| Metric | Chimera (lean) | Classic 8051 | Enhanced 8051 (STC8A8K64S4A) |
+|---|---|---|---|
+| Dhrystone | 4265 cycles/run, 0.134 DMIPS/MHz (9 ~ 14 times faster than 8051 at same frequency) | ~ 0.0094 DMIPS/MHz | ~0.09 DMIPS/MHz |
+| CoreMark | 9.69M cycles/iteration, 0.103 CoreMark/MHz | No sufficient memory for 8051 to run CoreMark | Not tested yet |
+
+Enhanced 8051 benchmark performance is from [this repo](https://github.com/tomzbj/dhrystone_score).
+
 
 ## ASIC (post-route)
 

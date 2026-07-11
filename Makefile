@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
 
-.PHONY: build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-sleep check-rom-hex check-bit-reg check-bit-mem check-daa-das check-adds-subs check-mulxu check-divxu check-stack-byte check-irq-vector check-trapa gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model verify-smoke check clean
+.PHONY: bench-dhry build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-sleep check-rom-hex check-bit-reg check-bit-mem check-daa-das check-adds-subs check-mulxu check-divxu check-stack-byte check-irq-vector check-trapa gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model verify-smoke check clean
 
 build: smoke
 
@@ -269,3 +269,25 @@ check:
 
 clean:
 	rm -rf result
+
+BENCH_RUNS ?= 200
+BENCH_CC ?= h8300-elf-gcc
+bench-dhry:
+	bash rtl/build.sh
+	@test -n "$$BENCH_CC" || { echo "BENCH_CC not set (enter nix develop)"; exit 1; }
+	$(BENCH_CC) -Os -ffreestanding -fno-builtin -fomit-frame-pointer \
+	  -nostartfiles -nostdlib -Ibench/common -Ibench/common/include \
+	  -DBENCH_RUNS=$(BENCH_RUNS) -DTIME=1 -DHZ=1 \
+	  -Dprintf=bench_printf -Dscanf=bench_scanf \
+	  -Dmalloc=bench_malloc -Dtime=bench_time \
+	  -Wl,-T,bench/common/link.ld -o rtl/generated/dhry.elf \
+	  bench/common/crt0.s bench/common/runtime.c \
+	  bench/dhrystone/upstream/dhry_1.c bench/dhrystone/upstream/dhry_2.c \
+	  -lgcc
+	$(BENCH_OBJCOPY) -O verilog rtl/generated/dhry.elf rtl/generated/dhry.hex
+	python3 scripts/check_bench_dhry.py --audit rtl/generated/dhry.elf
+	iverilog -g2012 -o rtl/generated/sim_bench test/bench/tb_core_bench.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_bench +hex=rtl/generated/dhry.hex \
+	  +max_cycles=50000000 | tee rtl/generated/dhry.log
+	python3 scripts/check_bench_dhry.py --score rtl/generated/dhry.log --runs $(BENCH_RUNS)

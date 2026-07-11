@@ -1,0 +1,18 @@
+Dhrystone Benchmark, Version 2.1 (Language: C)
+
+Originally written by Reinhold P. Weicker, Siemens AG, 1984.
+
+The Dhrystone benchmark sources were placed in the public domain by the
+original author. The conditions traditionally accompanying the
+distribution are:
+
+1. No commercial advertising shall be done without the author's written
+   permission.
+2. References to the original publication (Communications of the ACM,
+   Vol. 27, No. 10, October 1984) shall be retained.
+3. When the program is modified, the file shall be marked as a modified
+   version, with the change author and date noted.
+
+The author makes no warranty, express or implied, with respect to the
+quality, accuracy, or fitness of the Dhrystone software for any
+particular purpose.

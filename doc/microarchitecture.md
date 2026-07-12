@@ -40,24 +40,26 @@ microcode via the next-µPC jump table.
 
 | Bits | Field | Encoding |
 |---|---|---|
-| 35:27 | literal | absolute next-µPC target / immediate constant |
+| 35:27 | literal | absolute next-µPC target / immediate constant (1-bit special + 8-bit data) |
 | 26:25 | seq_src | seq+1 / literal / dispatch / return |
 | 24:22 | cond | none, Z, alu-ge, int-bit, cc-from-instr, loop-nz, word-guard, nibble-guard |
 | 21:18 | alu_op | add sub adc sbc and or xor pass shar shr1 rol ror rorc pass-a |
 | 17:16 | a_sel | H8 / internal / zero / special (BIU read or CCR) |
 | 15:14 | b_sel | H8 / imm8 / internal / literal |
-| 13:12 | h8_idx | which extracted field indexes the H8 file |
+| 13:12 | h8_idx | which extracted field indexes the H8 file (rd/rs/ptr) |
 | 11:10 | int_idx | internal file index (PC / IREG / TEMP / AUX) |
 | 9 | wsel | writeback target (H8 / internal) |
 | 8 | reg_we | register write enable |
 | 7:5 | flag_ctl | flag update group |
 | 4:3 | bus_ctl | none / fetch / read / write |
 | 2 | size | byte / word |
-| 1 | seq_aux | loop init / trap arm / retire (by seq_src) |
-| 0 | vclear | force V=0; with the pointer index also selects SP |
+| 1 | seq_aux | loop init / trap arm / retire (must to combined with seq_src) |
+| 0 | vclear | force V=0 when flag_ctl allows update V flag; with the pointer index also selects SP |
 
 In the `lean` configuration the two guard predicates are removed and the
 word-guard code holds the sleep wait loop (branch while no wake event).
+
+`Special bit` of `literial` field selects `vector address`now.
 
 ## Operands
 

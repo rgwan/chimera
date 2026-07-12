@@ -181,6 +181,11 @@ drop-in `MicrocodeRom` that loads the image with `readmemh` so FPGA tools
 infer block RAM. The default when-chain ROM stays self-contained for
 simulation and synthesizes to gates for ASIC.
 
+`CCR_UBIT=true` gives the CCR user bits UI (bit 6) and U (bit 4) real
+storage: the direct load path (LDC/ANDC/ORC/XORC) writes them and STC reads
+them back, while flag updates and interrupt entry leave them alone. Off
+(default) they read as zero, as in the base configuration.
+
 Build commands are in the README; measured area, timing, and power per
 configuration are in [metrics.md](metrics.md).
 

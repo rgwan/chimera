@@ -14,6 +14,7 @@ case class ChimeraParameter(
   h8300h:         Boolean = false,
   strictDecode:   Boolean = false,
   romHex:         Boolean = false,
+  ccrUbit:        Boolean = false,
   irqNumberWidth: Int = 3
 ) extends Parameter:
   require(irqNumberWidth >= 1 && irqNumberWidth <= 8,

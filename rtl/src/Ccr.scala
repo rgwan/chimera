@@ -87,8 +87,18 @@ object Ccr extends Generator[ChimeraParameter, ChimeraLayers, CcrIO, ChimeraProb
       nextZb.asBits ## nextV.asBits ## nextC.asBits).asUInt
 
     io.hnzvc := stateBits.bits(4, 0).asUInt
-    io.ccrByte := (stateBits.bit(5).asBits ## 0.B(1) ## stateBits.bit(4).asBits ##
-      0.B(1) ## stateBits.bits(3, 0)).asUInt
+    if parameter.ccrUbit then
+      // UI (bit6) and U (bit4) exist as plain storage: only the direct load
+      // path writes them; flag groups and interrupt entry leave them alone.
+      val ubits = RegInit(0.U(2))
+      when(io.ldWe)(ubits := (lv.bit(6).asBits ## lv.bit(4).asBits).asUInt)
+      val ubitsBits = ubits.asBits
+      io.ccrByte := (stateBits.bit(5).asBits ## ubitsBits.bit(1).asBits ##
+        stateBits.bit(4).asBits ## ubitsBits.bit(0).asBits ##
+        stateBits.bits(3, 0)).asUInt
+    else
+      io.ccrByte := (stateBits.bit(5).asBits ## 0.B(1) ## stateBits.bit(4).asBits ##
+        0.B(1) ## stateBits.bits(3, 0)).asUInt
     io.zFlag := stateBits.bit(2)
     io.cFlag := stateBits.bit(0)
     io.iFlag := stateBits.bit(5)

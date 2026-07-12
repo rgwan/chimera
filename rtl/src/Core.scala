@@ -394,15 +394,19 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     // loopCount is touched by a loop-init (Next+aux) or a LoopNZ tail branch.
     val xLoopTouch = xValid & (((xSeqSrc === SeqSrc.Next.U(2)) & xSeqAux) |
       ((xSeqSrc === SeqSrc.Literal.U(2)) & (xCond === Cond.LoopNZ.U(3))))
-    val xIsAlu = xValid
+    // aluPred is written only by a Next+AluGe word, so only that in X can
+    // hazard an F-stage AluGe branch (not any executing word).
+    val xSetsAluPred = xValid & (xSeqSrc === SeqSrc.Next.U(2)) &
+      (xCond === Cond.AluGe.U(3))
     val xBitStateChange = xValid & (xBitPrefixHead | xBitMemReturn |
       (xBitMemActive & (xBusCtl === BusCtl.Read.U(2)) & (xIntIdx === IntIdx.IReg.U(2))))
-    // The executing word may mutate interrupt/trap pending state through an ack
-    // or trap-arm, which the retire redirect (F stage) consumes.
-    val xPendChange = xValid & (
-      ((xSeqSrc === SeqSrc.Return.U(2)) & (!xSeqAux)) |            // retire ack
-      ((xSeqSrc === SeqSrc.Return.U(2)) & xSeqAux) |               // rte ack
-      ((xSeqSrc === SeqSrc.Dispatch.U(2)) & xSeqAux))             // trap arm
+    // Only a genuine pending-state mutation makes the F-stage retire redirect
+    // wait: a trap arm (sets trapPend), or an interrupt/RTE ack (changes the
+    // in-service latches). A plain two-word retire that just redirects to
+    // fetch changes nothing, so it must not stall — that false hazard was
+    // ~half of all bubbles (once per instruction).
+    val xPendChange = (xValid & (xSeqSrc === SeqSrc.Dispatch.U(2)) & xSeqAux) |
+      useq.io.irqAck | useq.io.rteAck
 
     val fReadsH8 = (udec.io.aSel === ASel.H8.U(2)) | (udec.io.bSel === BSel.H8.U(2)) |
       (udec.io.h8Idx === H8Idx.Ptr.U(2)) | stackBus | h8BusAddr
@@ -427,7 +431,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       (pcBus & (xIntW === IntIdx.PC.U(2))) |
       (fBusIregAddr & (xIntW === IntIdx.IReg.U(2))))
     val hazCcr = xCcrWrite & (fCondFlags | fReadsCcr)
-    val hazAluGe = xIsAlu & fCondAluGe
+    val hazAluGe = xSetsAluPred & fCondAluGe
     val hazLoop = xLoopTouch & fCondLoop
     val hazBit = xBitStateChange
     val hazPend = xPendChange & fRetirePoint

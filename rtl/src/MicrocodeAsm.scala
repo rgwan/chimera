@@ -43,6 +43,13 @@ object MicrocodeImage:
   private def retire(mw: MW = MW()): MW =
     mw.copy(seq = SeqSrc.Return, aux = true)
 
+  /** Bare return that does no writeback. Neutral operand selectors (no H8/int/
+    * CCR read) so the interlock does not stall it behind a producer that wrote
+    * the register this word would otherwise appear to read. */
+  private def retireNop(): MW =
+    MW(aSel = ASel.Zero, bSel = BSel.Lit, h8Idx = H8Idx.RdImm,
+       seq = SeqSrc.Return, aux = true)
+
   private val debugEntryWord = MW(seq = SeqSrc.Literal, lit = Ucode.DebugEntry)
   private val nmiEntryWord = MW(seq = SeqSrc.Literal, lit = Ucode.IrqEntry)
   private def bitIndexHead(target: Int) = MW(
@@ -133,7 +140,7 @@ object MicrocodeImage:
         routine -> MW(aSel = ASel.H8, bSel = BSel.Lit, lit = 1, h8Idx = H8Idx.RdReg,
                       alu = op, flag = FlagCtl.Nzv, wsel = WSel.H8, we = true,
                       seq = SeqSrc.Next),
-        (routine + 1) -> retire())
+        (routine + 1) -> retireNop())
 
   private def addsSubs(disp: Int, routine: Int, op: Int,
                        mclass: Boolean = false): Seq[(Int, MW)] =
@@ -144,7 +151,7 @@ object MicrocodeImage:
         (routine + 1) -> MW(aSel = ASel.H8, bSel = BSel.Lit, lit = 0x100,
                       h8Idx = H8Idx.RdReg, alu = op, size = 1,
                       wsel = WSel.H8, we = true, seq = SeqSrc.Next),
-        (routine + 2) -> retire())
+        (routine + 2) -> retireNop())
 
   private def cmpIntGe(addr: Int, idx: Int, threshold: Int,
                        target: Int): Seq[(Int, MW)] =
@@ -295,7 +302,7 @@ object MicrocodeImage:
       (base + 7) -> MW(aSel = ASel.Int, intIdx = IntIdx.Temp, alu = AluOp.Shr1,
                        wsel = WSel.Int, we = true),
       (base + 8) -> MW(cond = Cond.LoopNZ, seq = SeqSrc.Literal, lit = base + 5),
-      (base + 9) -> retire(),
+      (base + 9) -> retireNop(),
       add -> MW(aSel = ASel.H8, h8Idx = H8Idx.RdReg, bSel = BSel.Int,
                 intIdx = IntIdx.IReg, alu = AluOp.Add, size = 1,
                 wsel = WSel.H8, we = true, seq = SeqSrc.Literal,
@@ -397,7 +404,7 @@ object MicrocodeImage:
          lit = Ucode.FetchEntry),
 
     // NOP (dispatch 0x00): return to fetch
-    0x00 -> retire(),
+    0x00 -> retireNop(),
 
     // ldc #imm8,ccr (dispatch 0x07): CCR := imm8 (I UI H U N Z V C)
     0x07 -> retire(MW(aSel = ASel.Zero, flag = FlagCtl.LoadCcr)),
@@ -517,7 +524,7 @@ object MicrocodeImage:
     (Ucode.FetchEntry + 0x40) ->               // PC += 2 (seq=Next avoids the lit clash)
       MW(aSel = ASel.Int, intIdx = IntIdx.PC, bSel = BSel.Lit, lit = 2, alu = AluOp.Add,
          wsel = WSel.Int, we = true),
-    (Ucode.FetchEntry + 0x41) -> retire(),
+    (Ucode.FetchEntry + 0x41) -> retireNop(),
 
     // mov.b @Rn,Rd (load 0x68) / mov.b Rs,@Rn (store, m-class 0xE8).
     0x68 -> MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, alu = AluOp.PassA, size = 1,
@@ -710,7 +717,7 @@ object MicrocodeImage:
     (Ucode.FetchEntry + 0x64) ->               // SP += 2
       MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, vclr = true, bSel = BSel.Lit, lit = 2,
          alu = AluOp.Add, size = 1, wsel = WSel.H8, we = true),
-    (Ucode.FetchEntry + 0x65) -> retire(),
+    (Ucode.FetchEntry + 0x65) -> retireNop(),
     // jsr @Rn (0x5D): stage target before SP changes so @SP aliases use old SP.
     0x5d -> MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, alu = AluOp.PassA, size = 1,
                wsel = WSel.Int, intIdx = IntIdx.IReg, we = true,
@@ -778,7 +785,7 @@ object MicrocodeImage:
     (Ucode.FetchEntry + 0x6c) ->               // SP += 2
       MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, vclr = true, bSel = BSel.Lit, lit = 2,
          alu = AluOp.Add, size = 1, wsel = WSel.H8, we = true),
-    (Ucode.FetchEntry + 0x6d) -> retire(),
+    (Ucode.FetchEntry + 0x6d) -> retireNop(),
 
     0x57 -> MW(seq = SeqSrc.Literal, lit = Ucode.Trapa),
     Ucode.Trapa ->
@@ -806,20 +813,20 @@ object MicrocodeImage:
       MW(bus = BusCtl.Read, intIdx = IntIdx.PC, aSel = ASel.Special,
          alu = AluOp.PassA, size = 1, wsel = WSel.Int, we = true,
          seq = SeqSrc.Literal, lit = Ucode.ResetTail),
-    Ucode.ResetTail -> retire(),
+    Ucode.ResetTail -> retireNop(),
 
     0x01 -> MW(seq = SeqSrc.Literal, lit = Ucode.Sleep),
     Ucode.Sleep ->
       MW(cond = Cond.NibbleBad, seq = SeqSrc.Literal, lit = Ucode.Retire),
     (Ucode.Sleep + 1) ->                       // wait here until a wake event
       MW(cond = Cond.WordBad, seq = SeqSrc.Literal, lit = Ucode.Sleep + 1),
-    (Ucode.Sleep + 2) -> retire(),
+    (Ucode.Sleep + 2) -> retireNop(),
 
     // Bcc shared routine: taken -> PC += signext(disp8); not taken -> fetch.
     // cond nibble drives the CcInstr predicate (evaluated in Core).
     (Ucode.FetchEntry + 0x20) ->
       MW(seq = SeqSrc.Literal, cond = Cond.CcInstr, lit = Ucode.FetchEntry + 0x22),
-    (Ucode.FetchEntry + 0x21) -> retire(),
+    (Ucode.FetchEntry + 0x21) -> retireNop(),
     (Ucode.FetchEntry + 0x22) ->
       retire(MW(aSel = ASel.Int, bSel = BSel.Imm8, intIdx = IntIdx.PC, alu = AluOp.Add,
          wsel = WSel.Int, we = true))

@@ -148,6 +148,10 @@ object Ucode:
   val Divxu = FetchEntry + 0xcf
   val DivxuSub = Divxu + 20
   val Trapa = FetchEntry + 0xac
+  // Delay-slot settle words: one microword between a pending/in-service mutation
+  // and the retire redirect, so the redirect reads the registered state.
+  val TrapaDelay = FetchEntry + 0xae
+  val RteRetire = FetchEntry + 0xa3
   val Sleep = FetchEntry + 0x3b
   // Reset: word 0 stays the all-zero no-op (ROMs may miss the first read,
   // and it doubles as the ROM output register's reset value), then a jump

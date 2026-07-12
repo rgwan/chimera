@@ -785,12 +785,18 @@ object MicrocodeImage:
     (Ucode.FetchEntry + 0x6c) ->               // SP += 2
       MW(aSel = ASel.H8, h8Idx = H8Idx.Ptr, vclr = true, bSel = BSel.Lit, lit = 2,
          alu = AluOp.Add, size = 1, wsel = WSel.H8, we = true),
-    (Ucode.FetchEntry + 0x6d) -> retireNop(),
+    // RteEnd pulses rteAck (pops in-service) and hands to a settle word, so the
+    // retire point reads the registered pending state one cycle later.
+    Ucode.RteEnd -> MW(seq = SeqSrc.Literal, lit = Ucode.RteRetire),
+    Ucode.RteRetire -> retireNop(),
 
     0x57 -> MW(seq = SeqSrc.Literal, lit = Ucode.Trapa),
     Ucode.Trapa ->
       MW(cond = Cond.NibbleBad, seq = SeqSrc.Literal, lit = Ucode.Retire),
+    // trapArm sets trapPend (X) and hands to a settle word, so the retire point
+    // reads the registered trapPend one cycle later (the delay slot).
     (Ucode.Trapa + 1) -> MW(seq = SeqSrc.Dispatch, aux = true),
+    Ucode.TrapaDelay -> retireNop(),
 
     // Reset: the entry word is the all-zero no-op (some ROMs miss the first
     // read after reset), then load SP and PC from the platform vector table

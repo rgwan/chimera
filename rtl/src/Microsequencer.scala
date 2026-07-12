@@ -112,7 +112,11 @@ object Microsequencer
     nxt := seqNext
     when(io.seqSrc === SeqSrc.Literal.U(2))(nxt := pred.?(io.literal, seqNext))
     when(io.seqSrc === SeqSrc.Dispatch.U(2))(nxt := dispatchTarget)
-    when(trapArm)(nxt := Ucode.Retire.U(parameter.upcBits))
+    // A trap arm and an RTE pop mutate pending / in-service state one microword
+    // before the retire redirect resolves it. Route each through a settle word
+    // (TrapaDelay / RteRetire) so the mutation is registered before the retire
+    // point reaches F — a microcode delay slot in place of a hardware interlock.
+    when(trapArm)(nxt := Ucode.TrapaDelay.U(parameter.upcBits))
     when(retireRequest)(nxt := Ucode.Retire.U(parameter.upcBits))
     when(retirePoint)(nxt := retireTarget)
 
@@ -143,7 +147,6 @@ object Microsequencer
     // stall bubbles the *next* X slot but must not block this word's effects,
     // so xFire ignores `hazard`; bus-wait (stepEn=0) holds it.
     val xFire = io.stepEn & xValidReg
-    val xRetireRequest = (io.xSeqSrc === SeqSrc.Return.U(2)) & io.xSeqAux
     val xRetirePoint = (io.xSeqSrc === SeqSrc.Return.U(2)) & (!io.xSeqAux)
     val xTrapArm = (io.xSeqSrc === SeqSrc.Dispatch.U(2)) & io.xSeqAux
 
@@ -168,8 +171,7 @@ object Microsequencer
     io.irqAck := io.retire & (xTakeNmi | xTakeTrap | xTakeIrq)
     io.trapAck := io.retire & xTakeTrap
     io.trapIndex := trapIndex
-    io.rteAck := xFire & xRetireRequest &
-      (cur === Ucode.RteEnd.U(parameter.upcBits))
+    io.rteAck := xFire & (cur === Ucode.RteEnd.U(parameter.upcBits))
 
     // Parked in the SLEEP wait word (no bus traffic until a wake event).
     // Registered so it is glitch-free for external clock gating. Sampled from

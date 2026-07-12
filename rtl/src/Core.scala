@@ -400,14 +400,6 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       (xCond === Cond.AluGe.U(3))
     val xBitStateChange = xValid & (xBitPrefixHead | xBitMemReturn |
       (xBitMemActive & (xBusCtl === BusCtl.Read.U(2)) & (xIntIdx === IntIdx.IReg.U(2))))
-    // Only a genuine pending-state mutation makes the F-stage retire redirect
-    // wait: a trap arm (sets trapPend), or an interrupt/RTE ack (changes the
-    // in-service latches). A plain two-word retire that just redirects to
-    // fetch changes nothing, so it must not stall — that false hazard was
-    // ~half of all bubbles (once per instruction).
-    val xPendChange = (xValid & (xSeqSrc === SeqSrc.Dispatch.U(2)) & xSeqAux) |
-      useq.io.irqAck | useq.io.rteAck
-
     val fReadsH8 = (udec.io.aSel === ASel.H8.U(2)) | (udec.io.bSel === BSel.H8.U(2)) |
       (udec.io.h8Idx === H8Idx.Ptr.U(2)) | stackBus | h8BusAddr
     // The F word reads intrf through the operand port (udec.intIdx) and,
@@ -421,8 +413,6 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       (udec.io.cond === Cond.CcInstr.U(3))
     val fCondAluGe = udec.io.cond === Cond.AluGe.U(3)
     val fCondLoop = udec.io.cond === Cond.LoopNZ.U(3)
-    // A retire redirect consumes the pending state.
-    val fRetirePoint = (udec.io.seqSrc === SeqSrc.Return.U(2)) & (!udec.io.seqAux)
 
     val xIntW = wb.io.intWaddr
     val hazH8 = xH8We & fReadsH8 & (xH8Idx === h8Idx)
@@ -434,10 +424,12 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     val hazAluGe = xSetsAluPred & fCondAluGe
     val hazLoop = xLoopTouch & fCondLoop
     val hazBit = xBitStateChange
-    val hazPend = xPendChange & fRetirePoint
+    // The retire redirect no longer needs a hardware interlock: a trap arm and
+    // an RTE pop each carry a microcode delay-slot word (TrapaDelay / RteRetire)
+    // that registers the pending / in-service change before the retire point
+    // reaches F, so the redirect target is always resolved from settled state.
 
-    val hazard = xValid & (hazH8 | hazInt | hazCcr | hazAluGe | hazLoop |
-      hazBit | hazPend)
+    val hazard = xValid & (hazH8 | hazInt | hazCcr | hazAluGe | hazLoop | hazBit)
 
     // ======================= sequencer wiring =================================
     def connectFetchAndSequencer() =

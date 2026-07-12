@@ -110,7 +110,8 @@ in [boot_interrupts.md](boot_interrupts.md). TRAPA (`0x57`) arms a synchronous
 trap serviced at its own retire; trap #2 routes to the reserved debug entry
 ahead of NMI. SLEEP parks in a one-word microcode wait loop with no bus
 traffic until any wake source (NMI, unmasked IRQ, debug) ends it; the stacked
-PC is the next instruction address.
+PC is the next instruction address. The registered top-level output
+`core_sleeping` is high only during that park.
 
 ## Memory-bit prefix family
 

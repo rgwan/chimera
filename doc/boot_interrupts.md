@@ -40,6 +40,15 @@ boot code has configured the sources and clears I (`andc #0x7f, ccr`).
 - TRAPA #t (t = 0,1,3) enters through the same push/vector sequence at
   its own slot regardless of CCR.I; TRAPA #2 routes to the debug entry.
 
+## Halt status (`core_sleeping`)
+
+The top-level output `core_sleeping` is high while the core is parked in
+the SLEEP wait loop and low otherwise. It is registered so it is
+glitch-free for gating an external clock, and the SLEEP wait word issues
+no bus request, so no transaction is in flight while it is asserted. A
+TRAPA #2 without a debugger runs the normal exception flow and does not
+assert it. A separate debug-halt status waits for the debug spec.
+
 ## Relocation (`vt_base`)
 
 The 8-bit `vt_base` input ORs a page offset into every vector address:

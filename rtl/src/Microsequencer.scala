@@ -38,6 +38,7 @@ class MicrosequencerIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val trapAck  = Aligned(Bool())
   val trapIndex = Aligned(UInt(2))
   val rteAck   = Aligned(Bool())
+  val sleeping = Aligned(Bool())
 
 @generator
 object Microsequencer
@@ -116,3 +117,9 @@ object Microsequencer
     io.trapIndex := trapIndex
     io.rteAck := io.stepEn & retireRequest &
       (cur === Ucode.RteEnd.U(parameter.upcBits))
+
+    // Parked in the SLEEP wait word (no bus traffic until a wake event).
+    // Registered so it is glitch-free for external clock gating.
+    val sleepReg = RegInit(false.B)
+    sleepReg := cur === (Ucode.Sleep + 1).U(parameter.upcBits)
+    io.sleeping := sleepReg

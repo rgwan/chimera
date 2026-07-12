@@ -21,6 +21,7 @@ class CoreIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val irq_number = Flipped(UInt(parameter.irqNumberWidth))
   val vt_base = Flipped(UInt(8))
   val bus   = Aligned(new SramBus(parameter))
+  val core_sleeping = Aligned(Bool()) // high while parked in SLEEP
 
 @generator
 object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe]:
@@ -318,6 +319,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       io.bus.req   := biu.io.bus.req
       biu.io.bus.rdata := io.bus.rdata
       biu.io.bus.rdy   := io.bus.rdy
+      io.core_sleeping := useq.io.sleeping
 
     connectIrqAndBus()
 

@@ -15,8 +15,9 @@ module tb_core_trapa;
   reg         saw_vec0, saw_vec1, saw_vec2, saw_vec3, saw_nmi;
   integer     i, fails, write_count;
 
+  wire        core_sleeping;
   Core dut (.clock(clock), .reset(reset), .irq(irq), .nmi(nmi),
-    .irq_number(3'd0), .vt_base(8'd0),
+    .irq_number(3'd0), .vt_base(8'd0), .core_sleeping(core_sleeping),
     .bus_addr(bus_addr), .bus_wdata(bus_wdata), .bus_rdata(bus_rdata),
     .bus_we(bus_we), .bus_wmask(bus_wmask), .bus_req(bus_req), .bus_rdy(bus_rdy));
 
@@ -34,6 +35,13 @@ module tb_core_trapa;
   always @(*) begin
     bus_rdy = 1'b1;
     bus_rdata = {mem[bus_addr], mem[(bus_addr + 16'd1) & 16'hffff]};
+  end
+
+  // TRAPA (incl. #2 debug route without a debugger) is normal exception
+  // execution: it must never assert the sleep-halt status.
+  always @(posedge clock) if (!reset && core_sleeping) begin
+    fails = fails + 1;
+    $display("CORE-TRAPA FAIL: core_sleeping asserted during trap flow");
   end
 
   always @(posedge clock) if (bus_req) begin

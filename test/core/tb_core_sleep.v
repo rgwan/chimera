@@ -13,10 +13,11 @@ module tb_core_sleep;
   wire [1:0]  bus_wmask;
   reg         bus_rdy;
   reg  [7:0]  mem [0:65535];
+  wire        core_sleeping;
   integer     i, irq_count, nmi_count, req_count, errors;
 
   Core dut (.clock(clock), .reset(reset), .irq(irq), .nmi(nmi),
-    .irq_number(3'd0), .vt_base(8'd0),
+    .irq_number(3'd0), .vt_base(8'd0), .core_sleeping(core_sleeping),
     .bus_addr(bus_addr), .bus_wdata(bus_wdata), .bus_rdata(bus_rdata),
     .bus_we(bus_we), .bus_wmask(bus_wmask), .bus_req(bus_req), .bus_rdy(bus_rdy));
 
@@ -41,6 +42,10 @@ module tb_core_sleep;
     if (dut.useq.upc == IRQ_PROC) irq_count = irq_count + 1;
     if (dut.useq.upc == NMI_PROC) nmi_count = nmi_count + 1;
     if (bus_req) req_count = req_count + 1;
+    if (core_sleeping && bus_req) begin
+      errors = errors + 1;
+      $display("CORE-SLEEP FAIL: bus active while core_sleeping pc=%h", pc);
+    end
   end
 
   task check(input cond, input [127:0] tag);
@@ -75,6 +80,7 @@ module tb_core_sleep;
     // phase 1: boot loads SP/PC from the table, core parks in sleep
     repeat (60) @(posedge clock); #1;
     check(pc === 16'h0034 && r0[7:0] === 8'h00, "no wake: pc holds after sleep");
+    check(core_sleeping === 1'b1, "parked: core_sleeping asserted");
     req_mark = req_count;
     repeat (20) @(posedge clock); #1;
     check(req_count === req_mark, "no wake: bus idle");
@@ -82,6 +88,7 @@ module tb_core_sleep;
     irq = 1; repeat (2) @(posedge clock); irq = 0;
     repeat (12) @(posedge clock); #1;
     check(irq_count === 1, "irq wake: handler entered");
+    check(core_sleeping === 1'b0, "irq wake: core_sleeping cleared");
     check({mem[16'h01fe], mem[16'h01ff]} === 16'h0034, "irq wake: stacked pc");
     repeat (40) @(posedge clock); #1;
     check(r0[7:0] === 8'h55, "irq wake: resumed after sleep");
@@ -89,10 +96,12 @@ module tb_core_sleep;
     irq = 1; repeat (2) @(posedge clock); irq = 0;
     repeat (30) @(posedge clock); #1;
     check(pc === 16'h003a && irq_count === 1, "masked irq: still asleep");
+    check(core_sleeping === 1'b1, "masked irq: core_sleeping still asserted");
     nmi = 1; repeat (2) @(posedge clock); nmi = 0;
     repeat (40) @(posedge clock); #1;
     check(nmi_count >= 1, "nmi wake: handler entered");
     check(r0[15:8] === 8'haa, "nmi wake: resumed after sleep");
+    check(core_sleeping === 1'b0, "nmi wake: core_sleeping cleared");
     if (errors == 0)
       $display("CORE-SLEEP PASS: boot, park, irq wake frame, mask, nmi wake");
     $finish;

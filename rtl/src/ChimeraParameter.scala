@@ -9,12 +9,15 @@ import me.jiuyang.zaozi.default.{*, given}
   * with it off. strictDecode adds the illegal-encoding guards (WordBad and
   * NibbleBad predicates plus their guard microwords); without it the guards
   * are elided and their cond code tests the sleep wake signal instead.
+  * pipeline selects the two-stage F/X microword pipeline; off (default) is the
+  * single-cycle datapath, which is smaller and clocks the same.
   */
 case class ChimeraParameter(
   h8300h:         Boolean = false,
   strictDecode:   Boolean = false,
   romHex:         Boolean = false,
   ccrUbit:        Boolean = false,
+  pipeline:       Boolean = false,
   irqNumberWidth: Int = 3
 ) extends Parameter:
   require(irqNumberWidth >= 1 && irqNumberWidth <= 8,

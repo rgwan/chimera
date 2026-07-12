@@ -10,10 +10,15 @@ import org.llvm.mlir.scalalib.capi.ir.{Block, Context}
 import java.lang.foreign.Arena
 
 /** Chimera H8/300 core top. Native SRAM-style master bus; irq/nmi polled by
-  * microcode. Two-stage microword pipeline: F (ROM data -> decode -> operand
-  * read/select -> next-fetch address) and X (ALU -> CCR fold -> writeback ->
-  * bus). A pipeline register carries the F-stage operands and control fields
-  * into X; a conservative interlock bubbles X and holds F on a RAW hazard.
+  * microcode. Wires the microsequencer, coarse decoder, register files, ALU,
+  * CCR and BIU. Datapath operand/writeback muxing is steered by the microword.
+  *
+  * parameter.pipeline off (default) is the single-cycle datapath: the decoded
+  * microword drives the ALU/CCR/writeback/bus directly in one cycle. On, it is
+  * a two-stage microword pipeline: F (ROM data -> decode -> operand read/select
+  * -> next-fetch address) and X (ALU -> CCR fold -> writeback -> bus); a
+  * pipeline register carries the F-stage operands into X and a conservative
+  * interlock bubbles X and holds F on a RAW hazard.
   */
 class CoreIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val clock = Flipped(Clock())
@@ -61,12 +66,12 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     // instruction register (holds the fetched word microcode reads)
     val ir = RegInit(0.U(parameter.dataWidth))
 
-    // Forward the just-fetched word from the X-stage fetch to the F-stage
-    // decoders in the same cycle, so the dispatch microword right behind the
-    // fetch reads the fresh opcode without a stall (see connectXState).
+    // F-stage view of the opcode. In the single-cycle config it is `ir`. In the
+    // pipeline it is the X-stage fetch forwarded in the same cycle, so the
+    // dispatch microword right behind a fetch reads the fresh opcode.
     val irForward = Wire(UInt(parameter.dataWidth))
     val irView = Wire(UInt(parameter.dataWidth))
-    irView := irForward
+    if parameter.pipeline then irView := irForward else irView := ir
 
     def connectClockedDecode() =
       h8rf.io.clock  := io.clock; h8rf.io.reset  := io.reset
@@ -113,6 +118,10 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     val imm8zero = (0.B(8) ## opx.io.imm8.asBits).asUInt
     val imm8ext = abs8PageAddr.?(imm8top,
       vec8Addr.?(imm8zero, (imm8sign ## opx.io.imm8.asBits).asUInt))
+    // Special-literal value, selected by literal[1:0]: 0 adds/subs const,
+    // 1 IRQ vector, 2 reset SP addr, 3 reset PC addr. Split into independent
+    // high/low byte muxes: the reset vectors share the vt_base high byte, so
+    // one 4-input mux each packs tighter on a LUT4 fabric than a 16-bit mux.
     val sel0 = udec.io.literal.asBits.bit(0)
     val sel1 = udec.io.literal.asBits.bit(1)
     val vecHi = irqctl.io.irqVectorAddr.asBits.bits(15, 8).asUInt
@@ -131,7 +140,8 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
 
     connectReads()
 
-    // Bit-memory state (BSET/BCLR/BST on an @Rn operand). Updated in X.
+    // Bit-memory state (BSET/BCLR/BST on an @Rn operand). Updated in X (pipeline)
+    // or in the same cycle (single-cycle).
     val bitMemActive = RegInit(false.B)
     val bitMemWrite = RegInit(false.B)
     val bitMemByte = RegInit(0.U(parameter.byteWidth))
@@ -180,6 +190,12 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       extIRegBus
     val busAddr = (stackBus | h8BusAddr).?(h8rf.io.rdata,
       pcBus.?(intrf.io.pcData, intrf.io.iregData))
+    // Single-cycle memory read: resolved live in the same cycle as the microword.
+    val memByte = busAddr.asBits.bit(0).?(
+      biu.io.rdata.asBits.bits(7, 0), biu.io.rdata.asBits.bits(15, 8))
+    val memRead = sizeWord.?(biu.io.rdata, (0.B(8) ## memByte).asUInt)
+
+    val fBusRead = udec.io.busCtl === BusCtl.Read.U(2)
 
     // ---- F-stage operand mux and bit passthroughs (steer the ALU inputs). ----
     def connectAluControl() =
@@ -197,17 +213,24 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       aluctl.io.bitOperandByte := bitop.io.operandByte
       aluctl.io.h8Read := h8Read
       aluctl.io.intRead := intRead
-      // Bus-read / CCR operand for the F-stage mux. The bus-read datum is
-      // resolved in X (from live biu.rdata); pass CCR here so the non-bus
-      // Special path (stc ccr) latches correctly.
-      aluctl.io.specialRead := ccrRead
+      // Bus-read / CCR operand for the operand mux. In the pipeline the bus-read
+      // datum is resolved in X (from live biu.rdata), so pass CCR here; in the
+      // single-cycle config the read datum is live so mux it in directly.
+      if parameter.pipeline then
+        aluctl.io.specialRead := ccrRead
+      else
+        aluctl.io.specialRead := fBusRead.?(memRead, ccrRead)
       aluctl.io.imm8ext := imm8ext
       aluctl.io.litConst := litConst
       aluctl.io.tempData := intrf.io.tempData
 
     connectAluControl()
 
-    val fBusRead = udec.io.busCtl === BusCtl.Read.U(2)
+    // ---- shared X-stage / sequencer plumbing wires ----
+    val fetchSwapped = biu.io.rdata.asBits.bits(7, 0) ## biu.io.rdata.asBits.bits(15, 8)
+    val stepEn = Wire(Bool())
+
+    if parameter.pipeline then {
 
     // ======================= pipeline register (F -> X) =======================
     val advance = useq.io.advance
@@ -305,7 +328,6 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
 
     connectAluPath()
 
-    val stepEn = Wire(Bool())
     val xWrite = xValid & stepEn
 
     def connectCcrPath() =
@@ -367,7 +389,6 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     val xDoFetch = xBusCtl === BusCtl.Fetch.U(2)
     val xBitMemExtLoad = xBitMemActive & (xBusCtl === BusCtl.Read.U(2)) &
       (xIntIdx === IntIdx.PC.U(2))
-    val fetchSwapped = biu.io.rdata.asBits.bits(7, 0) ## biu.io.rdata.asBits.bits(15, 8)
     val irWriteX = xValid & (xDoFetch | xBitMemExtLoad) & biu.io.rdy
     irForward := irWriteX.?(fetchSwapped.asUInt, ir)
     def connectXState() =
@@ -457,6 +478,118 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       useq.io.ccTaken := bcond.io.taken
 
     connectFetchAndSequencer()
+
+    } else {
+
+    // ======================= single-cycle datapath ============================
+    // Pipeline outputs unused; tie the F/X inputs the sequencer ignores.
+    useq.io.hazard   := false.B
+    useq.io.xSeqSrc  := 0.U(2)
+    useq.io.xCond    := 0.U(3)
+    useq.io.xSeqAux  := false.B
+    useq.io.xLiteral := 0.U(parameter.upcBits)
+    irForward := ir
+
+    def connectAluPath() =
+      alu.io.a    := aluctl.io.aMux
+      alu.io.b    := aluctl.io.bMux
+      alu.io.cin  := ccr.io.cFlag
+      alu.io.op   := aluctl.io.bitAluOp
+      alu.io.word := sizeWord
+
+    connectAluPath()
+
+    def connectCcrPath() =
+      ccrctl.io.size := sizeWord
+      ccrctl.io.aSel := udec.io.aSel
+      ccrctl.io.bitCcrOp := aluctl.io.bitCcrOp
+      ccrctl.io.bitFlagCtl := aluctl.io.bitFlagCtl
+      ccrctl.io.bitVclr := aluctl.io.bitVclr
+      ccrctl.io.aluY := alu.io.y
+      ccrctl.io.aluH := alu.io.hout
+      ccrctl.io.aluV := alu.io.vout
+      ccrctl.io.aluC := alu.io.cout
+      ccrctl.io.h8Read := h8Read
+      ccrctl.io.imm8 := opx.io.imm8
+      ccrctl.io.memData := biu.io.rdata
+      ccrctl.io.specialMem := (udec.io.aSel === ASel.Special.U(2)) &
+        (udec.io.busCtl === BusCtl.Read.U(2))
+      ccr.io.flagCtl := stepEn.?(ccrctl.io.flagCtl, FlagCtl.None.U(3))
+      ccr.io.resN := ccrctl.io.resN
+      ccr.io.resZ := ccrctl.io.resZ
+      ccr.io.resH := ccrctl.io.resH
+      ccr.io.hwV := ccrctl.io.hwV
+      ccr.io.hwC := ccrctl.io.hwC
+      ccr.io.ldWe := stepEn & ccrctl.io.ldWe
+      ccr.io.ldVal := ccrctl.io.ldVal
+
+    connectCcrPath()
+
+    def connectWriteback() =
+      wb.io.size := sizeWord
+      wb.io.wsel := udec.io.wsel
+      wb.io.aSel := udec.io.aSel
+      wb.io.intIdx := udec.io.intIdx
+      wb.io.h8IdxCtl := udec.io.h8Idx
+      wb.io.busCtl := udec.io.busCtl
+      wb.io.h8Idx := h8Idx
+      wb.io.h8Sel3 := h8Sel3
+      wb.io.bitAluOp := aluctl.io.bitAluOp
+      wb.io.bitRegWe := aluctl.io.bitRegWe
+      wb.io.bitMemStore := bitMemStore
+      wb.io.aluY := alu.io.y
+      wb.io.busAddr := busAddr
+      h8rf.io.waddr := wb.io.h8Waddr
+      h8rf.io.wdata := wb.io.h8Wdata
+      h8rf.io.wmask := wb.io.h8Wmask
+      h8rf.io.we := stepEn & wb.io.h8We
+      intrf.io.waddr := wb.io.intWaddr
+      intrf.io.wdata := wb.io.intWdata
+      intrf.io.we := stepEn & wb.io.intWe
+      biu.io.addr := wb.io.biuAddr
+      biu.io.wdata := wb.io.biuWdata
+      biu.io.busCtl := wb.io.biuBusCtl
+      biu.io.word := wb.io.biuWord
+      stepEn := (wb.io.biuBusCtl === BusCtl.None.U(2)) | io.bus.rdy
+
+    connectWriteback()
+
+    val doFetch      = udec.io.busCtl === BusCtl.Fetch.U(2)
+    val bitMemExtLoad = bitMemActive & (udec.io.busCtl === BusCtl.Read.U(2)) &
+      (udec.io.intIdx === IntIdx.PC.U(2))
+    def connectFetchAndSequencer() =
+      when((doFetch | bitMemExtLoad) & biu.io.rdy)(ir := fetchSwapped.asUInt)
+      when(bitMemActive & (udec.io.busCtl === BusCtl.Read.U(2)) &
+        (udec.io.intIdx === IntIdx.IReg.U(2)) & biu.io.rdy)(bitMemByte := memByte.asUInt)
+      useq.io.seqSrc   := udec.io.seqSrc
+      useq.io.cond     := udec.io.cond
+      useq.io.seqAux   := udec.io.seqAux
+      useq.io.literal  := udec.io.literal
+      useq.io.dispatch := coarse.io.dispatch
+      useq.io.condZ    := ccr.io.zFlag
+      useq.io.aluGe    := !alu.io.cout
+      useq.io.intBit   := sizeWord.?(intRead.asBits.bit(6),
+        udec.io.vclr.?(intRead.asBits.bit(5), intRead.asBits.bit(0)))
+      useq.io.trapNum  := ir.asBits.bits(13, 12).asUInt
+      useq.io.stepEn   := stepEn
+      useq.io.wordBad := preds.fold(false.B)(_.io.wordBad)
+      useq.io.nibbleBad := preds.fold(false.B)(_.io.nibbleBad)
+      useq.io.wakePend := wakePend
+      when(stepEn & bitMemReturn) {
+        bitMemActive := false.B
+        bitMemWrite := false.B
+      }
+      when(stepEn & bitPrefixHead) {
+        bitMemActive := true.B
+        bitMemWrite := firstOp.bit(0)
+      }
+      bcond.io.cc := opx.io.rdImm
+      bcond.io.hnzvc := ccr.io.hnzvc
+      useq.io.ccTaken := bcond.io.taken
+
+    connectFetchAndSequencer()
+
+    }
 
     def connectIrqAndBus() =
       irqctl.io.irq := io.irq

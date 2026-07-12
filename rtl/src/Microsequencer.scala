@@ -9,11 +9,13 @@ import me.jiuyang.zaozi.valuetpe.*
 import org.llvm.mlir.scalalib.capi.ir.{Block, Context}
 import java.lang.foreign.Arena
 
-/** Two-stage pipeline pointer. `fpc` drives the ROM address (fetch/decode
-  * stage F); `xpc` tracks the microword executing in the X stage (ROM data is
-  * registered, so F leads X by one cycle). The F-stage inputs steer the next
-  * fetch address; the X-stage inputs (`x*`, gated by `xValid`) drive the
-  * side effects — retire/ack pulses, aluPred, loopCount and trapPend.
+/** µPC and next-µPC mux. The ROM data is registered, so the ROM address is the
+  * next µPC. In the single-cycle datapath (parameter.pipeline off) `cur` tracks
+  * the executing word and the F/X pointers and X-stage inputs are unused. In the
+  * two-stage pipeline (parameter.pipeline on) `fpc` drives the ROM address (F
+  * stage) leading `xpc` by one cycle, and the X-stage inputs (`x*`, gated by
+  * `xValid`) drive the side effects — retire/ack pulses, aluPred, loopCount and
+  * trapPend.
   */
 class MicrosequencerIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val clock    = Flipped(Clock())
@@ -62,6 +64,8 @@ object Microsequencer
     val io = summon[Interface[MicrosequencerIO]]
     given Ref[Clock] = io.clock
     given Ref[Reset] = io.reset
+
+    if parameter.pipeline then {
 
     val fpc = RegInit(Ucode.ResetEntry.U(parameter.upcBits))
     // Executing-word pointer (X stage). Named `cur` to keep its historic
@@ -179,3 +183,86 @@ object Microsequencer
     val sleepReg = RegInit(false.B)
     sleepReg := xValidReg & (cur === (Ucode.Sleep + 1).U(parameter.upcBits))
     io.sleeping := sleepReg
+
+    } else {
+
+    // ---- single-cycle datapath: one `cur` pointer, effects gated by stepEn. ----
+    val cur = RegInit(Ucode.ResetEntry.U(parameter.upcBits))
+    val loopCount = RegInit(0.U(4))
+    val aluPred = RegInit(false.B)
+    val trapPend = RegInit(false.B)
+    val trapIndex = RegInit(0.U(2))
+
+    // Unused pipeline outputs and X-stage inputs in the non-pipelined config.
+    io.fpc := cur
+    io.xpc := cur
+    io.xValid := true.B
+    io.advance := io.stepEn
+
+    val seqNext = (cur + 1.U(parameter.upcBits)).asBits.bits(parameter.upcBits - 1, 0).asUInt
+    val dispatchTarget = (0.B(1) ## io.dispatch.asBits).asUInt
+    val trapArm = (io.seqSrc === SeqSrc.Dispatch.U(2)) & io.seqAux
+    val retireRequest = (io.seqSrc === SeqSrc.Return.U(2)) & io.seqAux
+    val retirePoint = (io.seqSrc === SeqSrc.Return.U(2)) & (!io.seqAux)
+    val trapDebug = trapPend & (trapIndex === 2.U(2))
+    val debugTake = io.debugPend | trapDebug
+    val nmiTake = (!debugTake) & io.nmiPend
+    val trapTake = (!debugTake) & (!io.nmiPend) & trapPend
+    val irqTake = (!debugTake) & (!io.nmiPend) & (!trapPend) & io.irqPend
+    val retireTarget = debugTake.?(Ucode.DebugEntry.U(parameter.upcBits),
+      nmiTake.?(Ucode.NmiEntry.U(parameter.upcBits),
+        (trapTake | irqTake).?(Ucode.IrqEntry.U(parameter.upcBits),
+          Ucode.FetchEntry.U(parameter.upcBits))))
+
+    val pred = Wire(Bool())
+    pred := true.B
+    when(io.cond === Cond.Z.U(3))(pred := io.condZ)
+    when(io.cond === Cond.AluGe.U(3))(pred := aluPred)
+    when(io.cond === Cond.IntBit.U(3))(pred := io.intBit)
+    when(io.cond === Cond.CcInstr.U(3))(pred := io.ccTaken)
+    when(io.cond === Cond.LoopNZ.U(3))(pred := loopCount =/= 0.U(4))
+    if parameter.strictDecode then
+      when(io.cond === Cond.WordBad.U(3))(pred := io.wordBad)
+      when(io.cond === Cond.NibbleBad.U(3))(pred := io.nibbleBad)
+    else
+      when(io.cond === Cond.WordBad.U(3))(pred := !io.wakePend)
+
+    val nxt = Wire(UInt(parameter.upcBits))
+    nxt := seqNext
+    when(io.seqSrc === SeqSrc.Literal.U(2))(nxt := pred.?(io.literal, seqNext))
+    when(io.seqSrc === SeqSrc.Dispatch.U(2))(nxt := dispatchTarget)
+    when(trapArm)(nxt := Ucode.Retire.U(parameter.upcBits))
+    when(retireRequest)(nxt := Ucode.Retire.U(parameter.upcBits))
+    when(retirePoint)(nxt := retireTarget)
+    when(io.stepEn)(cur := nxt)
+
+    when(io.stepEn & (io.seqSrc === SeqSrc.Next.U(2)) &
+      (io.cond === Cond.AluGe.U(3)))(aluPred := io.aluGe)
+    val loopInit = (io.seqSrc === SeqSrc.Next.U(2)) & io.seqAux
+    val loopTail = (io.seqSrc === SeqSrc.Literal.U(2)) &
+      (io.cond === Cond.LoopNZ.U(3))
+    when(io.stepEn & loopInit)(
+      loopCount := io.literal.asBits.bits(3, 0).asUInt)
+    when(io.stepEn & loopTail & pred)(
+      loopCount := (loopCount - 1.U(4)).asBits.bits(3, 0).asUInt)
+    when(io.stepEn & trapArm) {
+      trapPend := true.B
+      trapIndex := io.trapNum
+    }
+    when(io.stepEn & retirePoint & (trapDebug | trapTake))(
+      trapPend := false.B)
+
+    io.upc := io.stepEn.?(nxt, cur)
+    io.retire := io.stepEn & retirePoint
+    io.irqAck := io.retire & (nmiTake | trapTake | irqTake)
+    io.trapAck := io.retire & trapTake
+    io.trapIndex := trapIndex
+    // Shared microcode makes RteEnd a literal-jump into RteRetire, so the ack is
+    // keyed on the executing pointer rather than a Return microword.
+    io.rteAck := io.stepEn & (cur === Ucode.RteEnd.U(parameter.upcBits))
+
+    val sleepReg = RegInit(false.B)
+    sleepReg := cur === (Ucode.Sleep + 1).U(parameter.upcBits)
+    io.sleeping := sleepReg
+
+    }

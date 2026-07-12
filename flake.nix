@@ -387,10 +387,11 @@ EOF
         # asic packages a synthesis-ready file set: no DV collateral, a
         # filelist, and the self-contained when-chain microcode ROM.
         chimeraConfigs = {
-          lean   = { strictDecode = false; romHex = false; asic = false; };
-          strict = { strictDecode = true;  romHex = false; asic = false; };
-          fpga   = { strictDecode = false; romHex = true;  asic = false; };
-          asic   = { strictDecode = false; romHex = false; asic = true;  };
+          lean      = { strictDecode = false; romHex = false; asic = false; pipeline = false; };
+          strict    = { strictDecode = true;  romHex = false; asic = false; pipeline = false; };
+          fpga      = { strictDecode = false; romHex = true;  asic = false; pipeline = false; };
+          asic      = { strictDecode = false; romHex = false; asic = true;  pipeline = false; };
+          fpga-pipe = { strictDecode = false; romHex = true;  asic = false; pipeline = true;  };
         };
 
         chimeraIvyCache = pkgs.ivy-gather zaoziIvyLock;
@@ -422,6 +423,7 @@ EOF
           CHIMERA_RTL_OUT=$out \
             STRICT_DECODE=${pkgs.lib.boolToString cfg.strictDecode} \
             ROM_HEX=${pkgs.lib.boolToString cfg.romHex} \
+            PIPELINE=${pkgs.lib.boolToString cfg.pipeline} \
             bash rtl/build.sh
           rm -f $out/*.mlirbc
           ${pkgs.lib.optionalString cfg.asic ''
@@ -458,6 +460,7 @@ EOF
         packages.rtl-strict = rtlBuild "strict" chimeraConfigs.strict;
         packages.rtl-fpga = rtlBuild "fpga" chimeraConfigs.fpga;
         packages.rtl-asic = rtlBuild "asic" chimeraConfigs.asic;
+        packages.rtl-fpga-pipe = rtlBuild "fpga-pipe" chimeraConfigs.fpga-pipe;
         packages.h8300-binutils = h8300Binutils;
         packages.h8300-bench-gcc = h8300BenchGcc;
         packages.h8300-bench-binutils = h8300BenchBinutils;

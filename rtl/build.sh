@@ -36,7 +36,7 @@ echo "[chimera-rtl] config"
 scala-cli run "${scala_args[@]}" "$src" -- \
   config "$out/config.json" --h8300h "${H8300H:-false}" \
   --strictDecode "${STRICT_DECODE:-false}" --romHex "${ROM_HEX:-false}" \
-  --ccrUbit "${CCR_UBIT:-false}"
+  --ccrUbit "${CCR_UBIT:-false}" --pipeline "${PIPELINE:-false}"
 
 echo "[chimera-rtl] design"
 ( cd "$out" && scala-cli run "${scala_args[@]}" "$src" -- design "$out/config.json" )

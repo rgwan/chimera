@@ -104,18 +104,19 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     val imm8zero = (0.B(8) ## opx.io.imm8.asBits).asUInt
     val imm8ext = abs8PageAddr.?(imm8top,
       vec8Addr.?(imm8zero, (imm8sign ## opx.io.imm8.asBits).asUInt))
-    val addsSubsConst = ir.asBits.bit(15).?(2.U(parameter.dataWidth),
-      1.U(parameter.dataWidth))
-    val resetSpAddr = (io.vt_base.asBits ## 0x02.B(8)).asUInt
-    val resetPcAddr = (io.vt_base.asBits ## 0x06.B(8)).asUInt
-    val specialValue = Wire(UInt(parameter.dataWidth))
-    specialValue := addsSubsConst
-    when(udec.io.literal.asBits.bits(1, 0) === 1.B(2))(
-      specialValue := irqctl.io.irqVectorAddr)
-    when(udec.io.literal.asBits.bits(1, 0) === 2.B(2))(
-      specialValue := resetSpAddr)
-    when(udec.io.literal.asBits.bits(1, 0) === 3.B(2))(
-      specialValue := resetPcAddr)
+    // Special-literal value, selected by literal[1:0]: 0 adds/subs const,
+    // 1 IRQ vector, 2 reset SP addr, 3 reset PC addr. Split into independent
+    // high/low byte muxes: the reset vectors share the vt_base high byte, so
+    // one 4-input mux each packs tighter on a LUT4 fabric than a 16-bit mux.
+    val sel0 = udec.io.literal.asBits.bit(0)
+    val sel1 = udec.io.literal.asBits.bit(1)
+    val vecHi = irqctl.io.irqVectorAddr.asBits.bits(15, 8).asUInt
+    val vecLo = irqctl.io.irqVectorAddr.asBits.bits(7, 0).asUInt
+    val addsSubsLo = ir.asBits.bit(15).?(2.U(8), 1.U(8))
+    val specialHi = sel1.?(io.vt_base, sel0.?(vecHi, 0.U(8)))
+    val specialLo = sel1.?(sel0.?(0x06.U(8), 0x02.U(8)),
+      sel0.?(vecLo, addsSubsLo))
+    val specialValue = (specialHi.asBits ## specialLo.asBits).asUInt
     val litConst = udec.io.literal.asBits.bit(8).?(specialValue,
       (0.B(8) ## udec.io.literal.asBits.bits(7, 0)).asUInt)
 

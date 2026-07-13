@@ -1,0 +1,185 @@
+# SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
+# SPDX-License-Identifier: MIT
+
+name: Chimera Verification
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Verification profile to run.
+        required: true
+        default: smoke
+        type: choice
+        options:
+          - smoke
+          - full
+          - rtl
+          - bench
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ inputs.profile || 'auto' }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Smoke
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.profile == 'smoke')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set Up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Python Dependencies
+        run: python3 -m pip install --upgrade pip pyyaml
+
+      - name: Run Smoke Profile
+        run: make check-decode-table isa-cases sail-coverage
+
+      - name: Upload Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chimera-smoke-${{ github.run_id }}
+          if-no-files-found: ignore
+          path: |
+            result/isa-cases/**
+            result/sail-coverage/**
+
+  full:
+    name: Full
+    if: github.event_name == 'workflow_dispatch' && inputs.profile == 'full'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      # zaozi pins a from-source CIRCT/LLVM/MLIR (no public binary cache), so a
+      # cold runner spends hours compiling the toolchain. Persist /nix/store
+      # across runs: the first run builds and caches it, later runs restore.
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          gc-max-store-size-linux: 8G
+          purge: true
+          purge-prefixes: nix-${{ runner.os }}-
+          purge-created: 0
+          purge-primary-key: never
+
+      - name: Run Flake Checks
+        run: nix flake check --option sandbox false
+
+      - name: Run Verify-Smoke
+        run: nix develop --option sandbox false -c make verify-smoke
+
+      - name: Upload Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chimera-full-${{ github.run_id }}
+          if-no-files-found: ignore
+          path: |
+            result/**
+
+  rtl:
+    name: RTL Retire Trace
+    if: github.event_name == 'workflow_dispatch' && inputs.profile == 'rtl'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          gc-max-store-size-linux: 8G
+          purge: true
+          purge-prefixes: nix-${{ runner.os }}-
+          purge-created: 0
+          purge-primary-key: never
+
+      # Both datapath configs: the default single-cycle core and the pipeline.
+      - name: Run RTL Retire-Trace Gates
+        run: |
+          nix develop --option sandbox false -c sh -c '
+            make check-decode check-exec-sail &&
+            PIPELINE=true make check-exec-sail
+          '
+
+      - name: Upload Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chimera-rtl-${{ github.run_id }}
+          if-no-files-found: ignore
+          path: |
+            result/**
+            rtl/generated/*.sv
+
+  bench:
+    name: Benchmarks
+    if: github.event_name == 'workflow_dispatch' && inputs.profile == 'bench'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          gc-max-store-size-linux: 8G
+          purge: true
+          purge-prefixes: nix-${{ runner.os }}-
+          purge-created: 0
+          purge-primary-key: never
+
+      - name: Run Benchmarks
+        run: nix develop --option sandbox false -c sh -c 'make bench-dhry && make bench-coremark'
+
+      - name: Upload Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chimera-bench-${{ github.run_id }}
+          if-no-files-found: ignore
+          path: |
+            rtl/generated/dhry.log
+            rtl/generated/coremark.log

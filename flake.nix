@@ -408,13 +408,21 @@ EOF
             pkgs.jdk25
             zaoziAssembly
           ];
-          JAVA_TOOL_OPTIONS = "--enable-preview";
         } ''
           cp -R ${self} src
           chmod -R u+w src
           cd src
-          export HOME=$TMPDIR
-          export COURSIER_CACHE=$TMPDIR/coursier
+          # The build user's passwd home is read-only (/var/empty on CI,
+          # /dev/null with sandbox off) and scala-cli's native launcher derives
+          # its cache/data dirs from it, not from $HOME. Redirect HOME and the XDG
+          # dirs it honours to a fresh writable temp tree.
+          export HOME=$(mktemp -d)
+          export XDG_CACHE_HOME=$HOME/.cache
+          export XDG_DATA_HOME=$HOME/.local/share
+          export XDG_CONFIG_HOME=$HOME/.config
+          mkdir -p "$XDG_CACHE_HOME" "$XDG_DATA_HOME" "$XDG_CONFIG_HOME"
+          export JAVA_TOOL_OPTIONS="--enable-preview"
+          export COURSIER_CACHE=$HOME/coursier
           export COURSIER_MODE=offline
           mkdir -p "$COURSIER_CACHE"
           cp -r ${chimeraIvyCache}/cache/. "$COURSIER_CACHE/"

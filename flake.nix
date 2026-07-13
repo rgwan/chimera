@@ -389,10 +389,13 @@ EOF
         # collateral, leaving a filelist. Each platform has lean (smallest,
         # single-cycle), pipe (two-stage, highest clock) and strict (illegal-
         # encoding guards).
+        # `debug` defaults to false; the debug preset elaborates CoreTop (Core +
+        # JTAG DTM) and keeps every debug-off config byte-identical.
         chimeraConfigs = {
           fpga-lean   = { strictDecode = false; romHex = true;  asic = false; pipeline = false; };
           fpga-pipe   = { strictDecode = false; romHex = true;  asic = false; pipeline = true;  };
           fpga-strict = { strictDecode = true;  romHex = true;  asic = false; pipeline = false; };
+          fpga-debug  = { strictDecode = false; romHex = true;  asic = false; pipeline = false; debug = true; };
           asic-lean   = { strictDecode = false; romHex = false; asic = true;  pipeline = false; };
           asic-pipe   = { strictDecode = false; romHex = false; asic = true;  pipeline = true;  };
           asic-strict = { strictDecode = true;  romHex = false; asic = true;  pipeline = false; };
@@ -436,6 +439,7 @@ EOF
             STRICT_DECODE=${pkgs.lib.boolToString cfg.strictDecode} \
             ROM_HEX=${pkgs.lib.boolToString cfg.romHex} \
             PIPELINE=${pkgs.lib.boolToString cfg.pipeline} \
+            DEBUG=${pkgs.lib.boolToString (cfg.debug or false)} \
             bash rtl/build.sh
           rm -f $out/*.mlirbc
           ${pkgs.lib.optionalString cfg.asic ''
@@ -471,6 +475,7 @@ EOF
         packages.rtl-fpga-lean = rtlBuild "fpga-lean" chimeraConfigs.fpga-lean;
         packages.rtl-fpga-pipe = rtlBuild "fpga-pipe" chimeraConfigs.fpga-pipe;
         packages.rtl-fpga-strict = rtlBuild "fpga-strict" chimeraConfigs.fpga-strict;
+        packages.rtl-fpga-debug = rtlBuild "fpga-debug" chimeraConfigs.fpga-debug;
         packages.rtl-asic-lean = rtlBuild "asic-lean" chimeraConfigs.asic-lean;
         packages.rtl-asic-pipe = rtlBuild "asic-pipe" chimeraConfigs.asic-pipe;
         packages.rtl-asic-strict = rtlBuild "asic-strict" chimeraConfigs.asic-strict;

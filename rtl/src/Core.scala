@@ -637,18 +637,23 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       val cmd = dm.cmd
       val isHalt   = cmd === DmCmd.Halt.U(3)
       val isResume = cmd === DmCmd.Resume.U(3)
+      val isReadPc = cmd === DmCmd.ReadPc.U(3)
+      // Hardware-dispatched primitives: the sequencer jumps into the matching
+      // DebugSlots routine. readPC is answered by the controller directly (a
+      // Core-side pcData mux) and never dispatches; halt/resume hold/release.
       val isPrim   = (cmd === DmCmd.MemRead.U(3)) |
         (cmd === DmCmd.MemWrite.U(3)) | (cmd === DmCmd.SetPc.U(3))
 
       // One request is served per req assertion; `served` also gates ack. Halt is
-      // taken while running; primitives and resume only while parked.
+      // taken while running; primitives, resume and readPC only while parked.
       val served = RegInit(false.B)
       val request = activeSync & reqSync & (!served)
-      val accept = request & (isHalt | ((isPrim | isResume) & parked))
+      val accept = request & (isHalt | ((isPrim | isResume | isReadPc) & parked))
       when(accept)(served := true.B)
       when(!reqSync)(served := false.B)
 
       // Halt latch forces the retire redirect into DebugEntry; resume releases it.
+      // readPC keeps the core parked, so it does not touch the latch.
       val haltLatch = RegInit(false.B)
       when(accept & (isHalt | isPrim))(haltLatch := true.B)
       when(accept & isResume)(haltLatch := false.B)
@@ -675,8 +680,13 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
         intrf.io.we := stepEn
       }
 
+      // readPC is answered without microcode: while parked, tap the live PC to
+      // the host and ack immediately (the core stays parked). Key the mux on the
+      // latched cmd and parked, not on `served`, so the datum holds steady across
+      // the whole parked window while the DTM captures it. memRead returns the
+      // AUX word its routine staged.
       dm.ack        := served & parked
-      dm.dataToHost := intrf.io.auxData
+      dm.dataToHost := (isReadPc & parked).?(intrf.io.pcData, intrf.io.auxData)
       dm.halted     := parked
     end if
 

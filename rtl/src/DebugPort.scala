@@ -21,6 +21,7 @@ object DmCmd:
   val SetPc    = 2
   val Halt     = 3
   val Resume   = 4
+  val ReadPc   = 5 // dataToHost := current halted PC (Core-side mux, no microcode)
 
 class DebugPort(parameter: ChimeraParameter) extends Bundle:
   val dmactive     = Flipped(Bool())                       // host -> core

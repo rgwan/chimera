@@ -21,10 +21,17 @@ case class ChimeraParameter(
   ccrUbit:        Boolean = false,
   pipeline:       Boolean = false,
   debug:          Boolean = false,
+  idcode:         Long = 0x00114514L,
+  triggerCount:   Int = 2,
+  debugBase:      Int = 0xFF00,
   irqNumberWidth: Int = 3
 ) extends Parameter:
   require(irqNumberWidth >= 1 && irqNumberWidth <= 8,
     "irqNumberWidth must be 1..8")
+  require(triggerCount >= 0 && triggerCount <= 15,
+    "triggerCount must fit the STATUS hwbp_count field (4 bits)")
+  require(debugBase >= 0 && debugBase <= 0xFFFF,
+    "debugBase must be a 16-bit MMIO base")
 
   val dataWidth:    Int = 16
   val addrWidth:    Int = 16

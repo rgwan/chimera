@@ -10,7 +10,15 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 src="$here/src"
 out="${CHIMERA_RTL_OUT:-$here/generated}"
-mod="${TOP:-Core}"
+# With debug on the elaborated top is CoreTop (Core + JTAG DTM); an explicit TOP
+# still wins for module-level builds (TOP=Microsequencer, etc.).
+if [ -n "${TOP:-}" ]; then
+  mod="$TOP"
+elif [ "${DEBUG:-false}" = "true" ]; then
+  mod="CoreTop"
+else
+  mod="Core"
+fi
 top="com.vowstar.chimera.$mod"
 
 : "${ZAOZI_JAR:?set ZAOZI_JAR to the zaozi elaborator.jar}"
@@ -19,6 +27,14 @@ top="com.vowstar.chimera.$mod"
 : "${JAVA_HOME:?set JAVA_HOME to JDK 25}"
 
 mkdir -p "$out"
+
+# Clear stale elaboration collateral so a run is never polluted by a previous
+# top / config. Each design pass re-emits one mlirbc per module in the current
+# top and firtool re-lowers the full set, so nothing needed is lost. Without
+# this a debug=true build leaves CoreTop.sv / JtagDtm.sv behind, and a later
+# debug=false sim that globs generated/*.sv would compile them against a
+# debug-less Core and fail.
+rm -f "$out"/*.sv "$out"/*.mlirbc "$out"/urom.memh
 
 scala_args=(
   --server=false

@@ -38,21 +38,51 @@ jobs:
           purge-created: 0
           purge-primary-key: never
 
-      # Synthesizable RTL sets: the default single-cycle FPGA config and the
-      # optional pipelined variant. No DV trace collateral.
-      - name: Build RTL
+      # One synthesizable tarball per config. FPGA tiers infer a block-RAM ROM
+      # and ship urom.memh (its readmemh path is rewritten tarball-relative);
+      # ASIC tiers synthesize the ROM to gates. DV trace collateral is dropped.
+      - name: Build and package RTL for every config
         run: |
-          nix build .#rtl-fpga --option sandbox false -o result-rtl
-          nix build .#rtl-fpga-pipe --option sandbox false -o result-rtl-pipe
-          tar czf chimera-rtl-fpga.tar.gz -C result-rtl .
-          tar czf chimera-rtl-fpga-pipe.tar.gz -C result-rtl-pipe .
+          set -euo pipefail
+          for cfg in fpga-lean fpga-pipe fpga-strict asic-lean asic-pipe asic-strict; do
+            nix build ".#rtl-$cfg" --option sandbox false -o "out-$cfg"
+            stage="stage-$cfg"
+            mkdir -p "$stage"
+            for f in out-$cfg/*.sv; do
+              case "$(basename "$f")" in
+                layers-*|ref_*) ;;
+                *) cp "$f" "$stage/" ;;
+              esac
+            done
+            if [ -f "out-$cfg/urom.memh" ]; then
+              cp "out-$cfg/urom.memh" "$stage/"
+              sed -i 's|\.\./generated/urom.memh|urom.memh|' "$stage/MicrocodeRom.sv"
+            fi
+            ( cd "$stage" && ls *.sv > filelist.f )
+            tar czf "chimera-$cfg.tar.gz" -C "$stage" .
+          done
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${{ github.ref_name }}" \
-            chimera-rtl-fpga.tar.gz \
-            chimera-rtl-fpga-pipe.tar.gz \
+            chimera-fpga-lean.tar.gz \
+            chimera-fpga-pipe.tar.gz \
+            chimera-fpga-strict.tar.gz \
+            chimera-asic-lean.tar.gz \
+            chimera-asic-pipe.tar.gz \
+            chimera-asic-strict.tar.gz \
             --title "Chimera ${{ github.ref_name }}" \
-            --notes "FPGA-first H8/300 CPU core: hybrid-microcode, multi-cycle, verified against a Sail model. Synthesizable RTL built in CI by nix. rtl-fpga is the default single-cycle core; rtl-fpga-pipe is the optional two-stage microword pipeline. See README for area, frequency, power, and benchmark numbers."
+            --notes "FPGA-first H8/300 CPU core: hybrid-microcode, multi-cycle, verified against a Sail model. Synthesizable RTL built in CI by nix; one tarball per config (production SystemVerilog, no DV collateral).
+
+          | Download | Platform | ROM | Tier |
+          |---|---|---|---|
+          | chimera-fpga-lean.tar.gz | FPGA | block RAM | single-cycle, smallest |
+          | chimera-fpga-pipe.tar.gz | FPGA | block RAM | pipelined, highest clock |
+          | chimera-fpga-strict.tar.gz | FPGA | block RAM | illegal-encoding guards |
+          | chimera-asic-lean.tar.gz | ASIC | gates | single-cycle, smallest |
+          | chimera-asic-pipe.tar.gz | ASIC | gates | pipelined, highest clock |
+          | chimera-asic-strict.tar.gz | ASIC | gates | illegal-encoding guards |
+
+          FPGA tarballs include urom.memh (readmemh path is tarball-relative); ASIC tarballs carry filelist.f. See README for area, frequency, power, and benchmark numbers."

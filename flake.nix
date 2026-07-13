@@ -384,14 +384,18 @@ EOF
         '';
 
         # Named RTL configurations, selectable as `nix build .#rtl-<name>`.
-        # asic packages a synthesis-ready file set: no DV collateral, a
-        # filelist, and the self-contained when-chain microcode ROM.
+        # Two target platforms x three tiers. FPGA infers the microcode ROM as
+        # block RAM (readmemh); ASIC synthesizes it to gates and drops the DV
+        # collateral, leaving a filelist. Each platform has lean (smallest,
+        # single-cycle), pipe (two-stage, highest clock) and strict (illegal-
+        # encoding guards).
         chimeraConfigs = {
-          lean      = { strictDecode = false; romHex = false; asic = false; pipeline = false; };
-          strict    = { strictDecode = true;  romHex = false; asic = false; pipeline = false; };
-          fpga      = { strictDecode = false; romHex = true;  asic = false; pipeline = false; };
-          asic      = { strictDecode = false; romHex = false; asic = true;  pipeline = false; };
-          fpga-pipe = { strictDecode = false; romHex = true;  asic = false; pipeline = true;  };
+          fpga-lean   = { strictDecode = false; romHex = true;  asic = false; pipeline = false; };
+          fpga-pipe   = { strictDecode = false; romHex = true;  asic = false; pipeline = true;  };
+          fpga-strict = { strictDecode = true;  romHex = true;  asic = false; pipeline = false; };
+          asic-lean   = { strictDecode = false; romHex = false; asic = true;  pipeline = false; };
+          asic-pipe   = { strictDecode = false; romHex = false; asic = true;  pipeline = true;  };
+          asic-strict = { strictDecode = true;  romHex = false; asic = true;  pipeline = false; };
         };
 
         chimeraIvyCache = pkgs.ivy-gather zaoziIvyLock;
@@ -456,11 +460,12 @@ EOF
       in
       {
         packages.default = smokeCheck;
-        packages.rtl-lean = rtlBuild "lean" chimeraConfigs.lean;
-        packages.rtl-strict = rtlBuild "strict" chimeraConfigs.strict;
-        packages.rtl-fpga = rtlBuild "fpga" chimeraConfigs.fpga;
-        packages.rtl-asic = rtlBuild "asic" chimeraConfigs.asic;
+        packages.rtl-fpga-lean = rtlBuild "fpga-lean" chimeraConfigs.fpga-lean;
         packages.rtl-fpga-pipe = rtlBuild "fpga-pipe" chimeraConfigs.fpga-pipe;
+        packages.rtl-fpga-strict = rtlBuild "fpga-strict" chimeraConfigs.fpga-strict;
+        packages.rtl-asic-lean = rtlBuild "asic-lean" chimeraConfigs.asic-lean;
+        packages.rtl-asic-pipe = rtlBuild "asic-pipe" chimeraConfigs.asic-pipe;
+        packages.rtl-asic-strict = rtlBuild "asic-strict" chimeraConfigs.asic-strict;
         packages.h8300-binutils = h8300Binutils;
         packages.h8300-bench-gcc = h8300BenchGcc;
         packages.h8300-bench-binutils = h8300BenchBinutils;

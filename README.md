@@ -13,21 +13,30 @@ H8/300 instruction set is implemented and verified against a Sail model.
 
 ## Configurations
 
-| Config | For | Headline |
-|---|---|---|
-| `lean` (default) | smallest core | 674 LUT4/5 @ 61 MHz (Anlogic EG4) |
-| `strict` | illegal encodings retire as no-op | 821 LUT4 |
-| `fpga` | lean with a block-RAM microcode ROM | 674 LUT4/5 + 2 BRAM 9K @ 61 MHz (Anlogic EG4) |
-| `asic` | synthesis-ready file set | 7.4k gates, 1 GHz post-route |
+Two target platforms, three tiers each. FPGA infers the microcode ROM as
+block RAM; ASIC synthesizes it to gates (self-contained, no readmemh) and
+emits a filelist.
+
+| Tier | For |
+|---|---|
+| `lean` | smallest, single-cycle datapath, best same-clock IPC |
+| `pipe` | two-stage microword pipeline, highest clock |
+| `strict` | illegal encodings retire as no-op |
 
 Each builds with one line:
 
 ```bash
-nix build .#rtl-lean                   # lean (default)
-nix build .#rtl-strict                 # strict
-nix build .#rtl-fpga                   # lean + block-RAM microcode ROM
-nix build .#rtl-asic                   # synthesis file set
+nix build .#rtl-fpga-lean      # FPGA, BRAM ROM, single-cycle (smallest)
+nix build .#rtl-fpga-pipe      # FPGA, BRAM ROM, pipelined (highest clock)
+nix build .#rtl-fpga-strict    # FPGA, BRAM ROM, illegal-encoding guards
+nix build .#rtl-asic-lean      # ASIC, gate ROM, single-cycle
+nix build .#rtl-asic-pipe      # ASIC, gate ROM, pipelined
+nix build .#rtl-asic-strict    # ASIC, gate ROM, illegal-encoding guards
 ```
+
+On Anlogic EG4: `fpga-lean` is 674 LUT4/5 + 2 BRAM9K @ 61 MHz; `fpga-pipe`
+is 698 LUT4/5 @ 92 MHz (+31% throughput, +15% cycle cost). Release tarballs
+for every tier are attached to each tagged version.
 
 Full numbers and methods are in [doc/metrics.md](doc/metrics.md); the
 design itself is in [doc/microarchitecture.md](doc/microarchitecture.md).

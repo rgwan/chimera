@@ -52,6 +52,27 @@ object MicrocodeImage:
 
   private val debugEntryWord = MW(seq = SeqSrc.Literal, lit = Ucode.DebugEntry)
   private val nmiEntryWord = MW(seq = SeqSrc.Literal, lit = Ucode.IrqEntry)
+
+  /** Debug primitives in the reserved DebugSlots range, overlaid only when
+    * parameter.debug is set. The Core debug controller supplies the bus address
+    * (dm.addr), injects dm.data into AUX (dmWe) for the write, and drives PC for
+    * set-PC; these microwords carry the bus transaction and read/return the host
+    * word through AUX. Each ends by branching back to the DebugEntry park word.
+    */
+  private val debugEntries: Map[Int, MW] = Map(
+    // mem[dm.addr] -> AUX; dataToHost taps AUX.
+    Ucode.DebugMemRead -> MW(bus = BusCtl.Read, aSel = ASel.Special,
+      alu = AluOp.PassA, size = 1, wsel = WSel.Int, intIdx = IntIdx.Aux,
+      we = true, seq = SeqSrc.Literal, lit = Ucode.DebugEntry),
+    // stage: AUX := dm.data (Core asserts dmWe here), then fall through.
+    Ucode.DebugMemWrite -> MW(),
+    // mem[dm.addr] := AUX.
+    (Ucode.DebugMemWrite + 1) -> MW(bus = BusCtl.Write, aSel = ASel.Int,
+      intIdx = IntIdx.Aux, alu = AluOp.PassA, size = 1,
+      seq = SeqSrc.Literal, lit = Ucode.DebugEntry),
+    // PC := dm.addr (Core drives the internal-file write); return to park.
+    Ucode.DebugSetPc -> MW(seq = SeqSrc.Literal, lit = Ucode.DebugEntry)
+  )
   private def bitIndexHead(target: Int) = MW(
     bSel = BSel.H8, h8Idx = H8Idx.RsReg, alu = AluOp.Pass,
     wsel = WSel.Int, intIdx = IntIdx.Temp, we = true,
@@ -949,9 +970,20 @@ object MicrocodeImage:
         addr -> (if w.seq == SeqSrc.Literal then w.copy(lit = past(w.lit)) else w)
     }
 
-  def program(strictDecode: Boolean): Map[Int, MW] =
-    if strictDecode then strictProgram else leanProgram
+  // Debug words occupy reserved DebugSlots addresses, so the overlay never
+  // collides with an authored routine.
+  require(debugEntries.keySet.subsetOf(
+    (Ucode.DebugEntry until (Ucode.DebugEntry + Ucode.DebugSlots)).toSet),
+    "debug microwords escape the reserved DebugSlots range")
+  require(strictProgram.keySet.intersect(debugEntries.keySet) == Set.empty,
+    "debug overlay collides with the base program")
+
+  def program(strictDecode: Boolean, debug: Boolean = false): Map[Int, MW] =
+    val base = if strictDecode then strictProgram else leanProgram
+    if debug then base ++ debugEntries else base
 
   /** Sparse image: only authored addresses; the ROM defaults the rest to zero. */
-  def sparse(strictDecode: Boolean): Seq[(Int, BigInt)] =
-    program(strictDecode).toSeq.sortBy(_._1).map { case (a, mw) => (a, mw.encode) }
+  def sparse(strictDecode: Boolean, debug: Boolean = false): Seq[(Int, BigInt)] =
+    program(strictDecode, debug).toSeq.sortBy(_._1).map {
+      case (a, mw) => (a, mw.encode)
+    }

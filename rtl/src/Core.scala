@@ -29,6 +29,8 @@ class CoreIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val vt_base = Flipped(UInt(8))
   val bus   = Aligned(new SramBus(parameter))
   val core_sleeping = Aligned(Bool()) // high while parked in SLEEP
+  // Optional debug-module port; present only with parameter.debug.
+  val dbg   = Option.when(parameter.debug)(Aligned(new DebugPort(parameter)))
 
 @generator
 object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe]:
@@ -41,7 +43,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
 
     val coarse = CoarseDecoder.instantiate(parameter)
     if parameter.romHex then
-      val image = MicrocodeImage.sparse(parameter.strictDecode).toMap
+      val image = MicrocodeImage.sparse(parameter.strictDecode, parameter.debug).toMap
       os.write.over(os.pwd / "urom.memh",
         (0 until parameter.uromDepth).map(a =>
           f"${image.getOrElse(a, BigInt(0))}%09x").mkString("\n") + "\n")
@@ -615,6 +617,68 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       io.core_sleeping := useq.io.sleeping
 
     connectIrqAndBus()
+
+    // ======================= debug-module controller ==========================
+    // Behind parameter.debug only. Synchronizes the DM request, holds the core
+    // in the DebugEntry park word, dispatches the primitive microwords, injects
+    // the host word into AUX / drives PC and the bus address, and taps AUX back
+    // to the host. Every net here vanishes when debug is off.
+    if parameter.debug then
+      val dm = io.dbg.get
+
+      val activeSync0 = RegInit(false.B); activeSync0 := dm.dmactive
+      val activeSync  = RegInit(false.B); activeSync := activeSync0
+      val reqSync0 = RegInit(false.B); reqSync0 := dm.req
+      val reqSync  = RegInit(false.B); reqSync := reqSync0
+
+      val exec = useq.io.xpc
+      val parked = useq.io.halted.get
+
+      val cmd = dm.cmd
+      val isHalt   = cmd === DmCmd.Halt.U(3)
+      val isResume = cmd === DmCmd.Resume.U(3)
+      val isPrim   = (cmd === DmCmd.MemRead.U(3)) |
+        (cmd === DmCmd.MemWrite.U(3)) | (cmd === DmCmd.SetPc.U(3))
+
+      // One request is served per req assertion; `served` also gates ack. Halt is
+      // taken while running; primitives and resume only while parked.
+      val served = RegInit(false.B)
+      val request = activeSync & reqSync & (!served)
+      val accept = request & (isHalt | ((isPrim | isResume) & parked))
+      when(accept)(served := true.B)
+      when(!reqSync)(served := false.B)
+
+      // Halt latch forces the retire redirect into DebugEntry; resume releases it.
+      val haltLatch = RegInit(false.B)
+      when(accept & (isHalt | isPrim))(haltLatch := true.B)
+      when(accept & isResume)(haltLatch := false.B)
+      useq.io.debugPend := haltLatch
+
+      useq.io.dbgReq.get    := accept & isPrim
+      useq.io.dbgCmd.get    := cmd
+      useq.io.dbgResume.get := accept & isResume
+
+      // AUX injection for the mem-write data-staging word.
+      val atMemWriteStage = exec === Ucode.DebugMemWrite.U(parameter.upcBits)
+      intrf.io.dmWe.get   := atMemWriteStage
+      intrf.io.dmData.get := dm.dataFromHost
+
+      // The mem primitives address dm.addr directly (decoupled from the operand
+      // selectors); set-PC drives the PC flop with dm.addr.
+      val atMemRead  = exec === Ucode.DebugMemRead.U(parameter.upcBits)
+      val atMemWrite = exec === (Ucode.DebugMemWrite + 1).U(parameter.upcBits)
+      val atSetPc    = exec === Ucode.DebugSetPc.U(parameter.upcBits)
+      when(atMemRead | atMemWrite)(biu.io.addr := dm.addr)
+      when(atSetPc) {
+        intrf.io.waddr := IntIdx.PC.U(2)
+        intrf.io.wdata := dm.addr
+        intrf.io.we := stepEn
+      }
+
+      dm.ack        := served & parked
+      dm.dataToHost := intrf.io.auxData
+      dm.halted     := parked
+    end if
 
     // Retire trace is lowered into DV bind collateral and stripped in production.
     val probe = summon[Interface[CoreProbe]]

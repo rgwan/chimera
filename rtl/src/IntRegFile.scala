@@ -23,6 +23,10 @@ class IntRegFileIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val tempData = Aligned(UInt(parameter.dataWidth))
   val auxData = Aligned(UInt(parameter.dataWidth))
   val dbgPc = Aligned(UInt(parameter.dataWidth)) // verify tap
+  // Debug-module injection into the AUX flop D-input. Present only with
+  // parameter.debug; the field and its priority branch vanish otherwise.
+  val dmWe   = Option.when(parameter.debug)(Flipped(Bool()))
+  val dmData = Option.when(parameter.debug)(Flipped(UInt(parameter.dataWidth)))
 
 @generator
 object IntRegFile
@@ -42,7 +46,13 @@ object IntRegFile
     when(io.we & (io.waddr === 0.U(2)))(pc := io.wdata)
     when(io.we & (io.waddr === 1.U(2)))(ireg := io.wdata)
     when(io.we & (io.waddr === 2.U(2)))(temp := io.wdata)
-    when(io.we & (io.waddr === 3.U(2)))(aux := io.wdata)
+    (io.dmWe, io.dmData) match
+      case (Some(dmWe), Some(dmData)) =>
+        when(dmWe)(aux := dmData).otherwise {
+          when(io.we & (io.waddr === 3.U(2)))(aux := io.wdata)
+        }
+      case _ =>
+        when(io.we & (io.waddr === 3.U(2)))(aux := io.wdata)
 
     val rd = Wire(UInt(parameter.dataWidth))
     rd := pc

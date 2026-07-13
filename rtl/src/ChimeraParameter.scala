@@ -11,6 +11,8 @@ import me.jiuyang.zaozi.default.{*, given}
   * are elided and their cond code tests the sleep wake signal instead.
   * pipeline selects the two-stage F/X microword pipeline; off (default) is the
   * single-cycle datapath, which is smaller and clocks the same.
+  * debug adds the optional microcode-driven debug-module port; off (default)
+  * leaves every leaf module byte-identical.
   */
 case class ChimeraParameter(
   h8300h:         Boolean = false,
@@ -18,6 +20,7 @@ case class ChimeraParameter(
   romHex:         Boolean = false,
   ccrUbit:        Boolean = false,
   pipeline:       Boolean = false,
+  debug:          Boolean = false,
   irqNumberWidth: Int = 3
 ) extends Parameter:
   require(irqNumberWidth >= 1 && irqNumberWidth <= 8,

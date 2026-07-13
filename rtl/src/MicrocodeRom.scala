@@ -27,11 +27,13 @@ object MicrocodeRom
 
     val d = Wire(UInt(parameter.uromWidth))
     d := 0.U(parameter.uromWidth)
-    MicrocodeImage.sparse(parameter.strictDecode).foreach { case (addr, w) =>
-      when(io.addr === addr.U(parameter.upcBits))(d := w.U(parameter.uromWidth))
+    MicrocodeImage.sparse(parameter.strictDecode, parameter.debug).foreach {
+      case (addr, w) =>
+        when(io.addr === addr.U(parameter.upcBits))(d := w.U(parameter.uromWidth))
     }
     val resetWord =
-      MicrocodeImage.program(parameter.strictDecode)(Ucode.ResetEntry).encode
+      MicrocodeImage.program(parameter.strictDecode, parameter.debug)(
+        Ucode.ResetEntry).encode
     val q = RegInit(resetWord.U(parameter.uromWidth))
     q := d
     io.data := q

@@ -54,6 +54,13 @@ class MicrosequencerIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val trapIndex = Aligned(UInt(2))
   val rteAck   = Aligned(Bool())
   val sleeping = Aligned(Bool())
+  // Debug-module hold/dispatch. Present only with parameter.debug. While parked
+  // in the DebugEntry wait word `dbgReq` steers to the primitive at
+  // DebugEntry + DmCmd offset; `dbgResume` retires back to the fetch loop.
+  val dbgReq    = Option.when(parameter.debug)(Flipped(Bool()))
+  val dbgCmd    = Option.when(parameter.debug)(Flipped(UInt(3)))
+  val dbgResume = Option.when(parameter.debug)(Flipped(Bool()))
+  val halted    = Option.when(parameter.debug)(Aligned(Bool()))
 
 @generator
 object Microsequencer
@@ -184,6 +191,9 @@ object Microsequencer
     sleepReg := xValidReg & (cur === (Ucode.Sleep + 1).U(parameter.upcBits))
     io.sleeping := sleepReg
 
+    // Debug hold is a single-cycle-datapath feature for now; tie the port off.
+    if parameter.debug then io.halted.get := false.B
+
     } else {
 
     // ---- single-cycle datapath: one `cur` pointer, effects gated by stepEn. ----
@@ -234,6 +244,22 @@ object Microsequencer
     when(trapArm)(nxt := Ucode.Retire.U(parameter.upcBits))
     when(retireRequest)(nxt := Ucode.Retire.U(parameter.upcBits))
     when(retirePoint)(nxt := retireTarget)
+
+    // Debug hold + dispatch. The park word (DebugEntry) self-loops until a DM
+    // command arrives, then jumps to the matching primitive; resume retires to
+    // the fetch loop. Everything vanishes when parameter.debug is off.
+    if parameter.debug then
+      val parked = cur === Ucode.DebugEntry.U(parameter.upcBits)
+      io.halted.get := parked
+      val cmd = io.dbgCmd.get
+      val target = Wire(UInt(parameter.upcBits))
+      target := Ucode.DebugEntry.U(parameter.upcBits)
+      when(cmd === DmCmd.MemRead.U(3))(target := Ucode.DebugMemRead.U(parameter.upcBits))
+      when(cmd === DmCmd.MemWrite.U(3))(target := Ucode.DebugMemWrite.U(parameter.upcBits))
+      when(cmd === DmCmd.SetPc.U(3))(target := Ucode.DebugSetPc.U(parameter.upcBits))
+      when(parked & io.dbgReq.get)(nxt := target)
+      when(parked & io.dbgResume.get)(nxt := Ucode.FetchEntry.U(parameter.upcBits))
+
     when(io.stepEn)(cur := nxt)
 
     when(io.stepEn & (io.seqSrc === SeqSrc.Next.U(2)) &

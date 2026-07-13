@@ -125,6 +125,11 @@ object Ucode:
   val FetchEntry = 0x100
   val DebugEntry = 0x89
   val DebugSlots = 32
+  // Debug primitive routines inside the reserved DebugSlots range. The park word
+  // at DebugEntry self-loops until the sequencer dispatches on the DM command.
+  val DebugMemRead  = DebugEntry + 1 // mem[dm.addr] -> AUX (read result to host)
+  val DebugMemWrite = DebugEntry + 2 // AUX := dm.data; mem[dm.addr] := AUX
+  val DebugSetPc    = DebugEntry + 4 // PC := dm.addr
   val NmiEntry = FetchEntry + 0xab
   val IrqEntry = FetchEntry + 0x30
   val BitPrefixExt = FetchEntry + 0xaf

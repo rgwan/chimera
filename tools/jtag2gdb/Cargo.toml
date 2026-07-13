@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
+# SPDX-License-Identifier: MIT
+[package]
+name = "jtag2gdb"
+version = "0.1.0"
+edition = "2021"
+description = "H8/300 gdb RSP front end over the Chimera custom JTAG debug transport"
+license = "MIT"
+
+[[bin]]
+name = "jtag2gdb"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+thiserror = "1"
+log = "0.4"
+env_logger = "0.11"
+
+# Real FT232 MPSSE hardware backend. Untestable without the adapter, so it is
+# gated behind a feature and left out of the default build.
+libftd2xx = { version = "0.32", optional = true }
+rusb = { version = "0.9", optional = true }
+
+[features]
+default = []
+ft232 = ["dep:libftd2xx", "dep:rusb"]

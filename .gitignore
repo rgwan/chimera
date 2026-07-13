@@ -38,3 +38,6 @@ __pycache__/
 # Scala CLI / BSP metadata
 .bsp/
 .scala-build/
+
+# Rust build products
+target/

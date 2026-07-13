@@ -16,12 +16,13 @@ import me.jiuyang.zaozi.valuetpe.*
   * `halted` reports the core is parked in the debug wait word.
   */
 object DmCmd:
-  val MemRead  = 0
+  val Nop      = 0 // a zeroed/reset CONTROL DR is inert: dispatches nothing
   val MemWrite = 1
   val SetPc    = 2
   val Halt     = 3
   val Resume   = 4
   val ReadPc   = 5 // dataToHost := current halted PC (Core-side mux, no microcode)
+  val MemRead  = 6
 
 class DebugPort(parameter: ChimeraParameter) extends Bundle:
   val dmactive     = Flipped(Bool())                       // host -> core

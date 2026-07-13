@@ -42,8 +42,8 @@ module tb_core_top_jtag;
 
   localparam [3:0] IR_STATUS = 4'h0, IR_IDCODE = 4'h1, IR_CONTROL = 4'h2,
                    IR_BYPASS = 4'hF;
-  localparam [2:0] CMD_MEMRD = 3'd0, CMD_MEMWR = 3'd1, CMD_SETPC = 3'd2,
-                   CMD_HALT = 3'd3, CMD_RESUME = 3'd4, CMD_READPC = 3'd5;
+  localparam [2:0] CMD_MEMWR = 3'd1, CMD_SETPC = 3'd2, CMD_HALT = 3'd3,
+                   CMD_RESUME = 3'd4, CMD_READPC = 3'd5, CMD_MEMRD = 3'd6;
 
   wire [15:0] pc = dut.core.intrf.dbgPc;
 
@@ -169,10 +169,11 @@ module tb_core_top_jtag;
     // Poll STATUS until is_halted (bit0) is set.
     shift_ir(IR_STATUS);
     i = 0; rdata[0] = 1'b0;
-    while (!rdata[0] && i < 100) begin shift_dr(22, 64'd0); i = i + 1; end
+    while (!rdata[0] && i < 100) begin shift_dr(23, 64'd0); i = i + 1; end
     check(rdata[0] === 1'b1, "STATUS is_halted set after halt");
     check(rdata[17:2] === 16'hFF00, "STATUS dbg_base = debugBase param");
     check(rdata[21:18] === 4'd2, "STATUS hwbp_count = triggerCount param");
+    check(rdata[22] === 1'b1, "STATUS dmactive set once a debugger is present");
 
     // memWrite then memRead round-trip.
     control_cmd(CMD_MEMWR, 16'h0300, 16'hBEEF);
@@ -195,7 +196,7 @@ module tb_core_top_jtag;
     control_cmd(CMD_RESUME, 16'h0000, 16'h0000);
     shift_ir(IR_STATUS);
     i = 0; rdata[0] = 1'b1;
-    while (rdata[0] && i < 100) begin shift_dr(22, 64'd0); i = i + 1; end
+    while (rdata[0] && i < 100) begin shift_dr(23, 64'd0); i = i + 1; end
     check(rdata[0] === 1'b0, "STATUS is_halted clears after resume");
 
     if (errors == 0)

@@ -33,8 +33,8 @@ module tb_core_debug;
     .dbg_addr(dbg_addr), .dbg_dataFromHost(dbg_dataFromHost),
     .dbg_ack(dbg_ack), .dbg_dataToHost(dbg_dataToHost), .dbg_halted(dbg_halted));
 
-  localparam [2:0] CMD_MEMRD = 3'd0, CMD_MEMWR = 3'd1,
-                   CMD_SETPC = 3'd2, CMD_HALT = 3'd3, CMD_RESUME = 3'd4;
+  localparam [2:0] CMD_MEMWR = 3'd1, CMD_SETPC = 3'd2, CMD_HALT = 3'd3,
+                   CMD_RESUME = 3'd4, CMD_MEMRD = 3'd6;
 
   wire [15:0] pc = dut.intrf.dbgPc;
 

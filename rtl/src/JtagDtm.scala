@@ -12,8 +12,8 @@ import me.jiuyang.zaozi.valuetpe.*
   * Not RISC-V dmi/dtmcs: no abstract commands, no sticky-busy. A standard
   * IEEE-1149.1 16-state TAP, a 4-bit IR (reset = IDCODE), and four data
   * registers selected by IR:
-  *   0x0 STATUS  (22-bit, read-only): is_halted, is_sleeping, dbg_base[16],
-  *                hwbp_count[4]. Served entirely by DTM hardware.
+  *   0x0 STATUS  (23-bit, read-only): is_halted, is_sleeping, dbg_base[16],
+  *                hwbp_count[4], dmactive. Served entirely by DTM hardware.
   *   0x1 IDCODE  (32-bit, read-only): the idcode parameter.
   *   0x2 CONTROL (36-bit): cmd[3], addr[16], data[16], in_progress. Update-DR
   *                latches cmd/addr/data and drives the DebugPort; read-back
@@ -82,7 +82,7 @@ object JtagDtm
     val dw = parameter.dataWidth   // 16
     val aw = parameter.addrWidth   // 16
     val ctlW = 3 + aw + dw + 1     // 36
-    val statusW = 2 + 16 + 4       // 22
+    val statusW = 2 + 16 + 4 + 1   // 23 (+dmactive)
 
     // ---- TAP state machine (posedge TCK). ----
     val state = RegInit(Tap.TestLogicReset.U(4))
@@ -156,18 +156,24 @@ object JtagDtm
     when(reqReg & ackSync)(reqReg := false.B)
     when(reqReg & isResumeCmd & (!haltSync))(reqReg := false.B)
 
-    // ---- Shift registers per DR. ----
-    val statusShift  = RegInit(0.U(statusW))
-    val idcodeShift  = RegInit(0.U(32))
-    val controlShift = RegInit(0.U(ctlW))
-    val bypassShift  = RegInit(false.B)
+    // ---- One shared shift register for every DR. ----
+    // The data DRs (STATUS 23b, IDCODE 32b, CONTROL 36b) and BYPASS (1b) are
+    // time-multiplexed through a single ctlW-wide (36b) shift register: Capture-
+    // DR muxes the IR-selected value into the low bits (zero-extended); Shift-DR
+    // shifts LSB-first; TDO reads bit 0; Update-DR latches the CONTROL fields.
+    // External TAP behaviour is byte-for-byte identical: the host still scans
+    // each IR's own DR length (STATUS 23, IDCODE 32, CONTROL 36, BYPASS 1) and
+    // the low bits it reads back match the per-DR registers this replaces. One
+    // 36b register + one capture mux replaces four registers + four shift/TDO
+    // paths (measured -49 LUT4 / -55 DFF).
+    val shiftReg = RegInit(0.U(ctlW))
 
-    val statusCapture = (haltSync.asBits ## sleepSync.asBits).asUInt // [1:0]
     val dbgBaseC   = parameter.debugBase & 0xFFFF
     val hwbpC      = parameter.triggerCount & 0xF
     // LSB-first: [0]=halted [1]=sleeping [17:2]=dbg_base [21:18]=hwbp_count
+    // [22]=dmactive
     val statusWord = (
-      hwbpC.U(4).asBits ## dbgBaseC.U(16).asBits ##
+      dmactive.asBits ## hwbpC.U(4).asBits ## dbgBaseC.U(16).asBits ##
       sleepSync.asBits ## haltSync.asBits).asUInt
 
     // CONTROL read-back: [2:0]=cmd [18:3]=addr [34:19]=readData [35]=in_progress
@@ -177,28 +183,28 @@ object JtagDtm
 
     val idcodeWord = (parameter.idcode & 0xFFFFFFFFL).U(32)
 
-    when(captureDr) {
-      statusShift  := statusWord
-      idcodeShift  := idcodeWord
-      controlShift := controlWord
-      bypassShift  := false.B
-    }
+    // Capture value per IR, zero-extended to the shared register width (ctlW).
+    // STATUS is statusW bits, IDCODE 32, CONTROL is already ctlW, BYPASS all-0.
+    val statusCap = (0.U(ctlW - statusW).asBits ## statusWord.asBits).asUInt
+    val idcodeCap = (0.U(ctlW - 32).asBits ## idcodeWord.asBits).asUInt
+    val captureWord = isStatus.?(statusCap,
+      isIdcode.?(idcodeCap,
+        isControl.?(controlWord, 0.U(ctlW))))
+
+    when(captureDr)(shiftReg := captureWord)
     when(shiftDr) {
-      statusShift  := (io.tdi.asBits ## statusShift.asBits.bits(statusW - 1, 1)).asUInt
-      idcodeShift  := (io.tdi.asBits ## idcodeShift.asBits.bits(31, 1)).asUInt
-      controlShift := (io.tdi.asBits ## controlShift.asBits.bits(ctlW - 1, 1)).asUInt
-      bypassShift  := io.tdi
+      shiftReg := (io.tdi.asBits ## shiftReg.asBits.bits(ctlW - 1, 1)).asUInt
     }
 
     // Update-DR on CONTROL launches a command only when the shifted-in top bit
     // (a write-side "go" strobe, same position as the read-side in_progress) is
     // set and no request is outstanding. Polling re-scans CONTROL with go=0 to
     // read in_progress back without re-launching.
-    val goStrobe = controlShift.asBits.bit(2 + aw + dw + 1)
+    val goStrobe = shiftReg.asBits.bit(2 + aw + dw + 1)
     when(updateDr & isControl & goStrobe & (!reqReg)) {
-      cmdReg  := controlShift.asBits.bits(2, 0).asUInt
-      addrReg := controlShift.asBits.bits(2 + aw, 3).asUInt
-      dataReg := controlShift.asBits.bits(2 + aw + dw, 3 + aw).asUInt
+      cmdReg  := shiftReg.asBits.bits(2, 0).asUInt
+      addrReg := shiftReg.asBits.bits(2 + aw, 3).asUInt
+      dataReg := shiftReg.asBits.bits(2 + aw + dw, 3 + aw).asUInt
       reqReg  := true.B
     }
 
@@ -207,11 +213,9 @@ object JtagDtm
     when((captureDr | updateDr) & isControl)(dmactive := true.B)
     when(inTlr)(dmactive := false.B)
 
-    // ---- TDO: shift out the LSB of the selected DR (falling-edge convention is
-    // handled by the tap master; here TDO is combinational from the register). --
-    val tdoDr = isStatus.?(statusShift.asBits.bit(0),
-      isIdcode.?(idcodeShift.asBits.bit(0),
-        isControl.?(controlShift.asBits.bit(0), bypassShift.asBits.bit(0))))
+    // ---- TDO: shift out the LSB of the shared register (falling-edge
+    // convention is handled by the tap master; TDO is combinational here). -----
+    val tdoDr = shiftReg.asBits.bit(0)
     val tdoIr = irShift.asBits.bit(0)
     io.tdo := shiftIr.?(tdoIr, tdoDr)
 

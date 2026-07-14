@@ -31,6 +31,22 @@ The vector-table boot and IRQ nesting rework costs about 52 LUT4 in this
 proxy (38 in the vendor flow, whose pre-rework best was 636); 20 of those
 are the `vt_base` relocation input (measured by tying it to zero).
 
+## Debug configuration
+
+Numbers for the external-debug build (`dm` + `dtm`, vendor place-and-route
+on the EG4 target); `debug.md` describes the subsystem.
+
+| Metric | Value |
+|---|---|
+| LUT4 delta vs debug-off | about +250 (JtagDtm 96 LUT4 / 107 DFF after the shared-DR trim, plus the in-core DM taps) |
+| FF delta (single-step + trap-2) | about +6 |
+| Fmax | about 57 MHz (critical path unchanged, ROM to CCR) |
+| Debug off | byte-identical to `lean` |
+
+The TD run of the full debug tier (P4) is 969 LUT / 180 registers at
+56.7 MHz. Every debug knob off leaves each leaf module byte-identical, so
+the `lean`/`pipe`/`strict` numbers above are unaffected.
+
 ## Benchmarks (rtl cycle-accurate, not certified)
 
 `make bench-dhry` and `make bench-coremark` build with the pinned

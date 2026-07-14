@@ -41,6 +41,10 @@ for every tier are attached to each tagged version.
 Full numbers and methods are in [doc/metrics.md](doc/metrics.md); the
 design itself is in [doc/microarchitecture.md](doc/microarchitecture.md).
 
+Optional debug: software breakpoints (always on), self-hosted or external
+single-step and hardware breakpoints, and a JTAG debug module driven by a
+gdb host tool. See [doc/debug.md](doc/debug.md).
+
 ## Build and verify
 
 ```bash

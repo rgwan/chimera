@@ -22,11 +22,24 @@ equals the H8 byte address, so the helpers below are a plain big-endian model.
 
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles
+from cocotb.triggers import ClockCycles, RisingEdge
 
 from cocotbext.axi import AxiLiteBus, AxiLiteRam
 
 RAM_SIZE = 2**16
+
+
+async def addr_alignment_monitor(dut, violations):
+    """A 32-bit AXI-Lite bus requires 4-byte-aligned AW/ARADDR; WSTRB selects the
+    byte lane. Flag any address whose low two bits are set (the tolerant test
+    slave word-masks internally, so only this monitor catches a regression)."""
+    while True:
+        await RisingEdge(dut.clock)
+        for ch, v, a in (("AW", dut.m_axil_awvalid, dut.m_axil_awaddr),
+                         ("AR", dut.m_axil_arvalid, dut.m_axil_araddr)):
+            if v.value.is_resolvable and v.value == 1 \
+                    and a.value.is_resolvable and (int(a.value) & 0x3):
+                violations.append(f"{ch}ADDR 0x{int(a.value):x} not 4-aligned")
 
 # H8/300 reset vector table (word-addressed, big-endian in H8 memory image).
 RESET_SP = 0x0300
@@ -119,6 +132,9 @@ async def axil_boot_and_stores(dut):
     )
     load_ram(ram)
 
+    align_violations = []
+    cocotb.start_soon(addr_alignment_monitor(dut, align_violations))
+
     await ClockCycles(dut.clock, 4)
     dut.reset.value = 0
     # Let the core boot (fetch SP/PC) and run the whole store sequence to the
@@ -156,6 +172,10 @@ async def axil_boot_and_stores(dut):
     if raw[0] != 0x12 or raw[1] != 0x34:
         errors.append(
             f"raw byte order @0x0100: got [{raw[0]:02x} {raw[1]:02x}] exp [12 34]")
+
+    # Every AXI-Lite address must be 4-byte aligned (WSTRB picks the lane).
+    if align_violations:
+        errors.append("unaligned AXI addr: " + "; ".join(sorted(set(align_violations))))
 
     assert not errors, "AXI-Lite bridge checks failed:\n  " + "\n  ".join(errors)
     dut._log.info("AXI-LITE PASS: boot, word/byte stores, both lanes, read-back")

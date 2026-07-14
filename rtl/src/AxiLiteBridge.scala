@@ -86,11 +86,13 @@ object SramToAxiLite
     val isWrite = io.bus.we
     val isRead  = isReq & (!isWrite)
 
-    // 16-bit core address zero-extended into the 32-bit AXI address; the word
-    // is naturally aligned (addr[1] selects the half, addr[0] stays with the
-    // byte lanes carried by wmask/strb).
+    // 16-bit core address zero-extended into the 32-bit AXI address, with the
+    // low two bits cleared: a 32-bit AXI-Lite bus requires a 4-byte-aligned
+    // address, and WSTRB already selects the byte lane. addr[1] still selects
+    // the half here; addr[0] is forced 0 by Biu.
     val axiAddr =
-      (0.B(parameter.axiAddrW - parameter.addrWidth) ## io.bus.addr.asBits).asUInt
+      (0.B(parameter.axiAddrW - parameter.addrWidth) ##
+        io.bus.addr.asBits.bits(parameter.addrWidth - 1, 2) ## 0.B(2)).asUInt
     val highHalf = io.bus.addr.asBits.bit(1)
 
     // Place the 16-bit datum on the selected 32-bit half, byte-swapped so the

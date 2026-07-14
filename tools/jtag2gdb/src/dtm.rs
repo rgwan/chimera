@@ -19,7 +19,7 @@ pub mod ir {
     pub const BYPASS: u8 = 0xF;
 }
 
-/// CONTROL cmd field (3-bit).
+/// CONTROL cmd field (4-bit).
 ///
 /// `Nop` is 0 so a zeroed / reset CONTROL DR is inert (no spurious access);
 /// only `MemRead` at 6 moves. This mirrors `DmCmd` in the RTL.
@@ -35,8 +35,8 @@ pub enum Cmd {
     ReadCcr = 7,
 }
 
-/// Geometry of the 36-bit CONTROL DR and the 23-bit STATUS DR.
-pub const CTRL_BITS: usize = 36;
+/// Geometry of the 37-bit CONTROL DR and the 23-bit STATUS DR.
+pub const CTRL_BITS: usize = 37;
 pub const STATUS_BITS: usize = 23;
 pub const IDCODE_BITS: usize = 32;
 
@@ -66,14 +66,14 @@ impl Status {
 
 /// Pack a CONTROL DR word.
 ///
-/// LSB-first field layout: [2:0]cmd [18:3]addr[16] [34:19]data[16] [35]go. On a
+/// LSB-first field layout: [3:0]cmd [19:4]addr[16] [35:20]data[16] [36]go. On a
 /// write `go` is the launch strobe; the same bit reads back as in_progress.
 pub fn pack_control(go: bool, cmd: Cmd, addr: u16, data: u16) -> u64 {
-    let cmd = (cmd as u64) & 0x7;
+    let cmd = (cmd as u64) & 0xF;
     let addr = (addr as u64) & 0xFFFF;
     let data = (data as u64) & 0xFFFF;
     let go = if go { 1u64 } else { 0 };
-    cmd | (addr << 3) | (data << 19) | (go << 35)
+    cmd | (addr << 4) | (data << 20) | (go << 36)
 }
 
 /// Fields decoded from a CONTROL read-back.
@@ -85,8 +85,8 @@ pub struct ControlReadback {
 
 pub fn decode_control(raw: u64) -> ControlReadback {
     ControlReadback {
-        in_progress: (raw >> 35) & 1 != 0,
-        data: ((raw >> 19) & 0xFFFF) as u16,
+        in_progress: (raw >> 36) & 1 != 0,
+        data: ((raw >> 20) & 0xFFFF) as u16,
     }
 }
 
@@ -226,19 +226,19 @@ mod tests {
     fn control_field_packing() {
         // go=1, cmd=memWrite(1), addr=0x0300, data=0xBEEF.
         let w = pack_control(true, Cmd::MemWrite, 0x0300, 0xBEEF);
-        assert_eq!(w & 0x7, 1); // cmd
-        assert_eq!((w >> 3) & 0xFFFF, 0x0300); // addr
-        assert_eq!((w >> 19) & 0xFFFF, 0xBEEF); // data
-        assert_eq!((w >> 35) & 1, 1); // go
-        assert_eq!(w, ((1u64) << 35) | (0xBEEFu64 << 19) | (0x0300u64 << 3) | 1);
+        assert_eq!(w & 0xF, 1); // cmd
+        assert_eq!((w >> 4) & 0xFFFF, 0x0300); // addr
+        assert_eq!((w >> 20) & 0xFFFF, 0xBEEF); // data
+        assert_eq!((w >> 36) & 1, 1); // go
+        assert_eq!(w, ((1u64) << 36) | (0xBEEFu64 << 20) | (0x0300u64 << 4) | 1);
     }
 
     #[test]
     fn control_go_low_clears_top_bit() {
         let w = pack_control(false, Cmd::MemRead, 0x0400, 0);
-        assert_eq!((w >> 35) & 1, 0);
-        assert_eq!(w & 0x7, 6); // memRead is 6 in the new encoding
-        assert_eq!((w >> 3) & 0xFFFF, 0x0400);
+        assert_eq!((w >> 36) & 1, 0);
+        assert_eq!(w & 0xF, 6); // memRead is 6 in the new encoding
+        assert_eq!((w >> 4) & 0xFFFF, 0x0400);
     }
 
     #[test]
@@ -254,13 +254,13 @@ mod tests {
 
     #[test]
     fn control_readback_decode() {
-        // in_progress=1, data=0x1234 in the [34:19] field.
-        let raw = (1u64 << 35) | (0x1234u64 << 19);
+        // in_progress=1, data=0x1234 in the [35:20] field.
+        let raw = (1u64 << 36) | (0x1234u64 << 20);
         let rb = decode_control(raw);
         assert!(rb.in_progress);
         assert_eq!(rb.data, 0x1234);
 
-        let done = 0x5720u64 << 19; // in_progress=0, data=TRAPA #2 word
+        let done = 0x5720u64 << 20; // in_progress=0, data=TRAPA #2 word
         let rb2 = decode_control(done);
         assert!(!rb2.in_progress);
         assert_eq!(rb2.data, 0x5720);
@@ -295,7 +295,7 @@ mod tests {
         // A completed read: pack a poll word (go=0), and independently a
         // read-back with the same data confirms field alignment agrees.
         let data = 0xCAFEu16;
-        let readback = decode_control((data as u64) << 19);
+        let readback = decode_control((data as u64) << 20);
         assert_eq!(readback.data, data);
         assert!(!readback.in_progress);
     }

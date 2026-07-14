@@ -17,7 +17,7 @@ module tb_core_autohalt;
   wire        core_sleeping;
 
   reg         dbg_dmactive, dbg_req;
-  reg  [2:0]  dbg_cmd;
+  reg  [3:0]  dbg_cmd;
   reg  [15:0] dbg_addr, dbg_dataFromHost;
   wire        dbg_ack, dbg_halted;
   wire [15:0] dbg_dataToHost;
@@ -34,8 +34,8 @@ module tb_core_autohalt;
     .dbg_addr(dbg_addr), .dbg_dataFromHost(dbg_dataFromHost),
     .dbg_ack(dbg_ack), .dbg_dataToHost(dbg_dataToHost), .dbg_halted(dbg_halted));
 
-  localparam [2:0] CMD_MEMWR = 3'd1, CMD_HALT = 3'd3, CMD_RESUME = 3'd4,
-                   CMD_MEMRD = 3'd6;
+  localparam [3:0] CMD_MEMWR = 4'd1, CMD_HALT = 4'd3, CMD_RESUME = 4'd4,
+                   CMD_MEMRD = 4'd6;
 
   wire [15:0] pc = dut.intrf.dbgPc;
 
@@ -61,7 +61,7 @@ module tb_core_autohalt;
   // Issue one command WITHOUT an explicit halt. While the request is up, sample
   // whether the core ever parked (`saw_halt`) so a running command is proven to
   // auto-halt rather than being ignored. Level handshake: hold req until ack.
-  task dm_oneshot(input [2:0] cmd, input [15:0] a, input [15:0] d);
+  task dm_oneshot(input [3:0] cmd, input [15:0] a, input [15:0] d);
     begin
       dbg_cmd = cmd; dbg_addr = a; dbg_dataFromHost = d; dbg_req = 1'b1;
       saw_halt = 1'b0;

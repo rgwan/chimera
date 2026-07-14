@@ -42,8 +42,8 @@ module tb_core_top_jtag;
 
   localparam [3:0] IR_STATUS = 4'h0, IR_IDCODE = 4'h1, IR_CONTROL = 4'h2,
                    IR_BYPASS = 4'hF;
-  localparam [2:0] CMD_MEMWR = 3'd1, CMD_SETPC = 3'd2, CMD_HALT = 3'd3,
-                   CMD_RESUME = 3'd4, CMD_READPC = 3'd5, CMD_MEMRD = 3'd6;
+  localparam [3:0] CMD_MEMWR = 4'd1, CMD_SETPC = 4'd2, CMD_HALT = 4'd3,
+                   CMD_RESUME = 4'd4, CMD_READPC = 4'd5, CMD_MEMRD = 4'd6;
 
   wire [15:0] pc = dut.core.intrf.dbgPc;
 
@@ -114,27 +114,27 @@ module tb_core_top_jtag;
     end
   endtask
 
-  // Assemble a 36-bit CONTROL word: [2:0]cmd [18:3]addr [34:19]data [35]go/ip.
-  // On write bit35 is the launch strobe; on read it is in_progress.
-  function [63:0] ctl_word(input go, input [2:0] cmd, input [15:0] a, input [15:0] d);
-    ctl_word = {28'd0, go, d, a, cmd};
+  // Assemble a 37-bit CONTROL word: [3:0]cmd [19:4]addr [35:20]data [36]go/ip.
+  // On write bit36 is the launch strobe; on read it is in_progress.
+  function [63:0] ctl_word(input go, input [3:0] cmd, input [15:0] a, input [15:0] d);
+    ctl_word = {27'd0, go, d, a, cmd};
   endfunction
 
-  // Issue a CONTROL command (go=1) then poll in_progress (bit 35) with go=0.
+  // Issue a CONTROL command (go=1) then poll in_progress (bit 36) with go=0.
   reg [15:0] ctl_read;
-  task control_cmd(input [2:0] cmd, input [15:0] a, input [15:0] d);
+  task control_cmd(input [3:0] cmd, input [15:0] a, input [15:0] d);
     integer guard;
     begin
       shift_ir(IR_CONTROL);
-      shift_dr(36, ctl_word(1'b1, cmd, a, d)); // launch
+      shift_dr(37, ctl_word(1'b1, cmd, a, d)); // launch
       guard = 0;
-      rdata[35] = 1'b1;
-      while (rdata[35] && guard < 200) begin
-        shift_dr(36, ctl_word(1'b0, cmd, a, d)); // read-only poll (no re-launch)
+      rdata[36] = 1'b1;
+      while (rdata[36] && guard < 200) begin
+        shift_dr(37, ctl_word(1'b0, cmd, a, d)); // read-only poll (no re-launch)
         guard = guard + 1;
       end
-      check(!rdata[35], "control cmd completed");
-      ctl_read = rdata[34:19];
+      check(!rdata[36], "control cmd completed");
+      ctl_read = rdata[35:20];
     end
   endtask
 

@@ -335,9 +335,9 @@ mod tests {
         }
 
         fn exec_control(&mut self) {
-            let cmd = (self.dr & 0x7) as u8;
-            let addr = ((self.dr >> 3) & 0xFFFF) as u16;
-            let data = ((self.dr >> 19) & 0xFFFF) as u16;
+            let cmd = (self.dr & 0xF) as u8;
+            let addr = ((self.dr >> 4) & 0xFFFF) as u16;
+            let data = ((self.dr >> 20) & 0xFFFF) as u16;
             let mut out = data;
             match cmd {
                 c if c == Cmd::MemWrite as u8 => {
@@ -407,7 +407,7 @@ mod tests {
                 TapState::CapDr => self.dr = self.capture_dr(),
                 TapState::UpdIr => self.ir = self.ir_shift & 0xF,
                 TapState::UpdDr => {
-                    if self.ir == ir::CONTROL && (self.dr >> 35) & 1 == 1 {
+                    if self.ir == ir::CONTROL && (self.dr >> 36) & 1 == 1 {
                         self.exec_control();
                     }
                 }

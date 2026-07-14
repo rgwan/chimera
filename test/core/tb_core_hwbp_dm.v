@@ -19,7 +19,7 @@ module tb_core_hwbp_dm;
   wire        core_sleeping, is_halted;
 
   reg         dbg_dmactive, dbg_req;
-  reg  [2:0]  dbg_cmd;
+  reg  [3:0]  dbg_cmd;
   reg  [15:0] dbg_addr, dbg_dataFromHost;
   wire        dbg_ack, dbg_halted;
   wire [15:0] dbg_dataToHost;
@@ -35,7 +35,7 @@ module tb_core_hwbp_dm;
     .dbg_addr(dbg_addr), .dbg_dataFromHost(dbg_dataFromHost),
     .dbg_ack(dbg_ack), .dbg_dataToHost(dbg_dataToHost), .dbg_halted(dbg_halted));
 
-  localparam [2:0] CMD_MEMWR = 3'd1, CMD_HALT = 3'd3, CMD_RESUME = 3'd4;
+  localparam [3:0] CMD_MEMWR = 4'd1, CMD_HALT = 4'd3, CMD_RESUME = 4'd4;
 
   wire [15:0] pc = dut.intrf.dbgPc;
 
@@ -58,7 +58,7 @@ module tb_core_hwbp_dm;
     end
   endtask
 
-  task dm_wait_ack(input [2:0] cmd, input [15:0] a, input [15:0] d);
+  task dm_wait_ack(input [3:0] cmd, input [15:0] a, input [15:0] d);
     begin
       dbg_cmd = cmd; dbg_addr = a; dbg_dataFromHost = d; dbg_req = 1'b1;
       i = 0;

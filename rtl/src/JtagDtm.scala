@@ -15,7 +15,7 @@ import me.jiuyang.zaozi.valuetpe.*
   *   0x0 STATUS  (23-bit, read-only): is_halted, is_sleeping, dbg_base[16],
   *                hwbp_count[4], dmactive. Served entirely by DTM hardware.
   *   0x1 IDCODE  (32-bit, read-only): the idcode parameter.
-  *   0x2 CONTROL (36-bit): cmd[3], addr[16], data[16], in_progress. Update-DR
+  *   0x2 CONTROL (37-bit): cmd[4], addr[16], data[16], in_progress. Update-DR
   *                latches cmd/addr/data and drives the DebugPort; read-back
   *                returns the synchronized dataToHost and the in-progress flag.
   *   0xF BYPASS  (1-bit).
@@ -36,7 +36,7 @@ class JtagDtmIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   // Toward the core's DebugPort (this side drives host->core, reads core->host).
   val dmactive     = Aligned(Bool())
   val req          = Aligned(Bool())
-  val cmd          = Aligned(UInt(3))
+  val cmd          = Aligned(UInt(4))
   val addr         = Aligned(UInt(parameter.addrWidth))
   val dataFromHost = Aligned(UInt(parameter.dataWidth))
   val ack          = Flipped(Bool())
@@ -81,7 +81,7 @@ object JtagDtm
 
     val dw = parameter.dataWidth   // 16
     val aw = parameter.addrWidth   // 16
-    val ctlW = 3 + aw + dw + 1     // 36
+    val ctlW = 4 + aw + dw + 1     // 37
     val statusW = 2 + 16 + 4 + 1   // 23 (+dmactive)
 
     // ---- TAP state machine (posedge TCK). ----
@@ -142,7 +142,7 @@ object JtagDtm
     // Anything else (incl. explicit BYPASS) is a 1-bit bypass register.
 
     // ---- CONTROL register: latched command + in-progress handshake. ----
-    val cmdReg  = RegInit(0.U(3))
+    val cmdReg  = RegInit(0.U(4))
     val addrReg = RegInit(0.U(aw))
     val dataReg = RegInit(0.U(dw))
     val reqReg  = RegInit(false.B)          // level request to the core
@@ -152,17 +152,17 @@ object JtagDtm
     // synced ack; resume never acks (the core leaves the park word), so it
     // completes when the synced halted status drops.
     val inProgress = reqReg
-    val isResumeCmd = cmdReg === DmCmd.Resume.U(3)
+    val isResumeCmd = cmdReg === DmCmd.Resume.U(4)
     when(reqReg & ackSync)(reqReg := false.B)
     when(reqReg & isResumeCmd & (!haltSync))(reqReg := false.B)
 
     // ---- One shared shift register for every DR. ----
-    // The data DRs (STATUS 23b, IDCODE 32b, CONTROL 36b) and BYPASS (1b) are
-    // time-multiplexed through a single ctlW-wide (36b) shift register: Capture-
+    // The data DRs (STATUS 23b, IDCODE 32b, CONTROL 37b) and BYPASS (1b) are
+    // time-multiplexed through a single ctlW-wide (37b) shift register: Capture-
     // DR muxes the IR-selected value into the low bits (zero-extended); Shift-DR
     // shifts LSB-first; TDO reads bit 0; Update-DR latches the CONTROL fields.
     // External TAP behaviour is byte-for-byte identical: the host still scans
-    // each IR's own DR length (STATUS 23, IDCODE 32, CONTROL 36, BYPASS 1) and
+    // each IR's own DR length (STATUS 23, IDCODE 32, CONTROL 37, BYPASS 1) and
     // the low bits it reads back match the per-DR registers this replaces. One
     // 36b register + one capture mux replaces four registers + four shift/TDO
     // paths (measured -49 LUT4 / -55 DFF).
@@ -176,7 +176,7 @@ object JtagDtm
       dmactive.asBits ## hwbpC.U(4).asBits ## dbgBaseC.U(16).asBits ##
       sleepSync.asBits ## haltSync.asBits).asUInt
 
-    // CONTROL read-back: [2:0]=cmd [18:3]=addr [34:19]=readData [35]=in_progress
+    // CONTROL read-back: [3:0]=cmd [19:4]=addr [35:20]=readData [36]=in_progress
     val controlWord = (
       inProgress.asBits ## readData.asBits ## addrReg.asBits ##
       cmdReg.asBits).asUInt
@@ -200,11 +200,11 @@ object JtagDtm
     // (a write-side "go" strobe, same position as the read-side in_progress) is
     // set and no request is outstanding. Polling re-scans CONTROL with go=0 to
     // read in_progress back without re-launching.
-    val goStrobe = shiftReg.asBits.bit(2 + aw + dw + 1)
+    val goStrobe = shiftReg.asBits.bit(3 + aw + dw + 1)
     when(updateDr & isControl & goStrobe & (!reqReg)) {
-      cmdReg  := shiftReg.asBits.bits(2, 0).asUInt
-      addrReg := shiftReg.asBits.bits(2 + aw, 3).asUInt
-      dataReg := shiftReg.asBits.bits(2 + aw + dw, 3 + aw).asUInt
+      cmdReg  := shiftReg.asBits.bits(3, 0).asUInt
+      addrReg := shiftReg.asBits.bits(3 + aw, 4).asUInt
+      dataReg := shiftReg.asBits.bits(3 + aw + dw, 4 + aw).asUInt
       reqReg  := true.B
     }
 

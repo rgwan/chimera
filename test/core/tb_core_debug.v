@@ -18,7 +18,7 @@ module tb_core_debug;
 
   // Debug-module port.
   reg         dbg_dmactive, dbg_req;
-  reg  [2:0]  dbg_cmd;
+  reg  [3:0]  dbg_cmd;
   reg  [15:0] dbg_addr, dbg_dataFromHost;
   wire        dbg_ack, dbg_halted;
   wire [15:0] dbg_dataToHost;
@@ -33,8 +33,8 @@ module tb_core_debug;
     .dbg_addr(dbg_addr), .dbg_dataFromHost(dbg_dataFromHost),
     .dbg_ack(dbg_ack), .dbg_dataToHost(dbg_dataToHost), .dbg_halted(dbg_halted));
 
-  localparam [2:0] CMD_MEMWR = 3'd1, CMD_SETPC = 3'd2, CMD_HALT = 3'd3,
-                   CMD_RESUME = 3'd4, CMD_MEMRD = 3'd6;
+  localparam [3:0] CMD_MEMWR = 4'd1, CMD_SETPC = 4'd2, CMD_HALT = 4'd3,
+                   CMD_RESUME = 4'd4, CMD_MEMRD = 4'd6;
 
   wire [15:0] pc = dut.intrf.dbgPc;
 
@@ -58,7 +58,7 @@ module tb_core_debug;
   endtask
 
   // Level handshake: raise req until ack, then drop and wait for ack to clear.
-  task dm_wait_ack(input [2:0] cmd, input [15:0] a, input [15:0] d);
+  task dm_wait_ack(input [3:0] cmd, input [15:0] a, input [15:0] d);
     begin
       dbg_cmd = cmd; dbg_addr = a; dbg_dataFromHost = d; dbg_req = 1'b1;
       i = 0;

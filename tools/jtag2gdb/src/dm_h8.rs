@@ -224,7 +224,7 @@ mod tests {
     use crate::jtag_tap::Tap;
 
     /// Behavioural DM/DTM model at the JTAG pin level. It walks the same TAP FSM
-    /// the driver drives, holds an IR and a shared 36-bit shift DR, and models
+    /// the driver drives, holds an IR and a shared 37-bit shift DR, and models
     /// the H8 debug target: memory, PC, eight 16-bit GPRs, CCR, and the P4
     /// non-destructive CCR semantics (capture CCR on a fresh halt from running
     /// code, restore it on every resume, and do NOT re-capture on a TRAPA#2
@@ -347,9 +347,9 @@ mod tests {
         }
 
         fn exec_control(&mut self) {
-            let cmd = (self.dr & 0x7) as u8;
-            let addr = ((self.dr >> 3) & 0xFFFF) as u16;
-            let data = ((self.dr >> 19) & 0xFFFF) as u16;
+            let cmd = (self.dr & 0xF) as u8;
+            let addr = ((self.dr >> 4) & 0xFFFF) as u16;
+            let data = ((self.dr >> 20) & 0xFFFF) as u16;
             let mut out_data = data;
             match cmd {
                 c if c == Cmd::MemWrite as u8 => {
@@ -427,7 +427,7 @@ mod tests {
                 TapState::UpdDr => {
                     if self.ir == ir::CONTROL {
                         // A launch (go=1) executes; a poll (go=0) just re-reads.
-                        if (self.dr >> 35) & 1 == 1 {
+                        if (self.dr >> 36) & 1 == 1 {
                             self.exec_control();
                         }
                     }

@@ -18,7 +18,7 @@ module tb_core_step_dm;
   wire        core_sleeping, is_halted;
 
   reg         dbg_dmactive, dbg_req;
-  reg  [2:0]  dbg_cmd;
+  reg  [3:0]  dbg_cmd;
   reg  [15:0] dbg_addr, dbg_dataFromHost;
   wire        dbg_ack, dbg_halted;
   wire [15:0] dbg_dataToHost;
@@ -35,8 +35,8 @@ module tb_core_step_dm;
     .dbg_addr(dbg_addr), .dbg_dataFromHost(dbg_dataFromHost),
     .dbg_ack(dbg_ack), .dbg_dataToHost(dbg_dataToHost), .dbg_halted(dbg_halted));
 
-  localparam [2:0] CMD_MEMWR = 3'd1, CMD_HALT = 3'd3, CMD_RESUME = 3'd4,
-                   CMD_READPC = 3'd5;
+  localparam [3:0] CMD_MEMWR = 4'd1, CMD_HALT = 4'd3, CMD_RESUME = 4'd4,
+                   CMD_READPC = 4'd5;
 
   wire [15:0] pc = dut.intrf.dbgPc;
 
@@ -60,7 +60,7 @@ module tb_core_step_dm;
   endtask
 
   reg [15:0] rdpc;
-  task dm_cmd(input [2:0] cmd, input [15:0] a, input [15:0] d);
+  task dm_cmd(input [3:0] cmd, input [15:0] a, input [15:0] d);
     begin
       dbg_cmd = cmd; dbg_addr = a; dbg_dataFromHost = d; dbg_req = 1'b1;
       i = 0;
@@ -105,7 +105,7 @@ module tb_core_step_dm;
     check(is_halted, "DM halt parked the core");
 
     // Set PC to 0x0030 and arm continuous single-step via STEP word 0.
-    dm_cmd(3'd2 /*SetPc*/, 16'h0030, 16'h0000); #1;    // PC = 0x0030
+    dm_cmd(4'd2 /*SetPc*/, 16'h0030, 16'h0000); #1;    // PC = 0x0030
     dm_cmd(CMD_MEMWR, 16'hFF00, 16'h0001); #1;         // STEP: EN=1 (continuous)
 
     // Read PC before stepping.

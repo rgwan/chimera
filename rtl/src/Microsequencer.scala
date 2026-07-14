@@ -58,7 +58,7 @@ class MicrosequencerIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   // in the DebugEntry wait word `dbgReq` steers to the primitive at
   // DebugEntry + DmCmd offset; `dbgResume` retires back to the fetch loop.
   val dbgReq    = Option.when(parameter.debug)(Flipped(Bool()))
-  val dbgCmd    = Option.when(parameter.debug)(Flipped(UInt(3)))
+  val dbgCmd    = Option.when(parameter.debug)(Flipped(UInt(4)))
   val dbgResume = Option.when(parameter.debug)(Flipped(Bool()))
   // Debugger-present gate: TRAPA#2 routes to DebugEntry only when a DM is active;
   // without it TRAPA#2 stays a normal trap-2 handler dispatch. Present with dm.
@@ -294,9 +294,9 @@ object Microsequencer
       val cmd = io.dbgCmd.get
       val target = Wire(UInt(parameter.upcBits))
       target := Ucode.DebugEntry.U(parameter.upcBits)
-      when(cmd === DmCmd.MemRead.U(3))(target := Ucode.DebugMemRead.U(parameter.upcBits))
-      when(cmd === DmCmd.MemWrite.U(3))(target := Ucode.DebugMemWrite.U(parameter.upcBits))
-      when(cmd === DmCmd.SetPc.U(3))(target := Ucode.DebugSetPc.U(parameter.upcBits))
+      when(cmd === DmCmd.MemRead.U(4))(target := Ucode.DebugMemRead.U(parameter.upcBits))
+      when(cmd === DmCmd.MemWrite.U(4))(target := Ucode.DebugMemWrite.U(parameter.upcBits))
+      when(cmd === DmCmd.SetPc.U(4))(target := Ucode.DebugSetPc.U(parameter.upcBits))
       when(parked & io.dbgReq.get)(nxt := target)
       // Resume routes through DebugResume (CCR restore) rather than straight to
       // fetch, so a park never leaks the flag perturbation of a program-buffer

@@ -21,7 +21,7 @@ module tb_core_nondestruct;
   wire        core_sleeping, is_halted;
 
   reg         dbg_dmactive, dbg_req;
-  reg  [2:0]  dbg_cmd;
+  reg  [3:0]  dbg_cmd;
   reg  [15:0] dbg_addr, dbg_dataFromHost;
   wire        dbg_ack, dbg_halted;
   wire [15:0] dbg_dataToHost;
@@ -40,9 +40,9 @@ module tb_core_nondestruct;
     .dbg_addr(dbg_addr), .dbg_dataFromHost(dbg_dataFromHost),
     .dbg_ack(dbg_ack), .dbg_dataToHost(dbg_dataToHost), .dbg_halted(dbg_halted));
 
-  localparam [2:0] CMD_MEMWR = 3'd1, CMD_SETPC = 3'd2, CMD_HALT = 3'd3,
-                   CMD_RESUME = 3'd4, CMD_READPC = 3'd5, CMD_MEMRD = 3'd6,
-                   CMD_READCCR = 3'd7;
+  localparam [3:0] CMD_MEMWR = 4'd1, CMD_SETPC = 4'd2, CMD_HALT = 4'd3,
+                   CMD_RESUME = 4'd4, CMD_READPC = 4'd5, CMD_MEMRD = 4'd6,
+                   CMD_READCCR = 4'd7;
   localparam [15:0] CODE = 16'h0300, DATA = 16'h0310, TRAPA2 = 16'h5720;
 
   wire [7:0]  ccrByte = dut.ccr.ccrByte;
@@ -63,7 +63,7 @@ module tb_core_nondestruct;
   always #5 clock = ~clock;
 
   reg [15:0] rdat;
-  task dm(input [2:0] cmd, input [15:0] a, input [15:0] d);
+  task dm(input [3:0] cmd, input [15:0] a, input [15:0] d);
     begin
       dbg_cmd = cmd; dbg_addr = a; dbg_dataFromHost = d; dbg_req = 1'b1;
       i = 0; while (!dbg_ack && i < 500) begin @(posedge clock); i = i + 1; end

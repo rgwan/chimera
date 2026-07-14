@@ -688,15 +688,15 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       val parked = useq.io.halted.get
 
       val cmd = dm.cmd
-      val isHalt   = cmd === DmCmd.Halt.U(3)
-      val isResume = cmd === DmCmd.Resume.U(3)
-      val isReadPc = cmd === DmCmd.ReadPc.U(3)
-      val isReadCcr = cmd === DmCmd.ReadCcr.U(3)
+      val isHalt   = cmd === DmCmd.Halt.U(4)
+      val isResume = cmd === DmCmd.Resume.U(4)
+      val isReadPc = cmd === DmCmd.ReadPc.U(4)
+      val isReadCcr = cmd === DmCmd.ReadCcr.U(4)
       // Hardware-dispatched primitives: the sequencer jumps into the matching
       // DebugSlots routine. readPC / readCCR are answered by the controller
       // directly (Core-side muxes) and never dispatch; halt/resume hold/release.
-      val isPrim   = (cmd === DmCmd.MemRead.U(3)) |
-        (cmd === DmCmd.MemWrite.U(3)) | (cmd === DmCmd.SetPc.U(3))
+      val isPrim   = (cmd === DmCmd.MemRead.U(4)) |
+        (cmd === DmCmd.MemWrite.U(4)) | (cmd === DmCmd.SetPc.U(4))
 
       // One request is served per req assertion; `served` also gates ack. Halt is
       // taken while running; primitives, resume and readPC only while parked.

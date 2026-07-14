@@ -28,7 +28,7 @@ object DmCmd:
 class DebugPort(parameter: ChimeraParameter) extends Bundle:
   val dmactive     = Flipped(Bool())                       // host -> core
   val req          = Flipped(Bool())                       // host -> core
-  val cmd          = Flipped(UInt(3))                       // host -> core (DmCmd)
+  val cmd          = Flipped(UInt(4))                       // host -> core (DmCmd)
   val addr         = Flipped(UInt(parameter.addrWidth))     // host -> core
   val dataFromHost = Flipped(UInt(parameter.dataWidth))     // host -> core
   val ack          = Aligned(Bool())                        // core -> host

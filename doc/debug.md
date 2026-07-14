@@ -44,13 +44,13 @@ breakpoints fire before execution; data breakpoints fire after the access.
 ## JTAG debug-transport register map
 
 Standard IEEE 1149.1 TAP, 4-bit IR (reset = IDCODE); the DRs share one
-36-bit shift register (external scan lengths unchanged).
+37-bit shift register, the width of the widest DR (CONTROL).
 
 | IR | DR | Width | Access |
 |---|---|---|---|
 | `0x0` | STATUS | 23 | read-only |
 | `0x1` | IDCODE | 32 | read-only |
-| `0x2` | CONTROL | 36 | read/write |
+| `0x2` | CONTROL | 37 | read/write |
 | `0xF` | BYPASS | 1 | — |
 
 STATUS, LSB-first: `[0]` is_halted, `[1]` is_sleeping, `[17:2]`
@@ -58,12 +58,15 @@ dbg_base, `[21:18]` hwbp_count, `[22]` dmactive. Served entirely by DTM
 hardware; the host reads dbg_base to find the MMIO registers. dmactive
 latches on the first CONTROL access and clears on TLR / TRST.
 
-CONTROL, LSB-first: `[2:0]` cmd, `[18:3]` addr, `[34:19]` data
-(write = dataFromHost, read = dataToHost), `[35]` in_progress / go-strobe.
+CONTROL, LSB-first: `[3:0]` cmd, `[19:4]` addr, `[35:20]` data
+(write = dataFromHost, read = dataToHost), `[36]` in_progress / go-strobe.
 A CONTROL Update with the top bit set launches a command; re-scanning it
-clear polls in_progress without relaunching.
+clear polls in_progress without relaunching. readCcr (`0x7`) is deliberately
+not all-ones and `0x8`..`0xF` are reserved and decode as inert (no-op), so a
+stuck-high or undriven DR cannot launch a spurious command; the go strobe at
+bit 36 is the launch gate.
 
-cmd encoding (3-bit): `0` Nop (a zeroed CONTROL is inert), `1` MemWrite,
+cmd encoding (4-bit): `0` Nop (a zeroed CONTROL is inert), `1` MemWrite,
 `2` SetPc, `3` Halt, `4` Resume, `5` ReadPc, `6` MemRead, `7` ReadCcr
 (non-destructive, from the CCR captured on park entry). Halt and Resume
 are separate. in_progress means a command is running; is_halted means the

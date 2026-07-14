@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
 
-.PHONY: bench-dhry bench-coremark check-sleep-strict check-ccr-ubit build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-sleep check-debug check-jtag check-rom-hex check-bit-reg check-bit-mem check-daa-das check-adds-subs check-mulxu check-divxu check-stack-byte check-irq-vector check-trapa gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model verify-smoke check clean
+.PHONY: bench-dhry bench-coremark check-sleep-strict check-ccr-ubit build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-sleep check-debug check-jtag check-hwbp-selfhosted check-hwbp-dm check-rom-hex check-bit-reg check-bit-mem check-daa-das check-adds-subs check-mulxu check-divxu check-stack-byte check-irq-vector check-trapa gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model verify-smoke check clean
 
 build: smoke
 
@@ -47,16 +47,28 @@ check-sleep:
 	vvp rtl/generated/sim_sleep
 
 check-debug:
-	DEBUG=true bash rtl/build.sh
+	DM=true bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/sim_debug test/core/tb_core_debug.v \
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_debug
 
 check-jtag:
-	DEBUG=true bash rtl/build.sh
+	DM=true bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/sim_jtag test/core/tb_core_top_jtag.v \
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_jtag
+
+check-hwbp-selfhosted:
+	HW_BREAKPOINT=true HW_BREAKPOINT_COUNT=2 DBG_BASE=65280 bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_hwbp_self test/core/tb_core_hwbp_selfhosted.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_hwbp_self
+
+check-hwbp-dm:
+	TOP=Core DM=true HW_BREAKPOINT=true HW_BREAKPOINT_COUNT=2 DBG_BASE=65280 bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_hwbp_dm test/core/tb_core_hwbp_dm.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_hwbp_dm
 
 check-sleep-strict:
 	STRICT_DECODE=true bash rtl/build.sh

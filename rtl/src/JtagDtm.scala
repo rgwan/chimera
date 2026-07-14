@@ -168,8 +168,8 @@ object JtagDtm
     // paths (measured -49 LUT4 / -55 DFF).
     val shiftReg = RegInit(0.U(ctlW))
 
-    val dbgBaseC   = parameter.debugBase & 0xFFFF
-    val hwbpC      = parameter.triggerCount & 0xF
+    val dbgBaseC   = parameter.dbgBase & 0xFFFF
+    val hwbpC      = (if parameter.hardwareBreakpoint then parameter.hwBreakpointCount else 0) & 0xF
     // LSB-first: [0]=halted [1]=sleeping [17:2]=dbg_base [21:18]=hwbp_count
     // [22]=dmactive
     val statusWord = (

@@ -29,6 +29,9 @@ class CoreIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val vt_base = Flipped(UInt(8))
   val bus   = Aligned(new SramBus(parameter))
   val core_sleeping = Aligned(Bool()) // high while parked in SLEEP
+  // High while parked in the DebugEntry wait word. Present when the core can
+  // park: a DM halt or a hardware-breakpoint redirect into DebugEntry.
+  val is_halted = Option.when(parameter.dm || parameter.hardwareBreakpoint)(Aligned(Bool()))
   // Optional debug-module port; present only with parameter.debug.
   val dbg   = Option.when(parameter.debug)(Aligned(new DebugPort(parameter)))
 
@@ -64,6 +67,8 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     val wb     = CoreWriteback.instantiate(parameter)
     val irqctl = CoreIrqControl.instantiate(parameter)
     val biu    = Biu.instantiate(parameter)
+    val trig   = Option.when(parameter.hardwareBreakpoint)(
+      TriggerUnit.instantiate(parameter))
 
     // instruction register (holds the fetched word microcode reads)
     val ir = RegInit(0.U(parameter.dataWidth))
@@ -80,6 +85,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       intrf.io.clock := io.clock; intrf.io.reset := io.reset
       ccr.io.clock   := io.clock; ccr.io.reset   := io.reset
       irqctl.io.clock := io.clock; irqctl.io.reset := io.reset
+      biu.io.clock.foreach(_ := io.clock); biu.io.reset.foreach(_ := io.reset)
       useq.io.clock  := io.clock; useq.io.reset  := io.reset
       urom.io.clock  := io.clock; urom.io.reset  := io.reset
       urom.io.addr := useq.io.upc
@@ -231,6 +237,10 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     // ---- shared X-stage / sequencer plumbing wires ----
     val fetchSwapped = biu.io.rdata.asBits.bits(7, 0) ## biu.io.rdata.asBits.bits(15, 8)
     val stepEn = Wire(Bool())
+    // Bus-ready for step gating. With the MMIO window the BIU inserts a wait on
+    // an in-range access, so step must honour biu.io.rdy; otherwise it is the
+    // transparent external rdy (byte-identical when the window is absent).
+    val busReady = if parameter.mmio then biu.io.rdy else io.bus.rdy
 
     if parameter.pipeline then {
 
@@ -383,7 +393,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       // No bus transaction in a bubble cycle.
       biu.io.busCtl := xValid.?(wb.io.biuBusCtl, BusCtl.None.U(2))
       biu.io.word := wb.io.biuWord
-      stepEn := (biu.io.busCtl === BusCtl.None.U(2)) | io.bus.rdy
+      stepEn := (biu.io.busCtl === BusCtl.None.U(2)) | busReady
 
     connectWriteback()
 
@@ -552,7 +562,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       biu.io.wdata := wb.io.biuWdata
       biu.io.busCtl := wb.io.biuBusCtl
       biu.io.word := wb.io.biuWord
-      stepEn := (wb.io.biuBusCtl === BusCtl.None.U(2)) | io.bus.rdy
+      stepEn := (wb.io.biuBusCtl === BusCtl.None.U(2)) | busReady
 
     connectWriteback()
 
@@ -603,7 +613,6 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       irqctl.io.trapIndex := useq.io.trapIndex
       irqctl.io.rteAck := useq.io.rteAck
       irqctl.io.iFlag := ccr.io.iFlag
-      useq.io.debugPend := false.B
       useq.io.nmiPend := irqctl.io.nmiPend
       useq.io.irqPend := irqctl.io.irqPend
       ccr.io.setI     := useq.io.irqAck
@@ -618,16 +627,51 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
 
     connectIrqAndBus()
 
+    // ======================= trigger / hardware breakpoint ====================
+    // Behind parameter.hardwareBreakpoint. The trigger unit owns the MMIO
+    // registers (reached through the BIU decode) and the registered comparators;
+    // every net here vanishes when hardwareBreakpoint is off. `hwbpFire` is a
+    // registered latch that the routing block below steers to DebugEntry (DM
+    // present) or the trap-2 handler (self-hosted).
+    trig.foreach { t =>
+      t.io.clock := io.clock
+      t.io.reset := io.reset
+      // Instruction bp: the fetch address, qualified by a completing fetch.
+      // Data bp: the BIU access address, qualified by a completing read/write.
+      val busFetch = biu.io.busCtl === BusCtl.Fetch.U(2)
+      val busRead  = biu.io.busCtl === BusCtl.Read.U(2)
+      val busWrite = biu.io.busCtl === BusCtl.Write.U(2)
+      t.io.fetchAddr  := biu.io.addr
+      t.io.fetchValid := busFetch & biu.io.rdy
+      t.io.dataAddr   := biu.io.addr
+      t.io.dataRead   := busRead & biu.io.rdy
+      t.io.dataWrite  := busWrite & biu.io.rdy
+      t.io.retire     := useq.io.retire
+      // MMIO register port from the BIU decode.
+      t.io.mmioSel   := biu.io.mmioSel.get
+      t.io.mmioWrite := biu.io.mmioWrite.get
+      t.io.mmioIndex := biu.io.mmioIndex.get
+      t.io.mmioWdata := biu.io.mmioWdata.get
+      t.io.mmioWmask := biu.io.mmioWmask.get
+      biu.io.mmioRdata.get := t.io.mmioRdata
+    }
+
     // ======================= debug-module controller ==========================
     // Behind parameter.debug only. Synchronizes the DM request, holds the core
     // in the DebugEntry park word, dispatches the primitive microwords, injects
     // the host word into AUX / drives PC and the bus address, and taps AUX back
     // to the host. Every net here vanishes when debug is off.
+    //
+    // `dmHalt` carries the DM halt latch and `dmActiveReg` the synced dmactive
+    // to the unified routing driver below.
+    var dmHalt: Option[Referable[Bool]] = None
+    var dmActiveReg: Option[Referable[Bool]] = None
     if parameter.debug then
       val dm = io.dbg.get
 
       val activeSync0 = RegInit(false.B); activeSync0 := dm.dmactive
       val activeSync  = RegInit(false.B); activeSync := activeSync0
+      dmActiveReg = Some(activeSync)
       val reqSync0 = RegInit(false.B); reqSync0 := dm.req
       val reqSync  = RegInit(false.B); reqSync := reqSync0
 
@@ -653,11 +697,16 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       when(!reqSync)(served := false.B)
 
       // Halt latch forces the retire redirect into DebugEntry; resume releases it.
-      // readPC keeps the core parked, so it does not touch the latch.
+      // readPC keeps the core parked, so it does not touch the latch. A concurrent
+      // hardware-breakpoint park resolves through the same latch (see below).
       val haltLatch = RegInit(false.B)
       when(accept & (isHalt | isPrim))(haltLatch := true.B)
       when(accept & isResume)(haltLatch := false.B)
-      useq.io.debugPend := haltLatch
+      // A hardware-breakpoint fire while the debugger is present also parks: fold
+      // it into the halt latch so a concurrent haltreq + HWBP fire resolve to one
+      // DebugEntry park, cleared by the same resume.
+      trig.foreach(t => when(t.io.hwbpFire)(haltLatch := true.B))
+      dmHalt = Some(haltLatch)
 
       useq.io.dbgReq.get    := accept & isPrim
       useq.io.dbgCmd.get    := cmd
@@ -689,6 +738,23 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       dm.dataToHost := (isReadPc & parked).?(intrf.io.pcData, intrf.io.auxData)
       dm.halted     := parked
     end if
+
+    // ======================= debug redirect routing ===========================
+    // Unified driver for the sequencer's debug/trap-2 inputs. A DM (when present)
+    // supplies dmActive and the halt latch; a hardware breakpoint splits by
+    // debugger presence: with a DM it parks in DebugEntry via debugPend (folded
+    // into the halt latch above), without one it traps to the trap-2 handler via
+    // hwbpTrap. is_halted mirrors the sequencer park state.
+    val dmPresent = dmActiveReg.getOrElse(false.B)
+    // debugPend: the DM halt latch (already includes a concurrent HWBP park).
+    useq.io.debugPend := dmHalt.getOrElse(false.B)
+    useq.io.dmActive.foreach(_ := dmPresent)
+    useq.io.hwbpTrap.foreach { p =>
+      // Self-hosted breakpoint: only when no debugger is present. With a DM the
+      // fire parks via the halt latch instead.
+      p := trig.get.io.hwbpFire & (!dmPresent)
+    }
+    io.is_halted.foreach(_ := useq.io.halted.get)
 
     // Retire trace is lowered into DV bind collateral and stripped in production.
     val probe = summon[Interface[CoreProbe]]

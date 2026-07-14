@@ -11,27 +11,47 @@ import me.jiuyang.zaozi.default.{*, given}
   * are elided and their cond code tests the sleep wake signal instead.
   * pipeline selects the two-stage F/X microword pipeline; off (default) is the
   * single-cycle datapath, which is smaller and clocks the same.
-  * debug adds the optional microcode-driven debug-module port; off (default)
-  * leaves every leaf module byte-identical.
+  *
+  * Debug features are independent and separately configurable. `dm` adds the
+  * microcode-driven debug-module port (external debugger); it implies `dtm`.
+  * `hardwareBreakpoint` adds the MMIO trigger unit (self-hosted or DM-driven);
+  * `singleStep` reserves the MMIO STEP register (P4). `debug` is the derived
+  * umbrella flag: any dm-dependent collateral keys on it. Every debug feature
+  * off (default) leaves every leaf module byte-identical.
   */
 case class ChimeraParameter(
-  h8300h:         Boolean = false,
-  strictDecode:   Boolean = false,
-  romHex:         Boolean = false,
-  ccrUbit:        Boolean = false,
-  pipeline:       Boolean = false,
-  debug:          Boolean = false,
-  idcode:         Long = 0x00114514L,
-  triggerCount:   Int = 2,
-  debugBase:      Int = 0xFF00,
-  irqNumberWidth: Int = 3
+  h8300h:             Boolean = false,
+  strictDecode:       Boolean = false,
+  romHex:             Boolean = false,
+  ccrUbit:            Boolean = false,
+  pipeline:           Boolean = false,
+  dm:                 Boolean = false,
+  dtm:                Boolean = false,
+  hardwareBreakpoint: Boolean = false,
+  hwBreakpointCount:  Int = 0,
+  singleStep:         Boolean = false,
+  idcode:             Long = 0x00114514L,
+  dbgBase:            Int = 0xFF00,
+  irqNumberWidth:     Int = 3
 ) extends Parameter:
   require(irqNumberWidth >= 1 && irqNumberWidth <= 8,
     "irqNumberWidth must be 1..8")
-  require(triggerCount >= 0 && triggerCount <= 15,
-    "triggerCount must fit the STATUS hwbp_count field (4 bits)")
-  require(debugBase >= 0 && debugBase <= 0xFFFF,
-    "debugBase must be a 16-bit MMIO base")
+  // dm requires a DTM to reach it.
+  require(!dm || dtm, "dm implies dtm")
+  require(hwBreakpointCount >= 0 && hwBreakpointCount <= 8,
+    "hwBreakpointCount must be 0..8")
+  require(hwBreakpointCount == 0 || hardwareBreakpoint,
+    "hwBreakpointCount>0 requires hardwareBreakpoint")
+  require(!hardwareBreakpoint || (dbgBase >= 0 && dbgBase <= 0xFFFF),
+    "hardwareBreakpoint requires a 16-bit dbgBase")
+  require(!singleStep || (dbgBase >= 0 && dbgBase <= 0xFFFF),
+    "singleStep requires a 16-bit dbgBase")
+
+  /** Umbrella: DM-dependent collateral (park microcode, DebugPort, AUX inject,
+    * JTAG DTM). Kept as `debug` so every P0-P2 call site compiles unchanged. */
+  val debug: Boolean = dm
+  /** MMIO decode window is present when any self-hostable feature is enabled. */
+  val mmio: Boolean = hardwareBreakpoint || singleStep
 
   val dataWidth:    Int = 16
   val addrWidth:    Int = 16

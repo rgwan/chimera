@@ -21,6 +21,7 @@ class CoreTopIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val vt_base = Flipped(UInt(8))
   val bus   = Aligned(new SramBus(parameter))
   val core_sleeping = Aligned(Bool())
+  val is_halted = Option.when(parameter.dm || parameter.hardwareBreakpoint)(Aligned(Bool()))
   // JTAG pins.
   val tck  = Flipped(Clock())
   val trst = Flipped(Reset())
@@ -57,6 +58,9 @@ object CoreTop
     core.io.bus.rdata := io.bus.rdata
     core.io.bus.rdy   := io.bus.rdy
     io.core_sleeping := core.io.core_sleeping
+    (io.is_halted, core.io.is_halted) match
+      case (Some(top), Some(c)) => top := c
+      case _                    => ()
 
     // JTAG DTM clocking.
     dtm.io.tck  := io.tck

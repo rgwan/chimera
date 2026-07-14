@@ -171,8 +171,8 @@ module tb_core_top_jtag;
     i = 0; rdata[0] = 1'b0;
     while (!rdata[0] && i < 100) begin shift_dr(23, 64'd0); i = i + 1; end
     check(rdata[0] === 1'b1, "STATUS is_halted set after halt");
-    check(rdata[17:2] === 16'hFF00, "STATUS dbg_base = debugBase param");
-    check(rdata[21:18] === 4'd2, "STATUS hwbp_count = triggerCount param");
+    check(rdata[17:2] === 16'hFF00, "STATUS dbg_base = dbgBase param");
+    check(rdata[21:18] === 4'd0, "STATUS hwbp_count = 0 (no hardwareBreakpoint)");
     check(rdata[22] === 1'b1, "STATUS dmactive set once a debugger is present");
 
     // memWrite then memRead round-trip.

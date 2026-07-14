@@ -60,7 +60,15 @@ class MicrosequencerIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val dbgReq    = Option.when(parameter.debug)(Flipped(Bool()))
   val dbgCmd    = Option.when(parameter.debug)(Flipped(UInt(3)))
   val dbgResume = Option.when(parameter.debug)(Flipped(Bool()))
-  val halted    = Option.when(parameter.debug)(Aligned(Bool()))
+  // Debugger-present gate: TRAPA#2 routes to DebugEntry only when a DM is active;
+  // without it TRAPA#2 stays a normal trap-2 handler dispatch. Present with dm.
+  val dmActive  = Option.when(parameter.dm)(Flipped(Bool()))
+  // Hardware-breakpoint trap request: arms a trap-index-2 pending so a bp fires
+  // through the same trap-2 / DebugEntry routing. Present with hardwareBreakpoint.
+  val hwbpTrap  = Option.when(parameter.hardwareBreakpoint)(Flipped(Bool()))
+  // Halted (parked in DebugEntry). Present whenever the core can park: a DM halt
+  // or a hardware-breakpoint redirect into DebugEntry.
+  val halted    = Option.when(parameter.dm || parameter.hardwareBreakpoint)(Aligned(Bool()))
 
 @generator
 object Microsequencer
@@ -96,7 +104,14 @@ object Microsequencer
     val retireRequest = (io.seqSrc === SeqSrc.Return.U(2)) & io.seqAux
     val retirePoint = (io.seqSrc === SeqSrc.Return.U(2)) & (!io.seqAux)
     val trapArm = (io.seqSrc === SeqSrc.Dispatch.U(2)) & io.seqAux
-    val trapDebug = trapPend & (trapIndex === 2.U(2))
+    // TRAPA#2 routes to DebugEntry only when a debugger is present. With a DM the
+    // gate is dmActive; a self-hosted build (hardwareBreakpoint, no DM) sends
+    // TRAPA#2 to the trap-2 handler instead. An all-off build keeps the original
+    // unconditional routing so it stays byte-identical.
+    val trapDebug =
+      if parameter.dm then trapPend & (trapIndex === 2.U(2)) & io.dmActive.get
+      else if parameter.hardwareBreakpoint then trapPend & (trapIndex === 2.U(2)) & false.B
+      else trapPend & (trapIndex === 2.U(2))
     val debugTake = io.debugPend | trapDebug
     val nmiTake = (!debugTake) & io.nmiPend
     val trapTake = (!debugTake) & (!io.nmiPend) & trapPend
@@ -175,6 +190,14 @@ object Microsequencer
       trapPend := true.B
       trapIndex := io.trapNum
     }
+    // A hardware breakpoint arms a trap-index-2 pending so it takes the same
+    // trap-2 / DebugEntry redirect as a TRAPA#2. Priority over a same-cycle arm.
+    io.hwbpTrap.foreach { hwbp =>
+      when(hwbp) {
+        trapPend := true.B
+        trapIndex := 2.U(2)
+      }
+    }
     when(xFire & xRetirePoint & (xTakeDebug | xTakeTrap))(
       trapPend := false.B)
 
@@ -192,7 +215,7 @@ object Microsequencer
     io.sleeping := sleepReg
 
     // Debug hold is a single-cycle-datapath feature for now; tie the port off.
-    if parameter.debug then io.halted.get := false.B
+    io.halted.foreach(_ := false.B)
 
     } else {
 
@@ -214,7 +237,12 @@ object Microsequencer
     val trapArm = (io.seqSrc === SeqSrc.Dispatch.U(2)) & io.seqAux
     val retireRequest = (io.seqSrc === SeqSrc.Return.U(2)) & io.seqAux
     val retirePoint = (io.seqSrc === SeqSrc.Return.U(2)) & (!io.seqAux)
-    val trapDebug = trapPend & (trapIndex === 2.U(2))
+    // See the pipeline branch: TRAPA#2 -> DebugEntry only with a debugger present;
+    // all-off keeps the original routing so it stays byte-identical.
+    val trapDebug =
+      if parameter.dm then trapPend & (trapIndex === 2.U(2)) & io.dmActive.get
+      else if parameter.hardwareBreakpoint then trapPend & (trapIndex === 2.U(2)) & false.B
+      else trapPend & (trapIndex === 2.U(2))
     val debugTake = io.debugPend | trapDebug
     val nmiTake = (!debugTake) & io.nmiPend
     val trapTake = (!debugTake) & (!io.nmiPend) & trapPend
@@ -245,12 +273,14 @@ object Microsequencer
     when(retireRequest)(nxt := Ucode.Retire.U(parameter.upcBits))
     when(retirePoint)(nxt := retireTarget)
 
-    // Debug hold + dispatch. The park word (DebugEntry) self-loops until a DM
+    // Halted = parked in the DebugEntry wait word. Present whenever the core can
+    // park: a DM halt, or a hardware-breakpoint redirect into DebugEntry.
+    val parked = cur === Ucode.DebugEntry.U(parameter.upcBits)
+    io.halted.foreach(_ := parked)
+    // DM hold + dispatch. The park word (DebugEntry) self-loops until a DM
     // command arrives, then jumps to the matching primitive; resume retires to
     // the fetch loop. Everything vanishes when parameter.debug is off.
     if parameter.debug then
-      val parked = cur === Ucode.DebugEntry.U(parameter.upcBits)
-      io.halted.get := parked
       val cmd = io.dbgCmd.get
       val target = Wire(UInt(parameter.upcBits))
       target := Ucode.DebugEntry.U(parameter.upcBits)
@@ -274,6 +304,14 @@ object Microsequencer
     when(io.stepEn & trapArm) {
       trapPend := true.B
       trapIndex := io.trapNum
+    }
+    // A hardware breakpoint arms a trap-index-2 pending so it takes the same
+    // trap-2 / DebugEntry redirect as a TRAPA#2. Priority over a same-cycle arm.
+    io.hwbpTrap.foreach { hwbp =>
+      when(hwbp) {
+        trapPend := true.B
+        trapIndex := 2.U(2)
+      }
     }
     when(io.stepEn & retirePoint & (trapDebug | trapTake))(
       trapPend := false.B)

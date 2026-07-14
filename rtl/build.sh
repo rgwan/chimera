@@ -10,11 +10,13 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 src="$here/src"
 out="${CHIMERA_RTL_OUT:-$here/generated}"
-# With debug on the elaborated top is CoreTop (Core + JTAG DTM); an explicit TOP
-# still wins for module-level builds (TOP=Microsequencer, etc.).
+# With a debug module (dm) on, the elaborated top is CoreTop (Core + JTAG DTM);
+# an explicit TOP still wins for module-level builds (TOP=Microsequencer, etc.).
+# A self-hosted-only build (hardwareBreakpoint / singleStep without dm) keeps
+# Core as the top.
 if [ -n "${TOP:-}" ]; then
   mod="$TOP"
-elif [ "${DEBUG:-false}" = "true" ]; then
+elif [ "${DM:-false}" = "true" ]; then
   mod="CoreTop"
 else
   mod="Core"
@@ -49,11 +51,17 @@ scala_args=(
 )
 
 echo "[chimera-rtl] config"
+# dm implies dtm; the debug preset elaborates CoreTop which needs both. Default
+# dtm to the dm value so a plain DM=true build satisfies the dm=>dtm require.
 scala-cli run "${scala_args[@]}" "$src" -- \
   config "$out/config.json" --h8300h "${H8300H:-false}" \
   --strictDecode "${STRICT_DECODE:-false}" --romHex "${ROM_HEX:-false}" \
   --ccrUbit "${CCR_UBIT:-false}" --pipeline "${PIPELINE:-false}" \
-  --debug "${DEBUG:-false}"
+  --dm "${DM:-false}" --dtm "${DTM:-${DM:-false}}" \
+  --hardwareBreakpoint "${HW_BREAKPOINT:-false}" \
+  --hwBreakpointCount "${HW_BREAKPOINT_COUNT:-0}" \
+  --singleStep "${SINGLE_STEP:-false}" \
+  --dbgBase "${DBG_BASE:-65280}"
 
 echo "[chimera-rtl] design"
 ( cd "$out" && scala-cli run "${scala_args[@]}" "$src" -- design "$out/config.json" )

@@ -389,13 +389,14 @@ EOF
         # collateral, leaving a filelist. Each platform has lean (smallest,
         # single-cycle), pipe (two-stage, highest clock) and strict (illegal-
         # encoding guards).
-        # `debug` defaults to false; the debug preset elaborates CoreTop (Core +
-        # JTAG DTM) and keeps every debug-off config byte-identical.
+        # Debug features default off; the debug preset sets dm (and dtm) to
+        # elaborate CoreTop (Core + JTAG DTM) and keeps every debug-off config
+        # byte-identical.
         chimeraConfigs = {
           fpga-lean   = { strictDecode = false; romHex = true;  asic = false; pipeline = false; };
           fpga-pipe   = { strictDecode = false; romHex = true;  asic = false; pipeline = true;  };
           fpga-strict = { strictDecode = true;  romHex = true;  asic = false; pipeline = false; };
-          fpga-debug  = { strictDecode = false; romHex = true;  asic = false; pipeline = false; debug = true; };
+          fpga-debug  = { strictDecode = false; romHex = true;  asic = false; pipeline = false; dm = true; dtm = true; };
           asic-lean   = { strictDecode = false; romHex = false; asic = true;  pipeline = false; };
           asic-pipe   = { strictDecode = false; romHex = false; asic = true;  pipeline = true;  };
           asic-strict = { strictDecode = true;  romHex = false; asic = true;  pipeline = false; };
@@ -439,7 +440,12 @@ EOF
             STRICT_DECODE=${pkgs.lib.boolToString cfg.strictDecode} \
             ROM_HEX=${pkgs.lib.boolToString cfg.romHex} \
             PIPELINE=${pkgs.lib.boolToString cfg.pipeline} \
-            DEBUG=${pkgs.lib.boolToString (cfg.debug or false)} \
+            DM=${pkgs.lib.boolToString (cfg.dm or false)} \
+            DTM=${pkgs.lib.boolToString (cfg.dtm or (cfg.dm or false))} \
+            HW_BREAKPOINT=${pkgs.lib.boolToString (cfg.hardwareBreakpoint or false)} \
+            HW_BREAKPOINT_COUNT=${toString (cfg.hwBreakpointCount or 0)} \
+            SINGLE_STEP=${pkgs.lib.boolToString (cfg.singleStep or false)} \
+            DBG_BASE=${toString (cfg.dbgBase or 65280)} \
             bash rtl/build.sh
           rm -f $out/*.mlirbc
           ${pkgs.lib.optionalString cfg.asic ''

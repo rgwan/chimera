@@ -55,10 +55,10 @@ class SramToAxiLiteIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   * The 16-bit core word is placed on one half of the 32-bit AXI word, selected
   * by addr[1]: addr[1]=0 uses the low half (data[15:0], strb[1:0]); addr[1]=1
   * uses the high half (data[31:16], strb[3:2]). The 16-bit core address is
-  * zero-extended into the 32-bit AXI address. WSTRB carries the byte enables;
-  * the core's `wmask` (bit1=high byte, bit0=low byte of the 16-bit word, big-
-  * endian) maps straight onto the two strobe bits of the selected half. Reads
-  * extract the same half from RDATA.
+  * zero-extended into the 32-bit AXI address. The 16-bit word is byte-swapped
+  * onto the half so the AXI byte image is big-endian like H8 memory (high byte
+  * at the lower byte address); WSTRB tracks the swap. Reads extract the half and
+  * swap back.
   *
   * Handshake: one outstanding transaction, matching the SRAM contract (core
   * holds req until rdy). A read (req & !we) drives AR then accepts R; a write
@@ -93,13 +93,19 @@ object SramToAxiLite
       (0.B(parameter.axiAddrW - parameter.addrWidth) ## io.bus.addr.asBits).asUInt
     val highHalf = io.bus.addr.asBits.bit(1)
 
-    // Place the 16-bit datum on the selected 32-bit half.
+    // Place the 16-bit datum on the selected 32-bit half, byte-swapped so the
+    // high byte (wdata[15:8], the even H8 address) lands on the LOWER AXI byte
+    // lane of the half: the AXI byte image is then big-endian, matching H8
+    // memory order, so an external AXI peripheral sees the same bytes the core
+    // does. Reads swap back.
     val wdata16 = io.bus.wdata.asBits
-    val wdata32 = highHalf.?((wdata16 ## 0.B(16)).asUInt,
-      (0.B(16) ## wdata16).asUInt)
-    // wmask[1:0] -> strb bits of the chosen half.
-    val strb32 = highHalf.?((io.bus.wmask.asBits ## 0.B(2)).asUInt,
-      (0.B(2) ## io.bus.wmask.asBits).asUInt)
+    val wdata16sw = wdata16.bits(7, 0) ## wdata16.bits(15, 8)
+    val wdata32 = highHalf.?((wdata16sw ## 0.B(16)).asUInt,
+      (0.B(16) ## wdata16sw).asUInt)
+    // wmask bit1=high byte, bit0=low byte; swap to track the byte-swapped lanes.
+    val wmaskSw = io.bus.wmask.asBits.bits(0, 0) ## io.bus.wmask.asBits.bits(1, 1)
+    val strb32 = highHalf.?((wmaskSw ## 0.B(2)).asUInt,
+      (0.B(2) ## wmaskSw).asUInt)
 
     val prot = 2.U(3)
 
@@ -117,8 +123,11 @@ object SramToAxiLite
     ar.bits.prot := prot
     r.ready      := isRead
 
-    val rHalf = highHalf.?(r.bits.data.asBits.bits(31, 16),
-      r.bits.data.asBits.bits(15, 0)).asUInt
+    // Extract the selected half, then byte-swap back to the core's big-endian
+    // 16-bit word (inverse of the write-side swap).
+    val rHalfRaw = highHalf.?(r.bits.data.asBits.bits(31, 16),
+      r.bits.data.asBits.bits(15, 0))
+    val rHalf = (rHalfRaw.bits(7, 0) ## rHalfRaw.bits(15, 8)).asUInt
 
     // --- Write path --------------------------------------------------------
     // AW and W accepted independently; join, then wait for B.

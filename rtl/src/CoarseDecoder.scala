@@ -39,3 +39,26 @@ object CoarseDecoder
     val aAddr = 16.B(5) ## w.bits(6, 4)     // bucket A: 0x80-0x87
 
     io.dispatch := d.?(aAddr, m.?(bAddr, cAddr)).asUInt
+
+    // ---- Formal (formal-only; absent from every non-formal build). ----
+    // Complete over the entire 64K opcode space: the three coarse buckets tag
+    // pairwise-disjoint dispatch ranges, so decode is total (every word lands in
+    // a class) and unambiguous (exactly one class, no aliasing). Bucket A (d=1)
+    // -> [0x80,0x87] (bits[7:3]=0b10000); bucket B (d=0 & m) -> [0xC0,0xFF]
+    // (bits[7:6]=0b11); bucket C (else) -> [0x00,0x7F] (bit7=0). Purely
+    // combinational, so a bound of 1 makes circt-bmc quantify over all inputs.
+    // Emitted unlayered so circt-bmc sees it inside CoarseDecoder; formal
+    // defaults off, so production stays byte-identical.
+    if parameter.formal then
+      val out    = io.dispatch.asBits
+      val inA    = out.bits(7, 3) === 16.B(5)          // [0x80,0x87]
+      val inB    = out.bits(7, 6) === 3.B(2)           // [0xC0,0xFF]
+      val inC    = !out.bit(7)                         // [0x00,0x7F]
+      val tagOk  = d.?(inA, m.?(inB, inC))
+      if parameter.formalBroken then
+        // Deliberately false: claims every word lands in bucket C's range
+        // (bit7=0), which every d=1 word violates -> circt-bmc reports the
+        // assertion can be violated.
+        Assert(inC.I, "dispatch_bucket_tag")
+      else
+        Assert(tagOk.I, "dispatch_bucket_tag")

@@ -4,6 +4,7 @@ package com.vowstar.chimera
 
 import me.jiuyang.zaozi.*
 import me.jiuyang.zaozi.default.{*, given}
+import me.jiuyang.zaozi.ltltpe.*
 import me.jiuyang.zaozi.reftpe.*
 import me.jiuyang.zaozi.valuetpe.*
 import org.llvm.mlir.scalalib.capi.ir.{Block, Context}
@@ -750,6 +751,44 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
           wasRunning := false.B
         }
         autoResume := primDone
+
+        // ---- Formal #2: auto-halt/resume soundness (unlayered, formal-only).
+        // circt-bmc seeds every register arbitrarily and applies no reset, so
+        // these are single-cycle transition invariants over the recomputed
+        // haltLatch next value; they hold from ANY initial state.
+        if parameter.formal then
+          // Recompute haltLatch's D input from every driver above, last-connect
+          // wins: two sets (host halt/prim accept, self-hosted fire), the
+          // host-resume clear, the auto-halt set, and the auto-resume clear.
+          val setAccept = accept & (isHalt | isPrim)
+          val clrResume = accept & isResume
+          val setFire = trig
+            .map { t =>
+              val hw = t.io.hwbpFire
+              t.io.stepFire.fold(hw: Referable[Bool])(hw | _)
+            }
+            .getOrElse(false.B: Referable[Bool])
+          val hl0 = setAccept.?(true.B, haltLatch)
+          val hl1 = clrResume.?(false.B, hl0)
+          val hl2 = setFire.?(true.B, hl1)
+          val hl3 = autoHaltReq.?(true.B, hl2)
+          val haltLatchNext = primDone.?(false.B, hl3)
+          // wasRunning D input: auto-halt sets, auto-resume completion clears
+          // (clear last-connect, so completion wins).
+          val wasRunningNext = primDone.?(false.B, autoHaltReq.?(true.B, wasRunning))
+          if parameter.formalBroken then
+            // Deliberately false: claims a served+parked window always resumes,
+            // ignoring wasRunning. A host-initiated halt (served, parked,
+            // wasRunning=0) keeps haltLatch high, so BMC must find a violation.
+            Assert(((!(served & parked)) | autoResume).I, "autohalt_resume_sound")
+          else
+            // (a) An auto-halt request forces the halt latch on next cycle;
+            // (b) auto-resume completion drops the latch and pulses resume and
+            // clears wasRunning, so a memop that auto-halted always resumes once.
+            val a = (!autoHaltReq) | haltLatchNext
+            val b = (!primDone) |
+              ((!haltLatchNext) & autoResume & (!wasRunningNext))
+            Assert((a & b).I, "autohalt_resume_sound")
       end if
       dmHalt = Some(haltLatch)
 
@@ -834,6 +873,33 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       trig.foreach(t => when(trap2Active & t.io.mmioTouched)(dbgRegTouched := true.B))
       // Suppress fires only for a self-hosted handler (no debugger present).
       trap2Suppress := trap2Active & (!dmPresent)
+
+      // ---- Formal #3/#4: trap-2 single-entry + dmactive gating (unlayered,
+      // formal-only). Single-cycle transition invariants over the recomputed
+      // trap2Active next value plus a combinational gate invariant; both hold
+      // from ANY initial state (BMC seeds registers arbitrarily, no reset).
+      if parameter.formal then
+        // trap2Active D input: the service-guarded RTE clears, the trap-2 ack
+        // sets, ack last-connect wins.
+        val trap2ActiveNext =
+          trap2Ack.?(true.B, trap2Rte.?(false.B, trap2Active))
+        if parameter.formalBroken then
+          // Deliberately false: claims suppression is on whenever trap2Active,
+          // ignoring dmPresent. With a debugger present it must be OFF, so BMC
+          // must find a violation.
+          Assert(((!trap2Active) | trap2Suppress).I, "trap2_single_entry_gated")
+        else
+          // #3a A clear (1->0) implies a non-nested RTE and no concurrent ack:
+          // trap2Active never falls while a service is active, never on ack.
+          val fallGuard = (!(trap2Active & (!trap2ActiveNext))) |
+            (useq.io.rteAck & (!serviceActive) & (!trap2Ack))
+          // #3b A set (0->1) implies the trap-2 ack (single, non-double entry).
+          val riseImpliesAck =
+            (!((!trap2Active) & trap2ActiveNext)) | trap2Ack
+          // #4 The suppression term is off whenever the debugger is present.
+          val gatedOff = (!dmPresent) | (!trap2Suppress)
+          Assert((fallGuard & riseImpliesAck & gatedOff).I,
+            "trap2_single_entry_gated")
 
       // FSM invariant: the clear (trap2Rte) is guarded by !serviceActive so an
       // RTE taken while an NMI/IRQ is in service never lifts the suppression, and

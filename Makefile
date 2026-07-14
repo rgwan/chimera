@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
 
-.PHONY: bench-dhry bench-coremark check-sleep-strict check-ccr-ubit build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-sleep check-debug check-jtag check-autohalt check-hwbp-selfhosted check-hwbp-dm check-step-selfhosted check-step-dm check-trap2-suppress check-nondestruct check-jtag2gdb check-gdb-e2e verify-debug check-formal-debug verify-formal check-rom-hex check-bit-reg check-bit-mem check-daa-das check-adds-subs check-mulxu check-divxu check-stack-byte check-irq-vector check-trapa gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model verify-smoke check clean
+.PHONY: bench-dhry bench-coremark check-sleep-strict check-ccr-ubit build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-sleep check-debug check-jtag check-autohalt check-hwbp-selfhosted check-hwbp-dm check-step-selfhosted check-step-dm check-trap2-suppress check-nondestruct check-jtag2gdb check-gdb-e2e verify-debug check-formal-debug check-formal-core check-formal-decode verify-formal check-rom-hex check-bit-reg check-bit-mem check-daa-das check-adds-subs check-mulxu check-divxu check-stack-byte check-irq-vector check-trapa gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model verify-smoke check clean
 
 build: smoke
 
@@ -139,7 +139,64 @@ check-formal-debug:
 	  echo "[formal] broken property correctly reported as violable"; \
 	fi
 
-verify-formal: check-formal-debug
+verify-formal: check-formal-debug check-formal-core check-formal-decode
+
+# check-formal-core proves the debug-FSM transition invariants on module Core
+# (auto-halt/resume soundness, trap-2 single-entry, dmactive gating) AND that
+# their deliberately-broken variant is caught. HW_BREAKPOINT=true enables the
+# MMIO trigger unit so the trap-2 suppression FSM exists; DM=true brings the
+# auto-halt FSM. The invariants are single-cycle, so a small bound suffices.
+#
+# circt-bmc verifies one self-contained module: lower.sh leaves Core's children
+# as hw.module.extern, which the tool cannot see through (black-box ports merge
+# into a false comb cycle). FLATTEN_CORE lowers every child mlirbc to hw dialect,
+# splices all real hw.module bodies into one file (Microsequencer's registered
+# upc cuts the datapath loop, so no true cycle remains), folds the four DV-probe
+# hw.wire taps that circt-bmc rejects, and lowers array ops to comb. The result
+# is a single sound module circt-bmc flattens; children stay real logic so no
+# signal is over-approximated.
+FORMAL_CORE_BOUND ?= 3
+define FLATTEN_CORE
+	out=formal/gen; rm -f $$out/*_hwmod.mlir; \
+	for f in $$out/*.mlirbc; do b=$$(basename $$f .mlirbc); \
+	  case $$b in Core|CoreTop) continue;; esac; \
+	  firtool $$f --ir-hw -o $$out/$${b}_hwmod.mlir; done; \
+	awkx='/^  hw\.module\.extern / { next } /^  hw\.module @/ { inmod=1; depth=0 } inmod { n=gsub(/{/,"{"); depth+=n; m=gsub(/}/,"}"); depth-=m; print; if (depth<=0) inmod=0; next }'; \
+	{ echo "module {"; for f in $$out/*_hwmod.mlir; do awk "$$awkx" $$f; done; \
+	  awk "$$awkx" $$out/Core_hw.mlir; echo "}"; } > $$out/Core_flat_raw.mlir; \
+	perl -e 'my %m; my @l; while(<STDIN>){ if(/^\s*(\%\S+)\s*=\s*hw\.wire\s+(\%\S+)/){$$m{$$1}=$$2; next;} push @l,$$_; } for my $$k (keys %m){ my $$v=$$m{$$k}; $$v=$$m{$$v} while exists $$m{$$v}; $$m{$$k}=$$v; } for my $$x (@l){ for my $$k (keys %m){ my $$q=quotemeta($$k); $$x =~ s/$$q(?![A-Za-z0-9_.])/$$m{$$k}/g; } print $$x; }' \
+	  < $$out/Core_flat_raw.mlir > $$out/Core_flat_nowire.mlir; \
+	circt-opt --hw-aggregate-to-comb $$out/Core_flat_nowire.mlir -o $$out/Core_flat_bmc.mlir
+endef
+check-formal-core:
+	DM=true HW_BREAKPOINT=true FORMAL_BROKEN=false bash formal/lower.sh Core
+	@$(FLATTEN_CORE)
+	bash formal/run_bmc.sh Core $(FORMAL_CORE_BOUND) formal/gen/Core_flat_bmc.mlir
+	DM=true HW_BREAKPOINT=true FORMAL_BROKEN=true bash formal/lower.sh Core
+	@$(FLATTEN_CORE)
+	@echo "[formal] broken variant must be violated:"
+	@if bash formal/run_bmc.sh Core $(FORMAL_CORE_BOUND) formal/gen/Core_flat_bmc.mlir; then \
+	  echo "[formal] ERROR: broken property was not caught"; exit 1; \
+	else \
+	  echo "[formal] broken property correctly reported as violable"; \
+	fi
+
+# CoarseDecoder is pure combinational over the 16-bit opcode word, so a bound of
+# 1 makes circt-bmc quantify over the whole 64K space. check-formal-decode proves
+# the dispatch output always tags one of three pairwise-disjoint buckets (decode
+# is total and unambiguous) AND that its broken variant is caught.
+check-formal-decode:
+	TOP=CoarseDecoder DM=false DTM=false FORMAL_BROKEN=false \
+	  bash formal/lower.sh CoarseDecoder
+	bash formal/run_bmc.sh CoarseDecoder 1
+	TOP=CoarseDecoder DM=false DTM=false FORMAL_BROKEN=true \
+	  bash formal/lower.sh CoarseDecoder
+	@echo "[formal] broken variant must be violated:"
+	@if bash formal/run_bmc.sh CoarseDecoder 1; then \
+	  echo "[formal] ERROR: broken property was not caught"; exit 1; \
+	else \
+	  echo "[formal] broken property correctly reported as violable"; \
+	fi
 
 check-sleep-strict:
 	STRICT_DECODE=true bash rtl/build.sh

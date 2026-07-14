@@ -23,5 +23,8 @@ libftd2xx = { version = "0.32", optional = true }
 rusb = { version = "0.9", optional = true }
 
 [features]
-default = []
+default = ["terminal"]
+# The interactive RTT terminal loop (stdin/stdout). Pure std; on by default.
+# RTT control-block parsing and ring-buffer logic build and test regardless.
+terminal = []
 ft232 = ["dep:libftd2xx", "dep:rusb"]

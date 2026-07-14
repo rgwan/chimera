@@ -28,3 +28,19 @@ pub trait JtagBackend {
         Ok(())
     }
 }
+
+/// Forward through a boxed backend so callers can pick sim vs FT232 at runtime
+/// (`Box<dyn JtagBackend>`) without making every layer generic over the choice.
+impl JtagBackend for Box<dyn JtagBackend> {
+    fn reset(&mut self) -> Result<()> {
+        (**self).reset()
+    }
+
+    fn tick(&mut self, tms: bool, tdi: bool) -> Result<bool> {
+        (**self).tick(tms, tdi)
+    }
+
+    fn flush(&mut self) -> Result<()> {
+        (**self).flush()
+    }
+}

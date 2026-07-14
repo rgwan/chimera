@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
 
-.PHONY: bench-dhry bench-coremark check-sleep-strict check-ccr-ubit build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-sleep check-debug check-jtag check-autohalt check-hwbp-selfhosted check-hwbp-dm check-step-selfhosted check-step-dm check-trap2-suppress check-nondestruct check-jtag2gdb check-gdb-e2e verify-debug check-formal-debug check-formal-core check-formal-decode verify-formal check-rom-hex check-bit-reg check-bit-mem check-daa-das check-adds-subs check-mulxu check-divxu check-stack-byte check-irq-vector check-trapa gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model verify-smoke check clean
+.PHONY: bench-dhry bench-coremark check-sleep-strict check-ccr-ubit build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-sleep check-debug check-jtag check-autohalt check-hwbp-selfhosted check-hwbp-dm check-step-selfhosted check-step-dm check-trap2-suppress check-nondestruct check-jtag2gdb check-gdb-e2e verify-debug check-formal-debug check-formal-core check-formal-decode verify-formal check-rom-hex check-bit-reg check-bit-mem check-daa-das check-adds-subs check-mulxu check-divxu check-stack-byte check-irq-vector check-trapa gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model check-axilite check-cocotb-jtag check-cocotb-axi verify-cocotb verify-smoke check clean
 
 build: smoke
 
@@ -465,6 +465,9 @@ check-cocotb-jtag:
 check-cocotb-axi:
 	PYTHONPATH=$(CURDIR)/test:$$PYTHONPATH \
 	  python3 test/cocotb/axi/run_axil.py
+
+# Cocotb + Verilator gates (run inside `nix develop .#cocotb`).
+verify-cocotb: check-cocotb-jtag check-cocotb-axi
 
 clean:
 	rm -rf result

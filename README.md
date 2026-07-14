@@ -48,6 +48,9 @@ gdb host tool. See [doc/debug.md](doc/debug.md).
 Selected safety properties are proved by bounded model checking (`circt-bmc`)
 straight from the zaozi design; see [doc/formal.md](doc/formal.md).
 
+An optional AXI-Lite master bus and cocotb (Verilator) verification of the JTAG
+and AXI-Lite paths are described in [doc/axilite.md](doc/axilite.md).
+
 ## Build and verify
 
 ```bash

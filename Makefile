@@ -11,6 +11,24 @@ smoke:
 rtl-verilog:
 	bash rtl/build.sh
 
+# AXI-Lite optional bridge: (1) the default (axilite off) build stays byte-
+# identical to a clean build, proving the flag perturbs no leaf module; (2) the
+# CoreTopAxi top elaborates and the canonical-name SV wrapper co-elaborates.
+check-axilite:
+	rm -rf rtl/generated_axil_base
+	CHIMERA_RTL_OUT=$(CURDIR)/rtl/generated_axil_base bash rtl/build.sh
+	bash rtl/build.sh
+	@for f in rtl/generated/*.sv; do \
+	  cmp -s "$$f" "rtl/generated_axil_base/$$(basename $$f)" \
+	    || { echo "AXILITE NOT BYTE-IDENTICAL: $$(basename $$f)"; exit 1; }; \
+	done
+	@echo "[check-axilite] default build byte-identical"
+	AXIL=true TOP=CoreTopAxi bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_axil -s coretop_axil \
+	  test/cocotb/wrappers/coretop_axil.sv \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	@echo "[check-axilite] CoreTopAxi + wrapper elaborate"
+
 check-decode-table:
 	python3 scripts/check_decode_dispatch.py --table-only
 

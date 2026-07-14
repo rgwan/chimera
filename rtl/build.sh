@@ -16,6 +16,8 @@ out="${CHIMERA_RTL_OUT:-$here/generated}"
 # Core as the top.
 if [ -n "${TOP:-}" ]; then
   mod="$TOP"
+elif [ "${AXIL:-false}" = "true" ]; then
+  mod="CoreTopAxi"
 elif [ "${DM:-false}" = "true" ]; then
   mod="CoreTop"
 else
@@ -63,6 +65,7 @@ scala-cli run "${scala_args[@]}" "$src" -- \
   --singleStep "${SINGLE_STEP:-false}" \
   --dmAutoHalt "${DM_AUTO_HALT:-${DM:-false}}" \
   --formal "${FORMAL:-false}" --formalBroken "${FORMAL_BROKEN:-false}" \
+  --axilite "${AXIL:-false}" --axiDataWidth "${AXI_DATA_WIDTH:-32}" \
   --dbgBase "${DBG_BASE:-65280}"
 
 echo "[chimera-rtl] design"

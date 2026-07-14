@@ -20,6 +20,9 @@ import me.jiuyang.zaozi.default.{*, given}
   * one host command (default on when dm is on, from build.sh). `debug` is the
   * derived umbrella flag: any dm-dependent collateral keys on it. Every debug
   * feature off (default) leaves every leaf module byte-identical.
+  *
+  * `axilite` gates only a new top wrapper (CoreTopAxi) that bridges the native
+  * SRAM bus to a 32-bit AXI-Lite master; the leaf modules are untouched.
   */
 case class ChimeraParameter(
   h8300h:             Boolean = false,
@@ -35,6 +38,8 @@ case class ChimeraParameter(
   dmAutoHalt:         Boolean = false,
   formal:             Boolean = false,
   formalBroken:       Boolean = false,
+  axilite:            Boolean = false,
+  axiDataWidth:       Int = 32,
   idcode:             Long = 0x00114514L,
   dbgBase:            Int = 0xFF00,
   irqNumberWidth:     Int = 3
@@ -53,6 +58,8 @@ case class ChimeraParameter(
     "singleStep requires a 16-bit dbgBase")
   // Auto-halt orchestration is a DM feature; it has no effect without dm.
   require(!dmAutoHalt || dm, "dmAutoHalt requires dm")
+  require(axiDataWidth == 32,
+    "axiDataWidth must be 32 (16-bit core half placed on a 32-bit AXI word)")
 
   /** Umbrella: DM-dependent collateral (park microcode, DebugPort, AUX inject,
     * JTAG DTM). Kept as `debug` so every P0-P2 call site compiles unchanged. */
@@ -70,6 +77,10 @@ case class ChimeraParameter(
   val upcBits:      Int = 9
   val uromWidth:    Int = 36
   val dispatchBits: Int = 8
+
+  // AXI-Lite master (optional top wrapper only; leaf modules are unaffected).
+  val axiAddrW: Int = 32
+  val axiStrbW: Int = axiDataWidth / 8
 
 given upickle.default.ReadWriter[ChimeraParameter] = upickle.default.macroRW
 

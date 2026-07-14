@@ -23,6 +23,7 @@ object DmCmd:
   val Resume   = 4
   val ReadPc   = 5 // dataToHost := current halted PC (Core-side mux, no microcode)
   val MemRead  = 6
+  val ReadCcr  = 7 // dataToHost := CCR captured on park entry (non-destructive)
 
 class DebugPort(parameter: ChimeraParameter) extends Bundle:
   val dmactive     = Flipped(Bool())                       // host -> core

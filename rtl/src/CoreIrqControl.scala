@@ -29,6 +29,12 @@ class CoreIrqControlIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val nmiPend = Aligned(Bool())
   val irqPend = Aligned(Bool())
   val irqVectorAddr = Aligned(UInt(parameter.dataWidth))
+  // High while an NMI or IRQ is in service. The trap-2 suppression FSM uses it
+  // to distinguish a nested NMI/IRQ RTE from the trap-2 handler's own RTE.
+  // Present only with a self-hosted debug feature so an all-off build is
+  // byte-identical.
+  val serviceActive = Option.when(
+    parameter.hardwareBreakpoint || parameter.singleStep)(Aligned(Bool()))
 
 @generator
 object CoreIrqControl
@@ -76,3 +82,4 @@ object CoreIrqControl
     io.nmiPend := nmiLatch & (!nmiActive)
     io.irqPend := irqLatch & (!io.iFlag) & (!irqActive) & (!nmiActive)
     io.irqVectorAddr := irqVectorAddr
+    io.serviceActive.foreach(_ := nmiActive | irqActive)

@@ -71,7 +71,10 @@ object MicrocodeImage:
       intIdx = IntIdx.Aux, alu = AluOp.PassA, size = 1,
       seq = SeqSrc.Literal, lit = Ucode.DebugEntry),
     // PC := dm.addr (Core drives the internal-file write); return to park.
-    Ucode.DebugSetPc -> MW(seq = SeqSrc.Literal, lit = Ucode.DebugEntry)
+    Ucode.DebugSetPc -> MW(seq = SeqSrc.Literal, lit = Ucode.DebugEntry),
+    // Resume: Core drives the CCR direct-load (savedDbgCcr) on this word; retire
+    // to the fetch loop. Neutral selectors so nothing else is written.
+    Ucode.DebugResume -> retireNop()
   )
   private def bitIndexHead(target: Int) = MW(
     bSel = BSel.H8, h8Idx = H8Idx.RsReg, alu = AluOp.Pass,

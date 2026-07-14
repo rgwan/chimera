@@ -9,14 +9,28 @@ import me.jiuyang.zaozi.valuetpe.*
 import org.llvm.mlir.scalalib.capi.ir.{Block, Context}
 import java.lang.foreign.Arena
 
-/** Hardware-breakpoint / trigger unit. Present only with
-  * parameter.hardwareBreakpoint. Holds `hwBreakpointCount` comparator units and
-  * their MMIO registers; the Biu decodes the dbgBase window and drives the
-  * register port here (index by addr[4:1]). Both the core and any DM reach the
-  * registers through that one decode.
+/** Hardware-breakpoint / single-step MMIO block. Present whenever a self-hosted
+  * debug feature owns the dbgBase window (parameter.mmio). Holds the single-step
+  * control register, `hwBreakpointCount` comparator units, and their MMIO
+  * registers; the Biu decodes the dbgBase window and drives the register port
+  * here (index by addr[4:1]). Both the core and any DM reach the registers
+  * through that one decode.
   *
   * Register map (16-bit words indexed by addr[4:1] within the 32-byte window):
-  *   word 0     (byte 0x0)  STEP     reserved for single-step (P4), reads 0 here
+  *   word 0     (byte 0x0)  STEP  single-step control + capability read:
+  *                            [0]    EN       arm the step; a retire raises
+  *                                            stepFire (parameter.singleStep)
+  *                            [1]    ONESHOT  1 = self-clear EN after one step,
+  *                                            0 = continuous (re-fires each retire)
+  *                            [2]    PEND     W1C sticky "a step fired" (self-
+  *                                            hosted handler polls / clears it)
+  *                            [7:3]  reserved (read 0)
+  *                            [11:8] HWBPCOUNT  read-only hwBreakpointCount, so a
+  *                                            self-hosted program (no JTAG STATUS
+  *                                            DR) discovers the breakpoint count
+  *                                            with one MMIO load
+  *                            [15:12] reserved (read 0)
+  *                            Writes touch only the low-byte control bits.
   *   words 1-3  (byte 0x2)  reserved gap
   *   per unit i (byte 0x8 + i*4):
   *     word 4+2i  ADDR  16-bit compare address
@@ -32,6 +46,8 @@ import java.lang.foreign.Arena
   * on the fetch / bus critical path. A latch-once arm/pend fires the unit once
   * per instruction and rearms at retire (so RMW / multi-byte accesses fire once).
   * `hwbpFire` (registered) and `hwbpKind` (0=instr, 1=data) drive the redirect.
+  * `stepFire` (registered) fires one retire after a step is armed and routes like
+  * a hardware-breakpoint fire (DebugEntry when a DM is present, else TRAP#2).
   */
 class TriggerUnitIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val clock = Flipped(Clock())
@@ -42,7 +58,9 @@ class TriggerUnitIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val dataAddr    = Flipped(UInt(parameter.addrWidth))
   val dataRead    = Flipped(Bool())          // read access completing this cycle
   val dataWrite   = Flipped(Bool())          // write access completing this cycle
-  val retire      = Flipped(Bool())          // rearm point
+  val retire      = Flipped(Bool())          // rearm point / step boundary
+  // Suppress step + bp fires while a self-hosted TRAP#2 debug handler runs.
+  val suppress    = Flipped(Bool())
   // MMIO register port from the Biu decode.
   val mmioSel   = Flipped(Bool())            // an in-window access this cycle
   val mmioWrite = Flipped(Bool())            // 1 = write, 0 = read
@@ -50,9 +68,13 @@ class TriggerUnitIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val mmioWdata = Flipped(UInt(parameter.dataWidth))
   val mmioWmask = Flipped(UInt(parameter.wmaskWidth))
   val mmioRdata = Aligned(UInt(parameter.dataWidth))
+  // A write into any MMIO debug register (for the trap-2 restore policy).
+  val mmioTouched = Aligned(Bool())
   // Redirect outputs (registered).
   val hwbpFire = Aligned(Bool())
   val hwbpKind = Aligned(Bool())             // 0 = instruction, 1 = data
+  // Single-step redirect (registered). Present with parameter.singleStep.
+  val stepFire = Option.when(parameter.singleStep)(Aligned(Bool()))
 
 @generator
 object TriggerUnit
@@ -77,6 +99,39 @@ object TriggerUnit
     def selIdx(k: Int) = io.mmioSel & (io.mmioIndex === k.U(4))
     val wm = io.mmioWmask.asBits
     val wd = io.mmioWdata.asBits
+
+    // Any write into the window is a debug-register touch (trap-2 restore policy).
+    io.mmioTouched := io.mmioSel & io.mmioWrite
+
+    // STEP register low-byte control bits (word 0), 0 when single-step is absent.
+    val stepCtl = Wire(UInt(parameter.byteWidth))
+    stepCtl := 0.U(parameter.byteWidth)
+
+    // ---- single-step control register (word 0). ----
+    // stepEnReg / stepOneShot arm the step; stepPend is the W1C sticky witness.
+    // A fire happens one retire after arming, is gated by `suppress`, and (in
+    // one-shot mode) self-clears EN so the handler re-arms per step.
+    if parameter.singleStep then
+      val stepFireR    = RegInit(false.B)
+      val stepEnReg    = RegInit(false.B)
+      val stepOneShot  = RegInit(false.B)
+      val stepPend     = RegInit(false.B)
+      val selStep = selIdx(stepIdx) & io.mmioWrite & wm.bit(0)
+      // A step boundary is a retire while armed and not suppressed.
+      val stepBoundary = stepEnReg & io.retire & (!io.suppress)
+      stepFireR := stepBoundary
+      // EN next: a host write wins; otherwise a one-shot fire self-clears it.
+      val enSelfClear = stepBoundary & stepOneShot
+      val enNext = selStep.?(wd.bit(0), enSelfClear.?(false.B, stepEnReg))
+      stepEnReg := enNext
+      when(selStep)(stepOneShot := wd.bit(1))
+      // PEND: set on a fire, W1C by a host write of bit2.
+      val clrPend = selStep & wd.bit(2)
+      stepPend := (stepBoundary | stepPend) & (!clrPend)
+      io.stepFire.get := stepFireR
+      // Low-byte control read-back; the count field is added in the read mux.
+      stepCtl := (0.B(parameter.byteWidth - 3) ##
+        stepPend.asBits ## stepOneShot.asBits ## stepEnReg.asBits).asUInt
 
     // Per-unit registers. ADDR is 16-bit; CTL keeps four control bits.
     val addrRegs = (0 until n).map(_ => RegInit(0.U(aw)))
@@ -135,8 +190,10 @@ object TriggerUnit
       statBits(i) := (fired | statBits(i)) & (!clr)
     }
 
-    // Latch-once arm/pend: set on the first fire, rearm at retire.
-    when(anyFire & (!hwbpArmed)) {
+    // Latch-once arm/pend: set on the first fire, rearm at retire. A fire while
+    // a self-hosted trap-2 handler runs is suppressed (does not pend a redirect),
+    // so the handler's own execution never re-triggers its debug features.
+    when(anyFire & (!hwbpArmed) & (!io.suppress)) {
       hwbpArmed := true.B
       hwbpPend  := true.B
       hwbpKindR := anyDb & (!anyIb)   // instruction bp wins a tie (fires first)
@@ -152,6 +209,9 @@ object TriggerUnit
     // ---- MMIO read mux (index by addr[4:1]). ----
     val rd = Wire(UInt(dw))
     rd := 0.U(dw)
+    // STEP word: [15:12]=0, [11:8]=hwBreakpointCount (capability), [7:0]=control.
+    val stepReadWord = (0.B(4) ## n.U(4).asBits ## stepCtl.asBits).asUInt
+    when(io.mmioIndex === stepIdx.U(4))(rd := stepReadWord)
     (0 until n).foreach { i =>
       when(io.mmioIndex === addrIdx(i).U(4))(rd := addrRegs(i))
       when(io.mmioIndex === ctlIdx(i).U(4))(

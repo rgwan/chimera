@@ -179,77 +179,14 @@ impl<B: JtagBackend> DmH8<B> {
         Ok(())
     }
 
-    /// Read the 8-bit CCR via program buffer.
+    /// Read the 8-bit CCR (non-destructive).
     ///
-    /// The DM has no direct CCR read port, so a snippet copies CCR into the low
-    /// byte of a scratch register and stores it. `STC CCR,Rl` is executed as the
-    /// FIRST instruction so the captured value is the live CCR, before any flag
-    /// side effect of the snippet itself. The whole original scratch register is
-    /// preserved on the stack, and CCR is restored to the captured value with
-    /// `LDC`, so the operation is lossless for the GPRs, PC, work area and CCR.
-    ///
-    /// Snippet (at code_area), r6 as scratch:
-    ///   `STC CCR,r6l`        (0x0208 | (6<<0)=0x020E)  ; CCR -> r6l  [captures]
-    ///   `MOV.W r6,@data`     (0x6B80|6=0x6B86, aa)     ; {r6h,ccr} -> data
-    ///   `TRAPA #2`           (0x5720)
-    /// r6 is saved/restored via GPR program buffer around the snippet; CCR is
-    /// re-loaded with `LDC #ccr,ccr` (0x07,ccr) appended so the flags return to
-    /// their captured state.
+    /// The DM captures CCR at the debugger's fresh park entry and restores it on
+    /// every resume, so a direct `ReadCcr` command returns the target's true CCR
+    /// with no program-buffer perturbation and no scratch-register save/restore.
+    /// The whole architectural state (GPRs, PC, work area, CCR) is left pristine.
     pub fn read_ccr(&mut self) -> Result<u8> {
-        // Save the scratch GPR (r6) first via the GPR path (self-restoring). r6
-        // is chosen to avoid r0/r7(sp). This read perturbs CCR, but CCR is
-        // captured by the STC that runs as the snippet's first instruction and
-        // is restored by the trailing LDC, so the net effect on CCR is zero.
-        let saved_r6 = self.read_gpr(6)?;
-
-        let saved_pc = self.dtm.read_pc()?;
-        let c0 = self.dtm.mem_read(self.code_area)?;
-        let c1 = self.dtm.mem_read(self.code_area + 2)?;
-        let c2 = self.dtm.mem_read(self.code_area + 4)?;
-        let c3 = self.dtm.mem_read(self.code_area + 6)?;
-        let sdata = self.dtm.mem_read(self.data_area)?;
-
-        // STC CCR,r6l | MOV.W r6,@data_area | TRAPA #2
-        self.dtm.mem_write(self.code_area, 0x0208 | 6)?; // STC CCR,r6l
-        self.dtm.mem_write(self.code_area + 2, 0x6B80 | 6)?; // MOV.W r6,@aa:16
-        self.dtm.mem_write(self.code_area + 4, self.data_area)?;
-        self.dtm.mem_write(self.code_area + 6, TRAPA2)?;
-        self.dtm.set_pc(self.code_area)?;
-        self.dtm.resume()?;
-        self.dtm.wait_halted(true)?;
-
-        // MOV.W r6 stored {r6h, ccr}; CCR is the low byte of the word.
-        let word = self.dtm.mem_read(self.data_area)?;
-        let ccr = (word & 0xFF) as u8;
-
-        // Restore code/data/PC and r6, then restore CCR to the captured value.
-        self.dtm.mem_write(self.code_area, c0)?;
-        self.dtm.mem_write(self.code_area + 2, c1)?;
-        self.dtm.mem_write(self.code_area + 4, c2)?;
-        self.dtm.mem_write(self.code_area + 6, c3)?;
-        self.dtm.mem_write(self.data_area, sdata)?;
-        self.dtm.set_pc(saved_pc)?;
-        self.write_gpr(6, saved_r6)?;
-        self.restore_ccr(ccr)?;
-
-        Ok(ccr)
-    }
-
-    /// Restore CCR to `ccr` via `LDC #ccr,ccr` (0x07 imm) + `TRAPA #2`, saving
-    /// and restoring the work area and PC (no GPR is touched by LDC).
-    fn restore_ccr(&mut self, ccr: u8) -> Result<()> {
-        let saved_pc = self.dtm.read_pc()?;
-        let c0 = self.dtm.mem_read(self.code_area)?;
-        let c1 = self.dtm.mem_read(self.code_area + 2)?;
-        self.dtm.mem_write(self.code_area, 0x0700 | ccr as u16)?; // LDC #ccr,ccr
-        self.dtm.mem_write(self.code_area + 2, TRAPA2)?;
-        self.dtm.set_pc(self.code_area)?;
-        self.dtm.resume()?;
-        self.dtm.wait_halted(true)?;
-        self.dtm.mem_write(self.code_area, c0)?;
-        self.dtm.mem_write(self.code_area + 2, c1)?;
-        self.dtm.set_pc(saved_pc)?;
-        Ok(())
+        self.dtm.read_ccr()
     }
 
     fn save_work_and_pc(&mut self) -> Result<SavedWork> {
@@ -278,4 +215,298 @@ struct SavedWork {
     code1: u16,
     code2: u16,
     data: u16,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dtm::{ir, pack_control, Cmd, CTRL_BITS};
+    use crate::jtag_tap::Tap;
+
+    /// Behavioural DM/DTM model at the JTAG pin level. It walks the same TAP FSM
+    /// the driver drives, holds an IR and a shared 36-bit shift DR, and models
+    /// the H8 debug target: memory, PC, eight 16-bit GPRs, CCR, and the P4
+    /// non-destructive CCR semantics (capture CCR on a fresh halt from running
+    /// code, restore it on every resume, and do NOT re-capture on a TRAPA#2
+    /// re-park). Program-buffer GPR reads run an injected MOV that perturbs the
+    /// live CCR N/Z/V, exactly as on hardware, so the test proves the restore.
+    struct ModelBackend {
+        state: TapState,
+        ir: u8,
+        ir_shift: u8,
+        dr: u64,
+        dr_capture: u64,
+        // Target model.
+        mem: std::collections::HashMap<u16, u16>,
+        pc: u16,
+        gpr: [u16; 8],
+        ccr: u8,
+        saved_ccr: u8,
+        halted: bool,
+        in_running_code: bool, // true once a resume returns to non-injected code
+    }
+
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    enum TapState {
+        Tlr,
+        Rti,
+        SelDr,
+        SelIr,
+        CapIr,
+        ShIr,
+        Ex1Ir,
+        UpdIr,
+        CapDr,
+        ShDr,
+        Ex1Dr,
+        UpdDr,
+    }
+
+    const TRAPA2_OP: u16 = 0x5720;
+
+    impl ModelBackend {
+        fn new() -> Self {
+            ModelBackend {
+                state: TapState::Rti,
+                ir: ir::IDCODE,
+                ir_shift: 0,
+                dr: 0,
+                dr_capture: 0,
+                mem: std::collections::HashMap::new(),
+                pc: 0,
+                gpr: [0; 8],
+                ccr: 0x20,
+                saved_ccr: 0x20,
+                halted: false,
+                in_running_code: true,
+            }
+        }
+
+        // Value the selected DR presents on Capture-DR.
+        fn capture_dr(&self) -> u64 {
+            match self.ir {
+                x if x == ir::IDCODE => 0x0011_4514,
+                x if x == ir::STATUS => {
+                    let mut s = 0u64;
+                    if self.halted {
+                        s |= 1;
+                    }
+                    s |= (0xFF00u64) << 2; // dbg_base (arbitrary for the test)
+                    s |= 1u64 << 22; // dmactive
+                    s
+                }
+                x if x == ir::CONTROL => self.dr_capture,
+                _ => 0,
+            }
+        }
+
+        // A fresh halt from running user code captures CCR; a re-park from an
+        // injected TRAPA#2 snippet does not.
+        fn halt_from_running(&mut self) {
+            if !self.halted {
+                if self.in_running_code {
+                    self.saved_ccr = self.ccr;
+                }
+                self.halted = true;
+            }
+        }
+
+        // Execute one injected snippet word-stream starting at PC until TRAPA #2,
+        // modelling the flag perturbation of a MOV. Used by the resume of a
+        // program-buffer read.
+        fn run_injected(&mut self) {
+            // Restore CCR on resume (the DebugResume microword).
+            self.ccr = self.saved_ccr;
+            for _ in 0..8 {
+                let op = *self.mem.get(&self.pc).unwrap_or(&0);
+                if op == TRAPA2_OP {
+                    // Re-park via TRAPA#2: does NOT re-capture saved CCR.
+                    self.halted = true;
+                    self.pc = self.pc.wrapping_add(2);
+                    return;
+                }
+                if (op & 0xFF00) == 0x6B00 && (op & 0x0080) == 0x0080 {
+                    // MOV.W rN,@aa:16 : store rN to the address in the next word.
+                    let n = (op & 0x7) as usize;
+                    let aa = *self.mem.get(&self.pc.wrapping_add(2)).unwrap_or(&0);
+                    self.mem.insert(aa, self.gpr[n]);
+                    // MOV updates N/Z, clears V: perturb the live CCR.
+                    self.ccr = (self.ccr & 0xF1) | 0x04; // e.g. set Z-ish witness
+                    self.pc = self.pc.wrapping_add(4);
+                } else if (op & 0xFF00) == 0x6B00 {
+                    // MOV.W @aa:16,rN : load.
+                    let n = (op & 0x7) as usize;
+                    let aa = *self.mem.get(&self.pc.wrapping_add(2)).unwrap_or(&0);
+                    self.gpr[n] = *self.mem.get(&aa).unwrap_or(&0);
+                    self.ccr = (self.ccr & 0xF1) | 0x04;
+                    self.pc = self.pc.wrapping_add(4);
+                } else {
+                    self.pc = self.pc.wrapping_add(2);
+                }
+            }
+        }
+
+        fn exec_control(&mut self) {
+            let cmd = (self.dr & 0x7) as u8;
+            let addr = ((self.dr >> 3) & 0xFFFF) as u16;
+            let data = ((self.dr >> 19) & 0xFFFF) as u16;
+            let mut out_data = data;
+            match cmd {
+                c if c == Cmd::MemWrite as u8 => {
+                    self.mem.insert(addr, data);
+                }
+                c if c == Cmd::MemRead as u8 => {
+                    out_data = *self.mem.get(&addr).unwrap_or(&0);
+                }
+                c if c == Cmd::SetPc as u8 => {
+                    self.pc = addr;
+                    // Pointing PC at an injected snippet: the next resume runs it.
+                    self.in_running_code = false;
+                }
+                c if c == Cmd::ReadPc as u8 => {
+                    out_data = self.pc;
+                }
+                c if c == Cmd::ReadCcr as u8 => {
+                    out_data = self.saved_ccr as u16;
+                }
+                c if c == Cmd::Halt as u8 => {
+                    self.halt_from_running();
+                }
+                c if c == Cmd::Resume as u8 => {
+                    if self.in_running_code {
+                        // Final resume-to-program: restore CCR, leave halted.
+                        self.ccr = self.saved_ccr;
+                        self.halted = false;
+                    } else {
+                        // Program-buffer snippet run; it re-parks via TRAPA#2.
+                        self.halted = false;
+                        self.run_injected();
+                        self.in_running_code = true;
+                    }
+                }
+                _ => {}
+            }
+            // CONTROL read-back: go/in_progress=0 (done), data field updated.
+            self.dr_capture = pack_control(false, Cmd::Nop, addr, out_data);
+        }
+    }
+
+    impl crate::backend::JtagBackend for ModelBackend {
+        fn reset(&mut self) -> Result<()> {
+            self.state = TapState::Tlr;
+            self.ir = ir::IDCODE;
+            Ok(())
+        }
+
+        fn tick(&mut self, tms: bool, tdi: bool) -> Result<bool> {
+            // Sample TDO (LSB of the shift register) BEFORE clocking, matching the
+            // backend contract.
+            let tdo = match self.state {
+                TapState::ShIr => self.ir_shift & 1 == 1,
+                TapState::ShDr => self.dr & 1 == 1,
+                _ => false,
+            };
+            // Shift on the clock while in a Shift state (before the state moves).
+            match self.state {
+                TapState::ShIr => {
+                    self.ir_shift = (self.ir_shift >> 1) | ((tdi as u8) << 3);
+                }
+                TapState::ShDr => {
+                    self.dr = (self.dr >> 1) | ((tdi as u64) << (CTRL_BITS - 1));
+                }
+                _ => {}
+            }
+            // Advance the FSM.
+            self.state = next_state(self.state, tms);
+            match self.state {
+                TapState::CapIr => self.ir_shift = self.ir,
+                TapState::CapDr => {
+                    self.dr = self.capture_dr();
+                }
+                TapState::UpdIr => self.ir = self.ir_shift & 0xF,
+                TapState::UpdDr => {
+                    if self.ir == ir::CONTROL {
+                        // A launch (go=1) executes; a poll (go=0) just re-reads.
+                        if (self.dr >> 35) & 1 == 1 {
+                            self.exec_control();
+                        }
+                    }
+                }
+                _ => {}
+            }
+            Ok(tdo)
+        }
+    }
+
+    fn next_state(s: TapState, tms: bool) -> TapState {
+        use TapState::*;
+        match (s, tms) {
+            (Tlr, false) => Rti,
+            (Tlr, true) => Tlr,
+            (Rti, false) => Rti,
+            (Rti, true) => SelDr,
+            (SelDr, false) => CapDr,
+            (SelDr, true) => SelIr,
+            (SelIr, false) => CapIr,
+            (SelIr, true) => Tlr, // Select-IR + TMS=1 -> Test-Logic-Reset
+            (CapIr, false) => ShIr,
+            (CapIr, true) => Ex1Ir,
+            (ShIr, false) => ShIr,
+            (ShIr, true) => Ex1Ir,
+            (Ex1Ir, _) => UpdIr,
+            (UpdIr, false) => Rti,
+            (UpdIr, true) => SelDr,
+            (CapDr, false) => ShDr,
+            (CapDr, true) => Ex1Dr,
+            (ShDr, false) => ShDr,
+            (ShDr, true) => Ex1Dr,
+            (Ex1Dr, _) => UpdDr,
+            (UpdDr, false) => Rti,
+            (UpdDr, true) => SelDr,
+        }
+    }
+
+    fn attach() -> DmH8<ModelBackend> {
+        let backend = ModelBackend::new();
+        let tap = Tap::new(backend);
+        let dtm = Dtm::new(tap);
+        DmH8::new(dtm)
+    }
+
+    #[test]
+    fn read_ccr_is_non_destructive() {
+        let mut dm = attach();
+        dm.reset().unwrap();
+        // Seed a known CCR and distinct GPRs into the model.
+        {
+            let m = dm.dtm.tap_mut().backend_mut();
+            m.ccr = 0x2C;
+            m.saved_ccr = 0x20; // stale; a fresh halt must overwrite it
+            for i in 0..8 {
+                m.gpr[i] = 0x1000 + i as u16;
+            }
+        }
+        dm.halt().unwrap();
+
+        // ReadCcr returns the CCR captured at the fresh halt (0x2C), not stale.
+        let ccr = dm.read_ccr().unwrap();
+        assert_eq!(ccr, 0x2C, "ReadCcr must return the CCR captured at halt");
+
+        // Read every GPR via the program-buffer path (perturbs the live CCR).
+        for n in 0..8u8 {
+            let v = dm.read_gpr(n).unwrap();
+            assert_eq!(v, 0x1000 + n as u16, "GPR read must be faithful");
+        }
+
+        // ReadCcr is idempotent and still the captured value.
+        assert_eq!(dm.read_ccr().unwrap(), 0x2C, "ReadCcr not stable");
+
+        // Final resume restores the architectural CCR to the captured value.
+        dm.resume().unwrap();
+        let m = dm.dtm.tap_mut().backend_mut();
+        assert_eq!(m.ccr, 0x2C, "architectural CCR must be pristine after resume");
+        for i in 0..8 {
+            assert_eq!(m.gpr[i], 0x1000 + i as u16, "GPRs must be pristine");
+        }
+    }
 }

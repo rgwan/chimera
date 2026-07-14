@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
 
-.PHONY: bench-dhry bench-coremark check-sleep-strict check-ccr-ubit build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-sleep check-debug check-jtag check-hwbp-selfhosted check-hwbp-dm check-rom-hex check-bit-reg check-bit-mem check-daa-das check-adds-subs check-mulxu check-divxu check-stack-byte check-irq-vector check-trapa gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model verify-smoke check clean
+.PHONY: bench-dhry bench-coremark check-sleep-strict check-ccr-ubit build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-sleep check-debug check-jtag check-hwbp-selfhosted check-hwbp-dm check-step-selfhosted check-step-dm check-trap2-suppress check-nondestruct check-rom-hex check-bit-reg check-bit-mem check-daa-das check-adds-subs check-mulxu check-divxu check-stack-byte check-irq-vector check-trapa gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model verify-smoke check clean
 
 build: smoke
 
@@ -69,6 +69,30 @@ check-hwbp-dm:
 	iverilog -g2012 -o rtl/generated/sim_hwbp_dm test/core/tb_core_hwbp_dm.v \
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_hwbp_dm
+
+check-step-selfhosted:
+	SINGLE_STEP=true DBG_BASE=65280 bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_step_self test/core/tb_core_step_selfhosted.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_step_self
+
+check-step-dm:
+	TOP=Core DM=true SINGLE_STEP=true DBG_BASE=65280 bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_step_dm test/core/tb_core_step_dm.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_step_dm
+
+check-trap2-suppress:
+	SINGLE_STEP=true HW_BREAKPOINT=true HW_BREAKPOINT_COUNT=2 DBG_BASE=65280 bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_trap2_suppress test/core/tb_core_trap2_suppress.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_trap2_suppress
+
+check-nondestruct:
+	TOP=Core DM=true SINGLE_STEP=true DBG_BASE=65280 bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_nondestruct test/core/tb_core_nondestruct.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_nondestruct
 
 check-sleep-strict:
 	STRICT_DECODE=true bash rtl/build.sh

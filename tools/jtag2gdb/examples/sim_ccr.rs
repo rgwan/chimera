@@ -30,28 +30,22 @@ fn main() -> anyhow::Result<()> {
 
     let ccr = dm.read_ccr()?;
     println!("read_ccr() = {ccr:#04x} (loaded {ccr_val:#04x})");
-    // The scratch-register save inside read_ccr executes a MOV that updates the
-    // N/Z/V flags, so those three bits may differ; the stable bits I/UI/H/U/C
-    // (mask 0xF1) are read back faithfully. This matches the perturbation gdb's
-    // own g-packet GPR reads already cause on this microarchitecture.
-    const STABLE: u8 = 0xF1; // I UI H U _ _ _ C
-    println!(
-        "  stable bits (0xF1): read {:#04x} vs loaded {:#04x}",
-        ccr & STABLE,
-        ccr_val & STABLE
-    );
-    assert_eq!(ccr & STABLE, ccr_val & STABLE, "CCR stable bits mismatch");
+    // ReadCcr returns the CCR captured at the debugger's session entry (the DM
+    // saves it on the fresh park and restores it on every resume), so the full
+    // byte is faithful — no program-buffer perturbation of N/Z/V.
+    assert_eq!(ccr, ccr_val, "CCR must be read back faithfully");
 
-    // Confirm losslessness: read_ccr must restore r0/r6/PC/CCR.
+    // Confirm losslessness: program-buffer GPR reads plus the CCR read leave
+    // architectural state pristine after resume.
     let r0 = dm.read_gpr(0)?;
     let r6 = dm.read_gpr(6)?;
-    println!("r0 after read_ccr = {r0:#06x}; r6 = {r6:#06x} (scratch restored)");
+    println!("r0 after read_ccr = {r0:#06x}; r6 = {r6:#06x} (scratch pristine)");
     println!("pc after read_ccr = {:#06x}", dm.read_pc()?);
-    // A second read_ccr must return the same value (idempotent, CCR restored).
+    // A second read_ccr must return the same value (idempotent, CCR preserved).
     let ccr2 = dm.read_ccr()?;
     println!("second read_ccr() = {ccr2:#04x}");
-    assert_eq!(ccr, ccr2, "read_ccr not idempotent (CCR not restored)");
+    assert_eq!(ccr, ccr2, "read_ccr not idempotent");
 
-    println!("CCR-VIA-PROGBUF OK (stable bits match; idempotent; lossless)");
+    println!("CCR-NON-DESTRUCTIVE OK (full byte faithful; idempotent; lossless)");
     Ok(())
 }

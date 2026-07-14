@@ -32,6 +32,7 @@ pub enum Cmd {
     Resume = 4,
     ReadPc = 5,
     MemRead = 6,
+    ReadCcr = 7,
 }
 
 /// Geometry of the 36-bit CONTROL DR and the 23-bit STATUS DR.
@@ -113,6 +114,11 @@ impl<B: JtagBackend> Dtm<B> {
         Ok(())
     }
 
+    /// Access the underlying TAP (its backend), for tests and diagnostics.
+    pub fn tap_mut(&mut self) -> &mut Tap<B> {
+        &mut self.tap
+    }
+
     fn select_ir(&mut self, want: u8) -> Result<()> {
         if self.loaded_ir != Some(want) {
             self.tap.shift_ir(want)?;
@@ -182,6 +188,15 @@ impl<B: JtagBackend> Dtm<B> {
 
     pub fn read_pc(&mut self) -> Result<u16> {
         self.control_launch_and_poll(Cmd::ReadPc, 0, 0)
+    }
+
+    /// Read CCR captured at the debugger's session entry (non-destructive).
+    ///
+    /// The core saves CCR on the fresh park entry and restores it on every
+    /// resume, so this returns the target's true CCR (low byte) without any
+    /// program-buffer perturbation. Valid only while halted.
+    pub fn read_ccr(&mut self) -> Result<u8> {
+        Ok((self.control_launch_and_poll(Cmd::ReadCcr, 0, 0)? & 0xFF) as u8)
     }
 
     pub fn halt(&mut self) -> Result<()> {

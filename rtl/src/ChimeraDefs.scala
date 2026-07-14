@@ -130,6 +130,9 @@ object Ucode:
   val DebugMemRead  = DebugEntry + 1 // mem[dm.addr] -> AUX (read result to host)
   val DebugMemWrite = DebugEntry + 2 // AUX := dm.data; mem[dm.addr] := AUX
   val DebugSetPc    = DebugEntry + 4 // PC := dm.addr
+  // Resume restores CCR to the value captured on park entry (Core drives the
+  // direct-load path here) so program-buffer reg reads leave flags pristine.
+  val DebugResume   = DebugEntry + 5 // CCR := savedDbgCcr; retire to fetch
   val NmiEntry = FetchEntry + 0xab
   val IrqEntry = FetchEntry + 0x30
   val BitPrefixExt = FetchEntry + 0xaf

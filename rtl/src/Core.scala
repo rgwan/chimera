@@ -30,8 +30,10 @@ class CoreIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   val bus   = Aligned(new SramBus(parameter))
   val core_sleeping = Aligned(Bool()) // high while parked in SLEEP
   // High while parked in the DebugEntry wait word. Present when the core can
-  // park: a DM halt or a hardware-breakpoint redirect into DebugEntry.
-  val is_halted = Option.when(parameter.dm || parameter.hardwareBreakpoint)(Aligned(Bool()))
+  // park: a DM halt, a hardware-breakpoint, or a single-step redirect into
+  // DebugEntry.
+  val is_halted = Option.when(
+    parameter.dm || parameter.hardwareBreakpoint || parameter.singleStep)(Aligned(Bool()))
   // Optional debug-module port; present only with parameter.debug.
   val dbg   = Option.when(parameter.debug)(Aligned(new DebugPort(parameter)))
 
@@ -67,7 +69,9 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     val wb     = CoreWriteback.instantiate(parameter)
     val irqctl = CoreIrqControl.instantiate(parameter)
     val biu    = Biu.instantiate(parameter)
-    val trig   = Option.when(parameter.hardwareBreakpoint)(
+    // The trigger / MMIO block owns the dbgBase window: present whenever a
+    // self-hosted feature (hardware breakpoint or single-step) needs it.
+    val trig   = Option.when(parameter.mmio)(
       TriggerUnit.instantiate(parameter))
 
     // instruction register (holds the fetched word microcode reads)
@@ -627,12 +631,16 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
 
     connectIrqAndBus()
 
-    // ======================= trigger / hardware breakpoint ====================
-    // Behind parameter.hardwareBreakpoint. The trigger unit owns the MMIO
-    // registers (reached through the BIU decode) and the registered comparators;
-    // every net here vanishes when hardwareBreakpoint is off. `hwbpFire` is a
-    // registered latch that the routing block below steers to DebugEntry (DM
-    // present) or the trap-2 handler (self-hosted).
+    // ======================= trigger / MMIO debug block =======================
+    // Behind parameter.mmio (hardware breakpoint or single-step). The block owns
+    // the MMIO registers (reached through the BIU decode), the registered
+    // comparators, and the single-step control register; every net here vanishes
+    // when no self-hosted feature is enabled. `hwbpFire` and `stepFire` are
+    // registered latches that the routing block below steers to DebugEntry (DM
+    // present) or the trap-2 handler (self-hosted). `trap2Suppress` freezes both
+    // while a self-hosted trap-2 debug handler runs (see the FSM below).
+    val trap2Suppress = Wire(Bool())
+    trap2Suppress := false.B
     trig.foreach { t =>
       t.io.clock := io.clock
       t.io.reset := io.reset
@@ -647,6 +655,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       t.io.dataRead   := busRead & biu.io.rdy
       t.io.dataWrite  := busWrite & biu.io.rdy
       t.io.retire     := useq.io.retire
+      t.io.suppress   := trap2Suppress
       // MMIO register port from the BIU decode.
       t.io.mmioSel   := biu.io.mmioSel.get
       t.io.mmioWrite := biu.io.mmioWrite.get
@@ -682,9 +691,10 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       val isHalt   = cmd === DmCmd.Halt.U(3)
       val isResume = cmd === DmCmd.Resume.U(3)
       val isReadPc = cmd === DmCmd.ReadPc.U(3)
+      val isReadCcr = cmd === DmCmd.ReadCcr.U(3)
       // Hardware-dispatched primitives: the sequencer jumps into the matching
-      // DebugSlots routine. readPC is answered by the controller directly (a
-      // Core-side pcData mux) and never dispatches; halt/resume hold/release.
+      // DebugSlots routine. readPC / readCCR are answered by the controller
+      // directly (Core-side muxes) and never dispatch; halt/resume hold/release.
       val isPrim   = (cmd === DmCmd.MemRead.U(3)) |
         (cmd === DmCmd.MemWrite.U(3)) | (cmd === DmCmd.SetPc.U(3))
 
@@ -692,7 +702,8 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       // taken while running; primitives, resume and readPC only while parked.
       val served = RegInit(false.B)
       val request = activeSync & reqSync & (!served)
-      val accept = request & (isHalt | ((isPrim | isResume | isReadPc) & parked))
+      val accept = request &
+        (isHalt | ((isPrim | isResume | isReadPc | isReadCcr) & parked))
       when(accept)(served := true.B)
       when(!reqSync)(served := false.B)
 
@@ -702,10 +713,13 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       val haltLatch = RegInit(false.B)
       when(accept & (isHalt | isPrim))(haltLatch := true.B)
       when(accept & isResume)(haltLatch := false.B)
-      // A hardware-breakpoint fire while the debugger is present also parks: fold
-      // it into the halt latch so a concurrent haltreq + HWBP fire resolve to one
-      // DebugEntry park, cleared by the same resume.
-      trig.foreach(t => when(t.io.hwbpFire)(haltLatch := true.B))
+      // A hardware-breakpoint or single-step fire while the debugger is present
+      // also parks: fold it into the halt latch so a concurrent haltreq + fire
+      // resolve to one DebugEntry park, cleared by the same resume.
+      trig.foreach { t =>
+        when(t.io.hwbpFire)(haltLatch := true.B)
+        t.io.stepFire.foreach(sf => when(sf)(haltLatch := true.B))
+      }
       dmHalt = Some(haltLatch)
 
       useq.io.dbgReq.get    := accept & isPrim
@@ -729,30 +743,97 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
         intrf.io.we := stepEn
       }
 
-      // readPC is answered without microcode: while parked, tap the live PC to
-      // the host and ack immediately (the core stays parked). Key the mux on the
-      // latched cmd and parked, not on `served`, so the datum holds steady across
-      // the whole parked window while the DTM captures it. memRead returns the
-      // AUX word its routine staged.
+      // Non-destructive CCR: capture the user CCR at the fresh session entry
+      // (the retire that parks from running code), hold it across the whole
+      // debugger session, and restore it on every resume microword. A program-
+      // buffer snippet ends in TRAPA#2 and re-parks via the trapDebug path, and a
+      // mem primitive returns to the park word by a literal branch; neither is a
+      // fresh entry, so neither re-captures. Every resume restores the saved
+      // value, so the injected STC reads the true CCR and the final resume-to-
+      // program sees pristine flags.
+      val savedDbgCcr = RegInit(0x20.U(parameter.byteWidth))
+      when(useq.io.dbgFreshEntry.get)(savedDbgCcr := ccr.io.ccrByte)
+      // On the DebugResume microword, drive the CCR direct-load path with the
+      // captured value (LDC semantics), overriding ccrctl for that one word.
+      val atResume = exec === Ucode.DebugResume.U(parameter.upcBits)
+      when(atResume) {
+        ccr.io.ldWe  := stepEn
+        ccr.io.ldVal := savedDbgCcr
+      }
+
+      // readPC / readCCR are answered without microcode: while parked, tap the
+      // live PC or the captured CCR to the host and ack immediately (the core
+      // stays parked). Key the mux on the latched cmd and parked, not on
+      // `served`, so the datum holds steady across the whole parked window while
+      // the DTM captures it. memRead returns the AUX word its routine staged.
       dm.ack        := served & parked
-      dm.dataToHost := (isReadPc & parked).?(intrf.io.pcData, intrf.io.auxData)
+      val ccrToHost = (0.B(8) ## savedDbgCcr.asBits).asUInt
+      dm.dataToHost := (isReadPc & parked).?(intrf.io.pcData,
+        (isReadCcr & parked).?(ccrToHost, intrf.io.auxData))
       dm.halted     := parked
     end if
 
+    // ======================= trap-2 suppression FSM ===========================
+    // A dedicated `trap2Active` bit tracks a self-hosted trap-2 debug handler.
+    // Set on the trap-2 trapAck (a step / hardware-breakpoint / TRAPA#2 that took
+    // the trap-2 vector); cleared on the first non-nested RTE — an RTE while no
+    // NMI/IRQ is in service, so a nested interrupt's RTE never clears it. While
+    // set (and no debugger is present) step and breakpoint fires are suppressed
+    // so the handler is not re-interrupted by its own debug features. When a
+    // debugger is present, dmActive gates the suppression off (step/bp fire in
+    // any mode). The RTE restore is implicit: because fires are suppressed for
+    // the whole handler, the pre-trap debug-enable state is preserved unless the
+    // handler itself wrote a debug MMIO register (`dbgRegTouched`), in which case
+    // the handler's new programming stands.
+    val dmPresent = dmActiveReg.getOrElse(false.B)
+    if parameter.hardwareBreakpoint || parameter.singleStep then
+      val trap2Active   = RegInit(false.B)
+      val dbgRegTouched = RegInit(false.B)
+      val trap2Ack = useq.io.trapAck & (useq.io.trapIndex === 2.U(2))
+      val serviceActive = irqctl.io.serviceActive.get
+      val trap2Rte = useq.io.rteAck & (!serviceActive)
+      // Set dominates a same-cycle clear (a fresh trap-2 nested past an RTE).
+      when(trap2Rte & (!trap2Ack)) {
+        trap2Active   := false.B
+        dbgRegTouched := false.B
+      }
+      when(trap2Ack)(trap2Active := true.B)
+      // Any MMIO debug-register write during the handler is a reprogram; sticky
+      // until the handler returns.
+      trig.foreach(t => when(trap2Active & t.io.mmioTouched)(dbgRegTouched := true.B))
+      // Suppress fires only for a self-hosted handler (no debugger present).
+      trap2Suppress := trap2Active & (!dmPresent)
+
+      // FSM invariant: the clear (trap2Rte) is guarded by !serviceActive so an
+      // RTE taken while an NMI/IRQ is in service never lifts the suppression, and
+      // by !trap2Ack so a fresh trap-2 in the same cycle wins; trap2Active is a
+      // single bit, so it can neither double-restore nor clear under nesting.
+      // check-trap2-suppress exercises this (a handler-internal bp that must not
+      // re-fire, and a nested NMI whose RTE must not lift the suppression).
+
     // ======================= debug redirect routing ===========================
     // Unified driver for the sequencer's debug/trap-2 inputs. A DM (when present)
-    // supplies dmActive and the halt latch; a hardware breakpoint splits by
-    // debugger presence: with a DM it parks in DebugEntry via debugPend (folded
-    // into the halt latch above), without one it traps to the trap-2 handler via
-    // hwbpTrap. is_halted mirrors the sequencer park state.
-    val dmPresent = dmActiveReg.getOrElse(false.B)
-    // debugPend: the DM halt latch (already includes a concurrent HWBP park).
-    useq.io.debugPend := dmHalt.getOrElse(false.B)
+    // supplies dmActive and the halt latch; a hardware breakpoint or a single-step
+    // fire splits by debugger presence: with a DM it parks in DebugEntry via
+    // debugPend (folded into the halt latch above), without one it traps to the
+    // trap-2 handler via hwbpTrap. A SLEEP-as-software-breakpoint parks only with
+    // a debugger present (SLEEP needs an external wake); without one it stays the
+    // normal low-power wait. is_halted mirrors the sequencer park state.
+    // Self-hosted fire (step or breakpoint) that routes to the trap-2 handler.
+    val selfHostedFire = trig.map { t =>
+      val hw = t.io.hwbpFire
+      t.io.stepFire.fold(hw: Referable[Bool])(hw | _)
+    }.getOrElse(false.B: Referable[Bool])
+    // A SLEEP with a debugger present parks in DebugEntry (software breakpoint).
+    val sleepPark = if parameter.dm then useq.io.sleeping & dmPresent else false.B
+    // debugPend: the DM halt latch (already includes a concurrent HWBP park) plus
+    // a SLEEP-as-swbp park when a debugger is present.
+    useq.io.debugPend := dmHalt.getOrElse(false.B) | sleepPark
     useq.io.dmActive.foreach(_ := dmPresent)
     useq.io.hwbpTrap.foreach { p =>
-      // Self-hosted breakpoint: only when no debugger is present. With a DM the
-      // fire parks via the halt latch instead.
-      p := trig.get.io.hwbpFire & (!dmPresent)
+      // Self-hosted step / breakpoint: only when no debugger is present. With a
+      // DM the fire parks via the halt latch instead.
+      p := selfHostedFire & (!dmPresent)
     }
     io.is_halted.foreach(_ := useq.io.halted.get)
 

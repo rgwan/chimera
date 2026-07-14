@@ -63,12 +63,21 @@ class MicrosequencerIO(parameter: ChimeraParameter) extends HWBundle(parameter):
   // Debugger-present gate: TRAPA#2 routes to DebugEntry only when a DM is active;
   // without it TRAPA#2 stays a normal trap-2 handler dispatch. Present with dm.
   val dmActive  = Option.when(parameter.dm)(Flipped(Bool()))
-  // Hardware-breakpoint trap request: arms a trap-index-2 pending so a bp fires
-  // through the same trap-2 / DebugEntry routing. Present with hardwareBreakpoint.
-  val hwbpTrap  = Option.when(parameter.hardwareBreakpoint)(Flipped(Bool()))
-  // Halted (parked in DebugEntry). Present whenever the core can park: a DM halt
-  // or a hardware-breakpoint redirect into DebugEntry.
-  val halted    = Option.when(parameter.dm || parameter.hardwareBreakpoint)(Aligned(Bool()))
+  // Self-hosted debug trap request: a hardware breakpoint or a single-step fire
+  // (no DM present) arms a trap-index-2 pending so it takes the same trap-2 /
+  // DebugEntry routing. Present with hardwareBreakpoint or singleStep.
+  val hwbpTrap  = Option.when(parameter.hardwareBreakpoint || parameter.singleStep)(
+    Flipped(Bool()))
+  // Halted (parked in DebugEntry). Present whenever the core can park: a DM halt,
+  // a hardware-breakpoint, or a single-step redirect into DebugEntry.
+  val halted    = Option.when(
+    parameter.dm || parameter.hardwareBreakpoint || parameter.singleStep)(Aligned(Bool()))
+  // A fresh DebugEntry park entered from running code via debugPend (a DM halt,
+  // hardware breakpoint, single step, or SLEEP-as-swbp) — not a TRAPA#2 re-park
+  // and not a debug-primitive return to the park word. Present with dm; the CCR
+  // capture keys on this so an injected program-buffer snippet or a mem primitive
+  // never overwrites the session's saved CCR.
+  val dbgFreshEntry = Option.when(parameter.dm)(Aligned(Bool()))
 
 @generator
 object Microsequencer
@@ -110,7 +119,7 @@ object Microsequencer
     // unconditional routing so it stays byte-identical.
     val trapDebug =
       if parameter.dm then trapPend & (trapIndex === 2.U(2)) & io.dmActive.get
-      else if parameter.hardwareBreakpoint then trapPend & (trapIndex === 2.U(2)) & false.B
+      else if parameter.hardwareBreakpoint || parameter.singleStep then trapPend & (trapIndex === 2.U(2)) & false.B
       else trapPend & (trapIndex === 2.U(2))
     val debugTake = io.debugPend | trapDebug
     val nmiTake = (!debugTake) & io.nmiPend
@@ -214,8 +223,9 @@ object Microsequencer
     sleepReg := xValidReg & (cur === (Ucode.Sleep + 1).U(parameter.upcBits))
     io.sleeping := sleepReg
 
-    // Debug hold is a single-cycle-datapath feature for now; tie the port off.
+    // Debug hold is a single-cycle-datapath feature for now; tie the ports off.
     io.halted.foreach(_ := false.B)
+    io.dbgFreshEntry.foreach(_ := false.B)
 
     } else {
 
@@ -241,7 +251,7 @@ object Microsequencer
     // all-off keeps the original routing so it stays byte-identical.
     val trapDebug =
       if parameter.dm then trapPend & (trapIndex === 2.U(2)) & io.dmActive.get
-      else if parameter.hardwareBreakpoint then trapPend & (trapIndex === 2.U(2)) & false.B
+      else if parameter.hardwareBreakpoint || parameter.singleStep then trapPend & (trapIndex === 2.U(2)) & false.B
       else trapPend & (trapIndex === 2.U(2))
     val debugTake = io.debugPend | trapDebug
     val nmiTake = (!debugTake) & io.nmiPend
@@ -288,7 +298,10 @@ object Microsequencer
       when(cmd === DmCmd.MemWrite.U(3))(target := Ucode.DebugMemWrite.U(parameter.upcBits))
       when(cmd === DmCmd.SetPc.U(3))(target := Ucode.DebugSetPc.U(parameter.upcBits))
       when(parked & io.dbgReq.get)(nxt := target)
-      when(parked & io.dbgResume.get)(nxt := Ucode.FetchEntry.U(parameter.upcBits))
+      // Resume routes through DebugResume (CCR restore) rather than straight to
+      // fetch, so a park never leaks the flag perturbation of a program-buffer
+      // reg read back into the resumed program.
+      when(parked & io.dbgResume.get)(nxt := Ucode.DebugResume.U(parameter.upcBits))
 
     when(io.stepEn)(cur := nxt)
 
@@ -324,6 +337,10 @@ object Microsequencer
     // Shared microcode makes RteEnd a literal-jump into RteRetire, so the ack is
     // keyed on the executing pointer rather than a Return microword.
     io.rteAck := io.stepEn & (cur === Ucode.RteEnd.U(parameter.upcBits))
+    // A fresh session entry: the retire that redirects to DebugEntry via
+    // debugPend (halt / bp / step / sleep-park), excluding a TRAPA#2 re-park
+    // (trapDebug) and any debug-primitive return to the park word.
+    io.dbgFreshEntry.foreach(_ := io.retire & io.debugPend & (!trapDebug))
 
     val sleepReg = RegInit(false.B)
     sleepReg := cur === (Ucode.Sleep + 1).U(parameter.upcBits)

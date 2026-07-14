@@ -450,11 +450,21 @@ check:
 	nix flake check
 
 # cocotb + Verilator JTAG harness (cocotb 2.0 runner API). Builds CoreTop with
-# DM=true and reads the DTM IDCODE over JTAG with the vendored cocotbext.jtag
-# TAP driver. Run inside `nix develop .#cocotb` (PYTHONPATH has test/cocotbext).
+# DM=true, then drives the DTM over JTAG with the vendored cocotbext.jtag TAP
+# driver: IDCODE smoke plus the full sequence (halt, status, memWrite/memRead,
+# setPC/readPC, resume) against a Python RAM slave on the core bus. Run inside
+# `nix develop .#cocotb` (PYTHONPATH has test/cocotbext).
 check-cocotb-jtag:
 	PYTHONPATH=$(CURDIR)/test:$$PYTHONPATH \
 	  python3 test/cocotb/jtag/run_idcode.py
+
+# cocotb + Verilator AXI-Lite harness. Builds CoreTopAxi (AXIL=true), boots the
+# real core over the vendored cocotbext-axi AxiLiteRam slave, and checks the
+# write/read/WSTRB/lane placement and byte order of the SramToAxiLite bridge.
+# Run inside `nix develop .#cocotb` (PYTHONPATH has test/cocotbext).
+check-cocotb-axi:
+	PYTHONPATH=$(CURDIR)/test:$$PYTHONPATH \
+	  python3 test/cocotb/axi/run_axil.py
 
 clean:
 	rm -rf result

@@ -1,9 +1,11 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
-"""Build CoreTop (DM=true) and run the JTAG IDCODE cocotb test on Verilator.
+"""Build CoreTop (DM=true) and run the JTAG cocotb tests on Verilator.
 
-Uses the cocotb 2.0 runner API (cocotb_tools.runner), not the legacy Makefile
-flow. Invoke from the repo root inside `nix develop .#cocotb`:
+Builds CoreTop once, runs the IDCODE smoke and the full DTM test (halt, status,
+memWrite/memRead, setPC/readPC, resume). Uses the cocotb 2.0 runner API
+(cocotb_tools.runner), not the legacy Makefile flow. Invoke from the repo root
+inside `nix develop .#cocotb`:
 
     python test/cocotb/jtag/run_idcode.py
 """
@@ -56,14 +58,17 @@ def main():
             "--bbox-unsup",
         ],
     )
-    runner.test(
-        hdl_toplevel=TOPLEVEL,
-        test_module="test_idcode",
-        timescale=("1ns", "1ps"),
-        extra_env={"PYTHONPATH": os.pathsep.join(
-            [str(Path(__file__).resolve().parent), os.environ.get("PYTHONPATH", "")]
-        )},
-    )
+    extra_env = {"PYTHONPATH": os.pathsep.join(
+        [str(Path(__file__).resolve().parent), os.environ.get("PYTHONPATH", "")]
+    )}
+    for test_module in ("test_idcode", "test_jtag_dtm"):
+        runner.test(
+            hdl_toplevel=TOPLEVEL,
+            test_module=test_module,
+            timescale=("1ns", "1ps"),
+            results_xml=f"{test_module}.results.xml",
+            extra_env=extra_env,
+        )
 
 
 if __name__ == "__main__":

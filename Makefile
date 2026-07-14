@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
 
-.PHONY: bench-dhry bench-coremark check-sleep-strict check-ccr-ubit build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-sleep check-debug check-jtag check-hwbp-selfhosted check-hwbp-dm check-step-selfhosted check-step-dm check-trap2-suppress check-nondestruct check-rom-hex check-bit-reg check-bit-mem check-daa-das check-adds-subs check-mulxu check-divxu check-stack-byte check-irq-vector check-trapa gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model verify-smoke check clean
+.PHONY: bench-dhry bench-coremark check-sleep-strict check-ccr-ubit build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-sleep check-debug check-jtag check-hwbp-selfhosted check-hwbp-dm check-step-selfhosted check-step-dm check-trap2-suppress check-nondestruct check-jtag2gdb check-gdb-e2e verify-debug check-rom-hex check-bit-reg check-bit-mem check-daa-das check-adds-subs check-mulxu check-divxu check-stack-byte check-irq-vector check-trapa gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model verify-smoke check clean
 
 build: smoke
 
@@ -93,6 +93,29 @@ check-nondestruct:
 	iverilog -g2012 -o rtl/generated/sim_nondestruct test/core/tb_core_nondestruct.v \
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_nondestruct
+
+check-jtag2gdb:
+	cd tools/jtag2gdb && cargo test
+
+# End-to-end gdb-transport bring-up: build the DM+HWBP RTL, the remote-bitbang
+# VPI, and the rbb sim, then attach the pure-Rust jtag2gdb example over TCP.
+# GDB_E2E_EXAMPLE selects the example (sim_bp = software-breakpoint hit).
+# gdb-in-the-loop (real h8300-elf-gdb via the RSP server) is a manual bring-up
+# step, not this gate; see scripts/run_gdb_e2e.sh.
+GDB_E2E_EXAMPLE ?= sim_bp
+GDB_E2E_PORT ?= 2542
+check-gdb-e2e:
+	DM=true HW_BREAKPOINT=true HW_BREAKPOINT_COUNT=2 DBG_BASE=65280 bash rtl/build.sh
+	cd rtl/generated && iverilog-vpi --name=rbb_vpi ../../test/core/rbb_vpi.c
+	iverilog -g2012 -o rtl/generated/sim_rbb test/core/tb_core_top_rbb.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	bash scripts/run_gdb_e2e.sh $(GDB_E2E_EXAMPLE) $(GDB_E2E_PORT)
+
+# Debug-subsystem aggregate over every debug gate (RTL + tool + e2e).
+DEBUG_CHECKS ?= check-jtag check-debug check-hwbp-selfhosted check-hwbp-dm \
+  check-step-selfhosted check-step-dm check-trap2-suppress check-nondestruct \
+  check-jtag2gdb check-gdb-e2e
+verify-debug: $(DEBUG_CHECKS)
 
 check-sleep-strict:
 	STRICT_DECODE=true bash rtl/build.sh

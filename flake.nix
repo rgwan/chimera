@@ -474,6 +474,9 @@ EOF
           pkgs.jdk25
           pkgs.mlir-install
           zaoziAssembly
+          # Debug-subsystem host tool (jtag2gdb) and its gdb-transport e2e.
+          pkgs.cargo
+          pkgs.rustc
         ];
       in
       {

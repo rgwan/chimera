@@ -18,6 +18,7 @@ on:
           - full
           - rtl
           - bench
+          - debug
 
 permissions:
   contents: read
@@ -144,6 +145,47 @@ jobs:
           path: |
             result/**
             rtl/generated/*.sv
+
+  debug:
+    name: Debug Subsystem
+    if: github.event_name == 'workflow_dispatch' && inputs.profile == 'debug'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          gc-max-store-size-linux: 8G
+          purge: true
+          purge-prefixes: nix-${{ runner.os }}-
+          purge-created: 0
+          purge-primary-key: never
+
+      # jtag2gdb unit tests, the DM/JTAG/HW-breakpoint sim gates, and the
+      # remote-bitbang gdb-transport e2e (pure-Rust example; real gdb-in-the-
+      # loop stays a manual bring-up step).
+      - name: Run Debug Verification
+        run: nix develop --option sandbox false -c make verify-debug
+
+      - name: Upload Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chimera-debug-${{ github.run_id }}
+          if-no-files-found: ignore
+          path: |
+            rtl/generated/sim_rbb_*.log
 
   bench:
     name: Benchmarks

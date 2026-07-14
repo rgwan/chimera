@@ -19,6 +19,7 @@ on:
           - rtl
           - bench
           - debug
+          - formal
 
 permissions:
   contents: read
@@ -186,6 +187,37 @@ jobs:
           if-no-files-found: ignore
           path: |
             rtl/generated/sim_rbb_*.log
+
+  formal:
+    name: Formal
+    if: github.event_name == 'workflow_dispatch' && inputs.profile == 'formal'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          gc-max-store-size-linux: 8G
+          purge: true
+          purge-prefixes: nix-${{ runner.os }}-
+          purge-created: 0
+          purge-primary-key: never
+
+      # CIRCT-native bounded model checking (circt-bmc): JTAG go-strobe sole-launch,
+      # Core debug-FSM transition invariants, and decoder totality over all 64K.
+      - name: Run Formal Verification
+        run: nix develop --option sandbox false -c make verify-formal
 
   bench:
     name: Benchmarks

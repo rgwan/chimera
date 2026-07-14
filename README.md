@@ -45,6 +45,9 @@ Optional debug: software breakpoints (always on), self-hosted or external
 single-step and hardware breakpoints, and a JTAG debug module driven by a
 gdb host tool. See [doc/debug.md](doc/debug.md).
 
+Selected safety properties are proved by bounded model checking (`circt-bmc`)
+straight from the zaozi design; see [doc/formal.md](doc/formal.md).
+
 ## Build and verify
 
 ```bash

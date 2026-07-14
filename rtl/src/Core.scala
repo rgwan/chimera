@@ -720,11 +720,42 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
         when(t.io.hwbpFire)(haltLatch := true.B)
         t.io.stepFire.foreach(sf => when(sf)(haltLatch := true.B))
       }
+
+      // Auto-halt-memop-resume: a small orchestration FSM so the host issues ONE
+      // memRead / memWrite regardless of run state. A primitive arriving while the
+      // core runs (not parked) auto-halts it (asserts the halt latch; the core
+      // parks at the next retire), lets the existing accept path run the primitive,
+      // then auto-resumes back to the program when the primitive returns to the
+      // park word. `wasRunning` remembers to resume only when the core was running,
+      // so a host-initiated halt-then-memop stays halted (original semantics).
+      // Reuses the halt / memop / resume machinery: no BIU arbitration, no bus
+      // steal, no datapath mux — orchestration only.
+      val autoResume = Wire(Bool())
+      autoResume := false.B
+      if parameter.dmAutoHalt then
+        val wasRunning = RegInit(false.B)
+        // A fresh primitive request while running: no accept yet (accept needs
+        // parked), so raise the halt latch and remember to resume afterwards.
+        val autoHaltReq = request & isPrim & (!parked) & (!haltLatch)
+        when(autoHaltReq) {
+          haltLatch  := true.B
+          wasRunning := true.B
+        }
+        // The primitive has been dispatched and has returned to the park word:
+        // `served` set and parked again. If it was an auto-halt, resume once and
+        // release the latch. Clearing wasRunning makes this a single pulse.
+        val primDone = served & parked & wasRunning
+        when(primDone) {
+          haltLatch  := false.B
+          wasRunning := false.B
+        }
+        autoResume := primDone
+      end if
       dmHalt = Some(haltLatch)
 
       useq.io.dbgReq.get    := accept & isPrim
       useq.io.dbgCmd.get    := cmd
-      useq.io.dbgResume.get := accept & isResume
+      useq.io.dbgResume.get := (accept & isResume) | autoResume
 
       // AUX injection for the mem-write data-staging word.
       val atMemWriteStage = exec === Ucode.DebugMemWrite.U(parameter.upcBits)

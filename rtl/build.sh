@@ -61,6 +61,7 @@ scala-cli run "${scala_args[@]}" "$src" -- \
   --hardwareBreakpoint "${HW_BREAKPOINT:-false}" \
   --hwBreakpointCount "${HW_BREAKPOINT_COUNT:-0}" \
   --singleStep "${SINGLE_STEP:-false}" \
+  --dmAutoHalt "${DM_AUTO_HALT:-${DM:-false}}" \
   --dbgBase "${DBG_BASE:-65280}"
 
 echo "[chimera-rtl] design"

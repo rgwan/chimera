@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
 
-.PHONY: bench-dhry bench-coremark check-sleep-strict check-ccr-ubit build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-sleep check-debug check-jtag check-hwbp-selfhosted check-hwbp-dm check-step-selfhosted check-step-dm check-trap2-suppress check-nondestruct check-jtag2gdb check-gdb-e2e verify-debug check-rom-hex check-bit-reg check-bit-mem check-daa-das check-adds-subs check-mulxu check-divxu check-stack-byte check-irq-vector check-trapa gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model verify-smoke check clean
+.PHONY: bench-dhry bench-coremark check-sleep-strict check-ccr-ubit build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-sleep check-debug check-jtag check-autohalt check-hwbp-selfhosted check-hwbp-dm check-step-selfhosted check-step-dm check-trap2-suppress check-nondestruct check-jtag2gdb check-gdb-e2e verify-debug check-rom-hex check-bit-reg check-bit-mem check-daa-das check-adds-subs check-mulxu check-divxu check-stack-byte check-irq-vector check-trapa gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model verify-smoke check clean
 
 build: smoke
 
@@ -94,6 +94,12 @@ check-nondestruct:
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_nondestruct
 
+check-autohalt:
+	DM=true bash rtl/build.sh
+	iverilog -g2012 -o rtl/generated/sim_autohalt test/core/tb_core_autohalt.v \
+	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	vvp rtl/generated/sim_autohalt
+
 check-jtag2gdb:
 	cd tools/jtag2gdb && cargo test
 
@@ -112,9 +118,9 @@ check-gdb-e2e:
 	bash scripts/run_gdb_e2e.sh $(GDB_E2E_EXAMPLE) $(GDB_E2E_PORT)
 
 # Debug-subsystem aggregate over every debug gate (RTL + tool + e2e).
-DEBUG_CHECKS ?= check-jtag check-debug check-hwbp-selfhosted check-hwbp-dm \
-  check-step-selfhosted check-step-dm check-trap2-suppress check-nondestruct \
-  check-jtag2gdb check-gdb-e2e
+DEBUG_CHECKS ?= check-jtag check-debug check-autohalt check-hwbp-selfhosted \
+  check-hwbp-dm check-step-selfhosted check-step-dm check-trap2-suppress \
+  check-nondestruct check-jtag2gdb check-gdb-e2e
 verify-debug: $(DEBUG_CHECKS)
 
 check-sleep-strict:

@@ -15,9 +15,11 @@ import me.jiuyang.zaozi.default.{*, given}
   * Debug features are independent and separately configurable. `dm` adds the
   * microcode-driven debug-module port (external debugger); it implies `dtm`.
   * `hardwareBreakpoint` adds the MMIO trigger unit (self-hosted or DM-driven);
-  * `singleStep` reserves the MMIO STEP register (P4). `debug` is the derived
-  * umbrella flag: any dm-dependent collateral keys on it. Every debug feature
-  * off (default) leaves every leaf module byte-identical.
+  * `singleStep` reserves the MMIO STEP register (P4). `dmAutoHalt` lets a memRead
+  * / memWrite issued while the core is running auto-halt, run, and auto-resume as
+  * one host command (default on when dm is on, from build.sh). `debug` is the
+  * derived umbrella flag: any dm-dependent collateral keys on it. Every debug
+  * feature off (default) leaves every leaf module byte-identical.
   */
 case class ChimeraParameter(
   h8300h:             Boolean = false,
@@ -30,6 +32,7 @@ case class ChimeraParameter(
   hardwareBreakpoint: Boolean = false,
   hwBreakpointCount:  Int = 0,
   singleStep:         Boolean = false,
+  dmAutoHalt:         Boolean = false,
   idcode:             Long = 0x00114514L,
   dbgBase:            Int = 0xFF00,
   irqNumberWidth:     Int = 3
@@ -46,6 +49,8 @@ case class ChimeraParameter(
     "hardwareBreakpoint requires a 16-bit dbgBase")
   require(!singleStep || (dbgBase >= 0 && dbgBase <= 0xFFFF),
     "singleStep requires a 16-bit dbgBase")
+  // Auto-halt orchestration is a DM feature; it has no effect without dm.
+  require(!dmAutoHalt || dm, "dmAutoHalt requires dm")
 
   /** Umbrella: DM-dependent collateral (park microcode, DebugPort, AUX inject,
     * JTAG DTM). Kept as `debug` so every P0-P2 call site compiles unchanged. */

@@ -410,6 +410,13 @@ EOF
           asic-lean   = { strictDecode = false; romHex = false; asic = true;  pipeline = false; };
           asic-pipe   = { strictDecode = false; romHex = false; asic = true;  pipeline = true;  };
           asic-strict = { strictDecode = true;  romHex = false; asic = true;  pipeline = false; };
+          # AXI-Lite variants (pipe tier, to match fabric clocks). `-axi` is the
+          # bare production core over AXI-Lite; `-soc` adds the JTAG debug module
+          # for SoC bring-up. Both key on the same axilite flag.
+          fpga-pipe-axi = { strictDecode = false; romHex = true;  asic = false; pipeline = true; axilite = true; };
+          asic-pipe-axi = { strictDecode = false; romHex = false; asic = true;  pipeline = true; axilite = true; };
+          fpga-soc      = { strictDecode = false; romHex = true;  asic = false; pipeline = true; axilite = true; dm = true; dtm = true; };
+          asic-soc      = { strictDecode = false; romHex = false; asic = true;  pipeline = true; axilite = true; dm = true; dtm = true; };
         };
 
         chimeraIvyCache = pkgs.ivy-gather zaoziIvyLock;
@@ -456,6 +463,7 @@ EOF
             HW_BREAKPOINT_COUNT=${toString (cfg.hwBreakpointCount or 0)} \
             SINGLE_STEP=${pkgs.lib.boolToString (cfg.singleStep or false)} \
             DBG_BASE=${toString (cfg.dbgBase or 65280)} \
+            AXIL=${pkgs.lib.boolToString (cfg.axilite or false)} \
             bash rtl/build.sh
           rm -f $out/*.mlirbc
           ${pkgs.lib.optionalString cfg.asic ''
@@ -528,6 +536,10 @@ EOF
         packages.rtl-asic-lean = rtlBuild "asic-lean" chimeraConfigs.asic-lean;
         packages.rtl-asic-pipe = rtlBuild "asic-pipe" chimeraConfigs.asic-pipe;
         packages.rtl-asic-strict = rtlBuild "asic-strict" chimeraConfigs.asic-strict;
+        packages.rtl-fpga-pipe-axi = rtlBuild "fpga-pipe-axi" chimeraConfigs.fpga-pipe-axi;
+        packages.rtl-asic-pipe-axi = rtlBuild "asic-pipe-axi" chimeraConfigs.asic-pipe-axi;
+        packages.rtl-fpga-soc = rtlBuild "fpga-soc" chimeraConfigs.fpga-soc;
+        packages.rtl-asic-soc = rtlBuild "asic-soc" chimeraConfigs.asic-soc;
         packages.h8300-binutils = h8300Binutils;
         packages.h8300-bench-gcc = h8300BenchGcc;
         packages.h8300-bench-binutils = h8300BenchBinutils;

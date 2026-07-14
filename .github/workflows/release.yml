@@ -44,7 +44,8 @@ jobs:
       - name: Build and package RTL for every config
         run: |
           set -euo pipefail
-          for cfg in fpga-lean fpga-pipe fpga-strict asic-lean asic-pipe asic-strict; do
+          for cfg in fpga-lean fpga-pipe fpga-strict asic-lean asic-pipe asic-strict \
+                     fpga-pipe-axi asic-pipe-axi fpga-soc asic-soc; do
             nix build ".#rtl-$cfg" --option sandbox false -o "out-$cfg"
             stage="stage-$cfg"
             mkdir -p "$stage"
@@ -58,6 +59,11 @@ jobs:
               cp "out-$cfg/urom.memh" "$stage/"
               sed -i 's|\.\./generated/urom.memh|urom.memh|' "$stage/MicrocodeRom.sv"
             fi
+            # AXI-Lite configs expose axil_* ports; ship the canonical-name
+            # m_axil_* wrapper so the core drops straight onto standard AXI IP.
+            case "$cfg" in
+              *-axi|*-soc) cp test/cocotb/wrappers/coretop_axil.sv "$stage/" ;;
+            esac
             ( cd "$stage" && ls *.sv > filelist.f )
             tar czf "chimera-$cfg.tar.gz" -C "$stage" .
           done
@@ -73,16 +79,24 @@ jobs:
             chimera-asic-lean.tar.gz \
             chimera-asic-pipe.tar.gz \
             chimera-asic-strict.tar.gz \
+            chimera-fpga-pipe-axi.tar.gz \
+            chimera-asic-pipe-axi.tar.gz \
+            chimera-fpga-soc.tar.gz \
+            chimera-asic-soc.tar.gz \
             --title "Chimera ${{ github.ref_name }}" \
             --notes "FPGA-first H8/300 CPU core: hybrid-microcode, multi-cycle, verified against a Sail model. Synthesizable RTL built in CI by nix; one tarball per config (production SystemVerilog, no DV collateral).
 
-          | Download | Platform | ROM | Tier |
-          |---|---|---|---|
-          | chimera-fpga-lean.tar.gz | FPGA | block RAM | single-cycle, smallest |
-          | chimera-fpga-pipe.tar.gz | FPGA | block RAM | pipelined, highest clock |
-          | chimera-fpga-strict.tar.gz | FPGA | block RAM | illegal-encoding guards |
-          | chimera-asic-lean.tar.gz | ASIC | gates | single-cycle, smallest |
-          | chimera-asic-pipe.tar.gz | ASIC | gates | pipelined, highest clock |
-          | chimera-asic-strict.tar.gz | ASIC | gates | illegal-encoding guards |
+          | Download | Platform | ROM | Tier | Bus | Debug |
+          |---|---|---|---|---|---|
+          | chimera-fpga-lean.tar.gz | FPGA | block RAM | single-cycle, smallest | simple | - |
+          | chimera-fpga-pipe.tar.gz | FPGA | block RAM | pipelined, highest clock | simple | - |
+          | chimera-fpga-strict.tar.gz | FPGA | block RAM | illegal-encoding guards | simple | - |
+          | chimera-asic-lean.tar.gz | ASIC | gates | single-cycle, smallest | simple | - |
+          | chimera-asic-pipe.tar.gz | ASIC | gates | pipelined, highest clock | simple | - |
+          | chimera-asic-strict.tar.gz | ASIC | gates | illegal-encoding guards | simple | - |
+          | chimera-fpga-pipe-axi.tar.gz | FPGA | block RAM | pipelined | AXI-Lite | - |
+          | chimera-asic-pipe-axi.tar.gz | ASIC | gates | pipelined | AXI-Lite | - |
+          | chimera-fpga-soc.tar.gz | FPGA | block RAM | pipelined | AXI-Lite | JTAG DM |
+          | chimera-asic-soc.tar.gz | ASIC | gates | pipelined | AXI-Lite | JTAG DM |
 
-          FPGA tarballs include urom.memh (readmemh path is tarball-relative); ASIC tarballs carry filelist.f. See README for area, frequency, power, and benchmark numbers."
+          FPGA tarballs include urom.memh (readmemh path is tarball-relative); ASIC tarballs carry filelist.f. AXI-Lite tarballs (-axi bare core, -soc with JTAG debug) add coretop_axil.sv exposing canonical m_axil_* ports. See README for area, frequency, power, and benchmark numbers."

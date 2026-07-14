@@ -449,6 +449,13 @@ verify-smoke: smoke isa-cases sail-coverage check-decode-table gnu-oracle gdb-or
 check:
 	nix flake check
 
+# cocotb + Verilator JTAG harness (cocotb 2.0 runner API). Builds CoreTop with
+# DM=true and reads the DTM IDCODE over JTAG with the vendored cocotbext.jtag
+# TAP driver. Run inside `nix develop .#cocotb` (PYTHONPATH has test/cocotbext).
+check-cocotb-jtag:
+	PYTHONPATH=$(CURDIR)/test:$$PYTHONPATH \
+	  python3 test/cocotb/jtag/run_idcode.py
+
 clean:
 	rm -rf result
 

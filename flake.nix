@@ -19,6 +19,16 @@
           pyyaml
         ]);
 
+        # cocotb + Verilator harness. cocotb-bus comes from nixpkgs; the two
+        # cocotbext.* extensions are vendored under test/cocotbext and reach the
+        # interpreter through PYTHONPATH (see cocotbShellHook).
+        cocotbPythonEnv = pkgs.python3.withPackages (ps: with ps; [
+          cocotb
+          cocotb-bus
+          pytest
+          pyyaml
+        ]);
+
         buildScript = pkgs.writeShellApplication {
           name = "build-chimera";
           runtimeInputs = [
@@ -483,6 +493,31 @@ EOF
           pkgs.cargo
           pkgs.rustc
         ];
+
+        # cocotb tests build CoreTop (DM=true) through rtl/build.sh, then compile
+        # and run it on Verilator (which invokes gcc/make). The RTL toolchain
+        # (scala-cli, jdk, circt, mlir, zaozi) is shared with the full shell.
+        cocotbBuildInputs = [
+          cocotbPythonEnv
+          pkgs.verilator
+          pkgs.gcc
+          pkgs.gnumake
+          pkgs.git
+          pkgs.scala-cli
+          pkgs.circt-install
+          pkgs.mlir-install
+          pkgs.jdk25
+          zaoziAssembly
+        ];
+
+        cocotbShellHook = ''
+          export PYTHONPATH="$PWD/test:''${PYTHONPATH:-}"
+          export ZAOZI_JAR=${zaoziJar}
+          export CIRCT_INSTALL_PATH=${pkgs.circt-install}
+          export MLIR_INSTALL_PATH=${pkgs.mlir-install}
+          export JAVA_HOME=${pkgs.jdk25.home}
+          export JAVA_TOOL_OPTIONS="--enable-preview"
+        '';
       in
       {
         packages.default = smokeCheck;
@@ -567,6 +602,15 @@ EOF
             Z3_LIB = z3Lib;
           };
           inherit shellHook;
+        };
+
+        devShells.cocotb = pkgs.mkShell {
+          buildInputs = cocotbBuildInputs;
+          env = {
+            CHIMERA_PROJECT_NAME = "chimera";
+            ZAOZI_SRC = zaozi.outPath;
+          };
+          shellHook = cocotbShellHook;
         };
       }
     );

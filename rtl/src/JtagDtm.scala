@@ -4,6 +4,7 @@ package com.vowstar.chimera
 
 import me.jiuyang.zaozi.*
 import me.jiuyang.zaozi.default.{*, given}
+import me.jiuyang.zaozi.ltltpe.*
 import me.jiuyang.zaozi.reftpe.*
 import me.jiuyang.zaozi.valuetpe.*
 
@@ -225,3 +226,29 @@ object JtagDtm
     io.cmd          := cmdReg
     io.addr         := addrReg
     io.dataFromHost := dataReg
+
+    // ---- Formal (formal-only; absent from every non-formal build). ----
+    // The go-strobe launch is the sole gate on reqReg rising: reqReg may go from
+    // low to high only in a cycle where launch (= updateDr & isControl &
+    // goStrobe & !reqReg) holds. Expressed as a single-cycle combinational
+    // property over the register's next value reqNext, so it holds from any
+    // initial state (circt-bmc seeds registers arbitrarily -> no reset needed).
+    // Emitted directly (unlayered) so circt-bmc sees the assert inside JtagDtm;
+    // parameter.formal defaults off, so production stays byte-identical.
+    if parameter.formal then
+      // reqReg's D input: launch sets it, the two clear terms drop it, launch
+      // wins (last connect). When reqReg is low the clears are inactive, so a
+      // rise (reqNext & !reqReg) can come only from launch.
+      val launch  = updateDr & isControl & goStrobe & (!reqReg)
+      val clear   = (reqReg & ackSync) | (reqReg & isResumeCmd & (!haltSync))
+      val reqNext = launch | (reqReg & (!clear))
+      if parameter.formalBroken then
+        // Deliberately false: claims a CONTROL Update-DR with reqReg low must
+        // make reqReg rise, ignoring the go strobe. When goStrobe=0 launch is
+        // false and reqReg stays low, so circt-bmc must report "Assertion can
+        // be violated!".
+        val ctlRise = updateDr & isControl & (!reqReg)
+        Assert(((!ctlRise) | (reqNext & (!reqReg))).I, "go_strobe_sole_gate")
+      else
+        // reqNext & !reqReg (a rise) implies launch.
+        Assert(((!(reqNext & (!reqReg))) | launch).I, "go_strobe_sole_gate")

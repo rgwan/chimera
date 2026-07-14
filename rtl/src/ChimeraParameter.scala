@@ -33,6 +33,8 @@ case class ChimeraParameter(
   hwBreakpointCount:  Int = 0,
   singleStep:         Boolean = false,
   dmAutoHalt:         Boolean = false,
+  formal:             Boolean = false,
+  formalBroken:       Boolean = false,
   idcode:             Long = 0x00114514L,
   dbgBase:            Int = 0xFF00,
   irqNumberWidth:     Int = 3

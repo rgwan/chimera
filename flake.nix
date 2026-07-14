@@ -454,6 +454,11 @@ EOF
           ''}
         '';
 
+        # circt-bmc dlopen's libz3 as a shared library at solve time. The z3
+        # "lib" output ships libz3.so; expose its full path so formal scripts
+        # pass --shared-libs=$Z3_LIB without spelling a store path inline.
+        z3Lib = "${pkgs.z3.lib}/lib/libz3${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
+
         smokeBuildInputs = [
           buildScript
           pkgs.git
@@ -532,6 +537,8 @@ EOF
             MLIR_INSTALL_PATH = pkgs.mlir-install;
             JAVA_HOME = pkgs.jdk25.home;
             JAVA_TOOL_OPTIONS = "--enable-preview";
+            # circt-bmc JITs and dlopen's z3 as a shared library, not the binary.
+            Z3_LIB = z3Lib;
           };
           inherit shellHook;
         };
@@ -556,6 +563,8 @@ EOF
             MLIR_INSTALL_PATH = pkgs.mlir-install;
             JAVA_HOME = pkgs.jdk25.home;
             JAVA_TOOL_OPTIONS = "--enable-preview";
+            # circt-bmc JITs and dlopen's z3 as a shared library, not the binary.
+            Z3_LIB = z3Lib;
           };
           inherit shellHook;
         };

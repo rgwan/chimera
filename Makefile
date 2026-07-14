@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
 
-.PHONY: bench-dhry bench-coremark check-sleep-strict check-ccr-ubit build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-sleep check-debug check-jtag check-autohalt check-hwbp-selfhosted check-hwbp-dm check-step-selfhosted check-step-dm check-trap2-suppress check-nondestruct check-jtag2gdb check-gdb-e2e verify-debug check-rom-hex check-bit-reg check-bit-mem check-daa-das check-adds-subs check-mulxu check-divxu check-stack-byte check-irq-vector check-trapa gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model verify-smoke check clean
+.PHONY: bench-dhry bench-coremark check-sleep-strict check-ccr-ubit build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-sleep check-debug check-jtag check-autohalt check-hwbp-selfhosted check-hwbp-dm check-step-selfhosted check-step-dm check-trap2-suppress check-nondestruct check-jtag2gdb check-gdb-e2e verify-debug check-formal-debug verify-formal check-rom-hex check-bit-reg check-bit-mem check-daa-das check-adds-subs check-mulxu check-divxu check-stack-byte check-irq-vector check-trapa gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model verify-smoke check clean
 
 build: smoke
 
@@ -122,6 +122,24 @@ DEBUG_CHECKS ?= check-jtag check-debug check-autohalt check-hwbp-selfhosted \
   check-hwbp-dm check-step-selfhosted check-step-dm check-trap2-suppress \
   check-nondestruct check-jtag2gdb check-gdb-e2e
 verify-debug: $(DEBUG_CHECKS)
+
+# CIRCT-native bounded model checking (circt-bmc). check-formal-debug proves the
+# JtagDtm go-strobe launch gate holds AND that its deliberately-broken variant is
+# caught, so the harness is demonstrably non-vacuous. FORMAL_BMC_BOUND sets the
+# unroll depth.
+FORMAL_BMC_BOUND ?= 20
+check-formal-debug:
+	FORMAL_BROKEN=false bash formal/lower.sh JtagDtm
+	bash formal/run_bmc.sh JtagDtm $(FORMAL_BMC_BOUND)
+	FORMAL_BROKEN=true bash formal/lower.sh JtagDtm
+	@echo "[formal] broken variant must be violated:"
+	@if bash formal/run_bmc.sh JtagDtm $(FORMAL_BMC_BOUND); then \
+	  echo "[formal] ERROR: broken property was not caught"; exit 1; \
+	else \
+	  echo "[formal] broken property correctly reported as violable"; \
+	fi
+
+verify-formal: check-formal-debug
 
 check-sleep-strict:
 	STRICT_DECODE=true bash rtl/build.sh

@@ -7,6 +7,9 @@
 /rtl/generated/
 /rtl/generated_*/
 /rtl/**/*.mlirbc
+/formal/gen/
+/formal/head/
+/formal/prod/
 
 # Diagram render products (SVG is the committed source; generator lives in the skill)
 /doc/diagrams/*.png

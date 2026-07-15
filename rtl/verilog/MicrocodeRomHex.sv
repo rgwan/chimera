@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
+// SPDX-FileCopyrightText: 2026 Zhiyuan Wan <h@iloli.bid>
 // SPDX-License-Identifier: MIT
 //
 // Drop-in MicrocodeRom with the image loaded from urom.memh, so FPGA tools
@@ -14,7 +15,9 @@ module MicrocodeRom(
   initial begin
     $readmemh("../generated/urom.memh", mem);
   end
-  // In reset force the fetch-entry word, like the generated module's reset
+  // In reset force the reset-entry word, like the generated module's reset
   // value; the address mux keeps the single synchronous read BRAM-inferable.
-  always @(posedge clock) data <= mem[reset ? 9'h100 : addr];
+  // Use asynchnorous reset for safety, the core uses synchnorous reset.
+  always @(posedge clock or posedge reset) data <= mem[reset ? 9'h1FE : addr];
+
 endmodule

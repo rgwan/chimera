@@ -180,10 +180,8 @@ check-rom-hex:
 	python3 test/cocotb/exec/run_exec.py romhex
 
 check-exec-sail:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_isa test/isa/tb_isa_case.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	SIM_BIN=rtl/generated/sim_isa python3 scripts/check_exec_sail.py
+	python3 test/cocotb/isa/run_isa.py build
+	python3 scripts/check_exec_sail.py
 
 gnu-oracle:
 	python3 scripts/check_gnu_oracle.py

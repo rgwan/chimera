@@ -7,14 +7,14 @@ retired register file and CCR to the Sail-derived expected state.
 The image carries reset SP/PC vector entries that boot into the prologue.
 State is preloaded with a mov.w/ldc prologue, so no debug backdoor is needed;
 only cases whose instruction is implemented in microcode are run (others are
-skipped and counted). Env SIM_BIN points at the compiled tb_isa_case runner.
+skipped and counted). All cases run in one Icarus sim process through the
+batch runner test/cocotb/isa/run_isa.py, which the caller must have built.
 """
+import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import yaml
@@ -69,7 +69,6 @@ IMPLEMENTED = {
     "h8_rts", "h8_rte",
 }
 
-MEM_PROBE_LIMIT = 16
 PROLOGUE_BASE = 0x0030  # first address past the platform vector table
 ABSOLUTE_PC_INSTRUCTIONS = {
     "h8_jmp_r16i", "h8_jmp_abs16", "h8_jmp_abs8i",
@@ -180,44 +179,21 @@ def prepared_image(case):
     return image, start, stop_fetch
 
 
-def write_memh(path, image):
-    next_addr = None
-    with Path(path).open("w", encoding="utf-8") as f:
-        for addr in sorted(image):
-            if next_addr != addr:
-                f.write(f"@{addr:04x}\n")
-            f.write(f"{image[addr] & 0xFF:02x}\n")
-            next_addr = addr + 1
-
-
-def run(sim_bin, image, mem_addrs, stop_fetch):
-    if len(mem_addrs) > MEM_PROBE_LIMIT:
-        raise ValueError(f"too many memory probes: {len(mem_addrs)}")
-    with tempfile.NamedTemporaryFile("w", suffix=".hex", delete=False) as f:
-        path = f.name
-    write_memh(path, image)
-    try:
-        args = ["vvp", sim_bin, f"+hex={path}", f"+stop_fetch={stop_fetch}"]
-        args += [f"+m{i}={addr:04x}" for i, addr in enumerate(mem_addrs)]
-        proc = subprocess.run(args, capture_output=True, text=True, timeout=60)
-        if proc.returncode:
-            raise RuntimeError((proc.stdout + proc.stderr).strip())
-        out = proc.stdout
-    finally:
-        os.unlink(path)
-    regs = ccr = pc = None
-    mem = {}
-    for line in out.splitlines():
-        if line.startswith("R "):
-            regs = [int(x, 16) for x in line.split()[1:9]]
-        elif line.startswith("C "):
-            ccr = line.split()[1]
-        elif line.startswith("P "):
-            pc = int(line.split()[1], 16)
-        elif line.startswith("M "):
-            _, addr, val = line.split()
-            mem[int(addr, 16)] = int(val, 16)
-    return regs, ccr, pc, mem
+def batch_run(manifest):
+    """Run every manifest entry in one sim process; return {id: result}."""
+    with tempfile.TemporaryDirectory() as tmp:
+        man_path = Path(tmp) / "manifest.json"
+        res_path = Path(tmp) / "results.json"
+        man_path.write_text(json.dumps(manifest))
+        env = dict(os.environ, ISA_MANIFEST=str(man_path),
+                   ISA_RESULTS=str(res_path))
+        proc = subprocess.run(
+            [sys.executable, str(ROOT / "test/cocotb/isa/run_isa.py"), "run"],
+            cwd=ROOT, env=env, capture_output=True, text=True, timeout=1800,
+        )
+        if proc.returncode or not res_path.exists():
+            raise RuntimeError((proc.stdout + proc.stderr).strip()[-2000:])
+        return {r["id"]: r for r in json.loads(res_path.read_text())}
 
 
 def expected_state(initial, expected):
@@ -244,37 +220,24 @@ def ccr_matches(actual, expected):
     )
 
 
-def check_case(sim, case):
-    try:
-        image, start, stop_fetch = prepared_image(case)
-        exp_mem = memory_expected(case, start)
-        regs, ccr, pc, mem = run(sim, image, sorted(exp_mem), stop_fetch)
-        exp_regs, exp_ccr = expected_state(case["initial"], case["expected"])
-        exp_pc = expected_pc(case, start)
-        ok = regs is not None and pc == exp_pc and ccr_matches(ccr, exp_ccr) \
-            and all(regs[n] == exp_regs[n] for n in range(8)) \
-            and all(mem.get(a) == v for a, v in exp_mem.items())
-        if ok:
-            return True, None
-        return False, (f"{case['id']}: regs={regs} ccr={ccr} pc={pc} "
-                       f"mem={mem} exp_regs={[exp_regs[n] for n in range(8)]} "
-                       f"exp_ccr={exp_ccr} exp_pc={exp_pc} exp_mem={exp_mem}")
-    except Exception as exc:
-        return False, f"{case['id']}: {type(exc).__name__}: {exc}"
-
-
-def job_count():
-    default = min(os.cpu_count() or 1, 8)
-    try:
-        return max(1, int(os.environ.get("CHECK_EXEC_SAIL_JOBS", default)))
-    except ValueError:
-        return default
+def compare_case(case, start, exp_mem, result):
+    regs = result["regs"]
+    ccr = result["ccr"]
+    pc = result["pc"]
+    mem = {int(a): v for a, v in result["mem"].items()}
+    exp_regs, exp_ccr = expected_state(case["initial"], case["expected"])
+    exp_pc = expected_pc(case, start)
+    ok = pc == exp_pc and ccr_matches(ccr, exp_ccr) \
+        and all(regs[n] == exp_regs[n] for n in range(8)) \
+        and all(mem.get(a) == v for a, v in exp_mem.items())
+    if ok:
+        return True, None
+    return False, (f"{case['id']}: regs={regs} ccr={ccr} pc={pc} "
+                   f"mem={mem} exp_regs={[exp_regs[n] for n in range(8)]} "
+                   f"exp_ccr={exp_ccr} exp_pc={exp_pc} exp_mem={exp_mem}")
 
 
 def main():
-    sim = os.environ.get("SIM_BIN")
-    if not sim or not Path(sim).exists():
-        sys.exit("SIM_BIN not set to a compiled tb_isa_case runner")
     passed = failed = skipped = 0
     fails = []
     work = []
@@ -287,13 +250,42 @@ def main():
                 skipped += 1
                 continue
             work.append(case)
-    with ThreadPoolExecutor(max_workers=job_count()) as pool:
-        for ok, fail in pool.map(lambda case: check_case(sim, case), work):
-            if ok:
-                passed += 1
-            else:
-                failed += 1
-                fails.append(fail)
+
+    manifest = []
+    metas = {}
+    for case in work:
+        try:
+            image, start, stop_fetch = prepared_image(case)
+            exp_mem = memory_expected(case, start)
+        except Exception as exc:
+            failed += 1
+            fails.append(f"{case['id']}: {type(exc).__name__}: {exc}")
+            continue
+        manifest.append({
+            "id": case["id"],
+            "image": {str(a): b for a, b in image.items()},
+            "stop_fetch": stop_fetch,
+            "probes": sorted(exp_mem),
+        })
+        metas[case["id"]] = (case, start, exp_mem)
+
+    try:
+        results = batch_run(manifest)
+    except Exception as exc:
+        sys.exit(f"batch sim failed: {exc}")
+    for entry in manifest:
+        case, start, exp_mem = metas[entry["id"]]
+        result = results.get(entry["id"])
+        if result is None:
+            failed += 1
+            fails.append(f"{case['id']}: no result from batch sim")
+            continue
+        ok, fail = compare_case(case, start, exp_mem, result)
+        if ok:
+            passed += 1
+        else:
+            failed += 1
+            fails.append(fail)
     for f in fails:
         print("  FAIL", f)
     tag = "EXEC-SAIL PASS" if failed == 0 else "EXEC-SAIL FAIL"

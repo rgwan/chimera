@@ -508,6 +508,8 @@ EOF
         cocotbBuildInputs = [
           cocotbPythonEnv
           pkgs.verilator
+          # Icarus runs the execution cases that read internal register/CCR taps.
+          pkgs.iverilog
           pkgs.gcc
           pkgs.gnumake
           pkgs.git

@@ -1,21 +1,9 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
-"""Execution-equivalence cases on Core, run on Icarus so the architectural state
-can be read through hierarchical taps (dut.h8rf.dbg, dut.ccr.hnzvc) the way the
-Verilog benches did. Each case is its own cocotb test: it loads a small program,
-resets, runs, and checks the register file and CCR after retire. Ports
-test/core/tb_core_{add,sub,byte,imm,flags,loop}.v.
-"""
+"""ALU and data-movement execution cases (base Core config). Ports
+test/core/tb_core_{add,sub,byte,imm,flags,loop,movw,daa_das}.v."""
 
-import cocotb
-from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles, RisingEdge
-
-RESET_SP = 0x0200
-RESET_PC = 0x0030
-
-# hnzvc flag bits, matching dut.ccr.hnzvc (H N Z V C, H is the MSB).
-H, N, Z, V, C = 0x10, 0x08, 0x04, 0x02, 0x01
+from executil import C, H, N, V, Z, make_tests
 
 CASES = {
     # mov.b #5,R0L ; mov.b #3,R1L ; add.b R1L,R0L
@@ -56,113 +44,34 @@ CASES = {
         "cycles": 120,
         "regs": {0: 0x0003},
     },
+    # mov.w #0x1234,R0
+    "movw": {
+        "prog": [0x79, 0x00, 0x12, 0x34],
+        "cycles": 60,
+        "regs": {0: 0x1234},
+    },
+    # daa/das over ldc-preset flags; CCR snapshots land in R5/R6 halves via stc.
+    # SP boots 0 so R7 only holds the last snapshot byte.
+    "daa_das": {
+        "sp": 0x0000,
+        "prog": [
+            0x07, 0x00, 0xF0, 0x09, 0x0F, 0x00,              # daa r0h (09+cc=0)
+            0x07, 0x00, 0xF9, 0x0A, 0x0F, 0x09,              # daa r1l (0a -> 10)
+            0x07, 0x00, 0xF2, 0xA0, 0x0F, 0x02, 0x02, 0x0D,  # daa r2h, stc r5l
+            0x07, 0x21, 0xFF, 0x33, 0x0F, 0x0F, 0x02, 0x0E,  # daa r7l, stc r6l
+            0x07, 0x00, 0xF3, 0x99, 0x1F, 0x03,              # das r3h (99 stays)
+            0x07, 0x20, 0xFB, 0x06, 0x1F, 0x0B, 0x02, 0x05,  # das r3l, stc r5h
+            0x07, 0x01, 0xF4, 0x70, 0x1F, 0x04,              # das r4h (borrow)
+            0x07, 0x21, 0xFC, 0x66, 0x1F, 0x0C, 0x02, 0x06,  # das r4l, stc r6h
+            0x40, 0xFE,                                       # halt
+        ],
+        "cycles": 460,
+        "regs": {
+            0: 0x0900, 1: 0x0010, 2: 0x0000, 3: 0x9900,
+            4: 0x1000, 5: 0x2405, 6: 0x2529, 7: 0x0099,
+        },
+        "ccr": H | Z | C,
+    },
 }
 
-
-class RamSlave:
-    """Byte-addressed RAM on the core bus: combinational big-endian read,
-    synchronous masked write. Unresolvable bus values are tolerated only while
-    reset is asserted (Icarus powers up at X); after release they are errors."""
-
-    def __init__(self, dut):
-        self.dut = dut
-        self.mem = bytearray(0x10000)
-
-    def load(self, prog):
-        self.mem[:] = bytearray(0x10000)
-        self.mem[0x0002] = RESET_SP >> 8
-        self.mem[0x0003] = RESET_SP & 0xFF
-        self.mem[0x0006] = RESET_PC >> 8
-        self.mem[0x0007] = RESET_PC & 0xFF
-        for i, b in enumerate(prog):
-            self.mem[RESET_PC + i] = b
-
-    def _in_reset(self):
-        rv = self.dut.reset.value
-        return not rv.is_resolvable or int(rv) == 1
-
-    def _drive_read(self):
-        self.dut.bus_rdy.value = 1
-        av = self.dut.bus_addr.value
-        if not av.is_resolvable:
-            assert self._in_reset(), "bus_addr X after reset release"
-            self.dut.bus_rdata.value = 0
-            return
-        addr = int(av)
-        self.dut.bus_rdata.value = (self.mem[addr & 0xFFFF] << 8) | self.mem[
-            (addr + 1) & 0xFFFF
-        ]
-
-    async def _reads(self):
-        self._drive_read()
-        while True:
-            await self.dut.bus_addr.value_change
-            self._drive_read()
-
-    async def _writes(self):
-        while True:
-            await RisingEdge(self.dut.clock)
-            req = self.dut.bus_req.value
-            we = self.dut.bus_we.value
-            if not (req.is_resolvable and we.is_resolvable):
-                assert self._in_reset(), "bus_req/bus_we X after reset release"
-                continue
-            if req == 1 and we == 1:
-                addr = int(self.dut.bus_addr.value)
-                wdata = int(self.dut.bus_wdata.value)
-                wmask = int(self.dut.bus_wmask.value)
-                if wmask & 0b10:
-                    self.mem[addr & 0xFFFF] = (wdata >> 8) & 0xFF
-                if wmask & 0b01:
-                    self.mem[(addr + 1) & 0xFFFF] = wdata & 0xFF
-                self._drive_read()
-
-    async def run(self):
-        cocotb.start_soon(self._reads())
-        await self._writes()
-
-
-def reg(dut, n):
-    return (int(dut.h8rf.dbg.value) >> (16 * n)) & 0xFFFF
-
-
-async def run_case(dut, name):
-    spec = CASES[name]
-    dut.reset.value = 1
-    dut.irq.value = 0
-    dut.nmi.value = 0
-    dut.irq_number.value = 0
-    dut.vt_base.value = 0
-    dut.bus_rdy.value = 1
-    dut.bus_rdata.value = 0
-
-    ram = RamSlave(dut)
-    ram.load(spec["prog"])
-    cocotb.start_soon(ram.run())
-    cocotb.start_soon(Clock(dut.clock, 10, unit="ns").start())
-    await ClockCycles(dut.clock, 4)
-    dut.reset.value = 0
-    await ClockCycles(dut.clock, spec["cycles"])
-
-    for n, exp in spec["regs"].items():
-        got = reg(dut, n)
-        assert got == exp, f"{name}: R{n}=0x{got:04x} exp 0x{exp:04x}"
-    if "ccr" in spec:
-        got = int(dut.ccr.hnzvc.value)
-        assert got == spec["ccr"], (
-            f"{name}: hnzvc=0b{got:05b} exp 0b{spec['ccr']:05b}"
-        )
-    dut._log.info("EXEC %s PASS", name)
-
-
-def _make_test(name):
-    async def body(dut):
-        await run_case(dut, name)
-
-    body.__name__ = f"exec_{name}"
-    body.__qualname__ = body.__name__
-    return cocotb.test()(body)
-
-
-for _name in CASES:
-    globals()[f"exec_{_name}"] = _make_test(_name)
+make_tests(CASES, globals())

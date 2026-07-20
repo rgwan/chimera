@@ -108,7 +108,9 @@ def check_state(dut, ram, name, spec):
         assert got == exp, f"{name}: mem[0x{addr:04x}]=0x{got:02x} exp 0x{exp:02x}"
 
 
-async def run_case(dut, name, spec):
+async def init_core(dut, ram):
+    """Drive inputs to reset state, start the RAM slave and clock, hold reset
+    four cycles, then release it."""
     dut.reset.value = 1
     dut.irq.value = 0
     dut.nmi.value = 0
@@ -116,13 +118,16 @@ async def run_case(dut, name, spec):
     dut.vt_base.value = 0
     dut.bus_rdy.value = 1
     dut.bus_rdata.value = 0
-
-    ram = RamSlave(dut)
-    ram.load(spec)
     cocotb.start_soon(ram.run())
     cocotb.start_soon(Clock(dut.clock, 10, unit="ns").start())
     await ClockCycles(dut.clock, 4)
     dut.reset.value = 0
+
+
+async def run_case(dut, name, spec):
+    ram = RamSlave(dut)
+    ram.load(spec)
+    await init_core(dut, ram)
     await ClockCycles(dut.clock, spec["cycles"])
 
     check_state(dut, ram, name, spec)

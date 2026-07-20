@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
 
-.PHONY: bench-dhry bench-coremark check-sleep-strict build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-sleep check-debug check-jtag check-autohalt check-hwbp-selfhosted check-hwbp-dm check-step-selfhosted check-step-dm check-trap2-suppress check-nondestruct check-jtag2gdb check-gdb-e2e verify-debug check-formal-debug check-formal-core check-formal-decode verify-formal check-rom-hex check-stack-byte check-irq-vector check-trapa gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model check-axilite check-cocotb-jtag check-cocotb-axi check-cocotb-exec verify-cocotb verify-smoke check clean
+.PHONY: bench-dhry bench-coremark check-sleep-strict build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-sleep check-debug check-jtag check-autohalt check-hwbp-selfhosted check-hwbp-dm check-step-selfhosted check-step-dm check-trap2-suppress check-nondestruct check-jtag2gdb check-gdb-e2e verify-debug check-formal-debug check-formal-core check-formal-decode verify-formal check-rom-hex check-irq-vector check-trapa gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model check-axilite check-cocotb-jtag check-cocotb-axi check-cocotb-exec verify-cocotb verify-smoke check clean
 
 build: smoke
 
@@ -45,12 +45,6 @@ check-biu:
 	TOP=Biu bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/tb_biu test/biu/tb_biu.v rtl/generated/Biu.sv
 	vvp rtl/generated/tb_biu
-
-check-core:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_core test/core/tb_core.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_core
 
 check-core-wait:
 	bash rtl/build.sh
@@ -238,42 +232,6 @@ check-irq-vector:
 	iverilog -g2012 -o rtl/generated/sim_irq_vector test/core/tb_core_irq_vector.v \
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_irq_vector
-
-check-mem:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_mem test/core/tb_core_mem.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_mem
-
-check-mem-byte:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_mem_byte test/core/tb_core_mem_byte.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_mem_byte
-
-check-mem-disp:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_mem_disp test/core/tb_core_mem_disp.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_mem_disp
-
-check-mem-abs:
-	STRICT_DECODE=true bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_mem_abs test/core/tb_core_mem_abs.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_mem_abs
-
-check-stack:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_stack test/core/tb_core_stack.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_stack
-
-check-stack-byte:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_stack_byte test/core/tb_core_stack_byte.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_stack_byte
 
 check-rte:
 	bash rtl/build.sh

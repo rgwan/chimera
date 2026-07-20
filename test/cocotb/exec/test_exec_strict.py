@@ -2,11 +2,35 @@
 # SPDX-License-Identifier: MIT
 """Execution cases needing STRICT_DECODE=true, where guarded/rejected opcode
 aliases must decode illegal. Ports test/core/tb_core_{word_reg,ccr,adds_subs,
-mulxu,divxu}.v."""
+mulxu,divxu,mem_abs}.v."""
 
 from executil import C, H, N, V, Z, make_tests
 
 CASES = {
+    # abs:8/abs:16 load/store both lanes; rejected base slots leave memory
+    # untouched (0x0144/0xff40 keep their preloads).
+    "mem_abs": {
+        "prog": [
+            0x07, 0x23,              # ldc #0x23,ccr
+            0x28, 0x40,              # mov.b @0x40:8,R0L
+            0x38, 0x41,              # mov.b R0L,@0x41:8
+            0x6A, 0x02, 0x01, 0x44,  # mov.b @0x0144:16,R2H
+            0x6A, 0x82, 0x01, 0x45,  # mov.b R2H,@0x0145:16
+            0x6B, 0x01, 0x01, 0x40,  # mov.w @0x0140:16,R1
+            0x6B, 0x81, 0x01, 0x42,  # mov.w R1,@0x0142:16
+            0x6A, 0x48, 0x01, 0x40,  # rejected base slot
+            0x6A, 0xC8, 0x01, 0x45,  # rejected base slot
+            0xF4, 0x55,              # mov.b #0x55,R4H
+        ],
+        "data": {
+            0xFF40: 0x80, 0xFF41: 0xAA, 0x0140: 0x12, 0x0141: 0x34,
+            0x0142: 0xAA, 0x0143: 0x55, 0x0144: 0x7F, 0x0145: 0xAA,
+        },
+        "cycles": 200,
+        "regs": {0: 0x0080, 1: 0x1234, 2: 0x7F00, 4: 0x5500},
+        "ccr": H | C,
+        "mem": {0xFF41: 0x80, 0x0142: 0x12, 0x0143: 0x34, 0x0145: 0x7F},
+    },
     # add/mov/sub/cmp.w with a trailing guarded invalid alias (09 18).
     "word_reg": {
         "prog": [

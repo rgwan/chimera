@@ -70,11 +70,10 @@ check-debug:
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_debug
 
-check-jtag:
-	DM=true bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_jtag test/core/tb_core_top_jtag.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_jtag
+# The standalone JTAG DTM path is verified in cocotb (check-cocotb-jtag), which
+# drives the same TAP pins in-process; this alias keeps the old target name and
+# the debug aggregate pointing at it.
+check-jtag: check-cocotb-jtag
 
 check-hwbp-selfhosted:
 	HW_BREAKPOINT=true HW_BREAKPOINT_COUNT=2 DBG_BASE=65280 bash rtl/build.sh

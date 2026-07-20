@@ -61,40 +61,25 @@ check-debug:
 check-jtag: check-cocotb-jtag
 
 check-hwbp-selfhosted:
-	HW_BREAKPOINT=true HW_BREAKPOINT_COUNT=2 DBG_BASE=65280 bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_hwbp_self test/core/tb_core_hwbp_selfhosted.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_hwbp_self
+	python3 test/cocotb/exec/run_exec.py hwbp_self
 
 check-hwbp-dm:
 	python3 test/cocotb/debug/run_dm.py hwbp
 
 check-step-selfhosted:
-	SINGLE_STEP=true DBG_BASE=65280 bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_step_self test/core/tb_core_step_selfhosted.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_step_self
+	python3 test/cocotb/exec/run_exec.py step_self
 
 check-step-dm:
 	python3 test/cocotb/debug/run_dm.py step
 
 check-trap2-suppress:
-	SINGLE_STEP=true HW_BREAKPOINT=true HW_BREAKPOINT_COUNT=2 DBG_BASE=65280 bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_trap2_suppress test/core/tb_core_trap2_suppress.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_trap2_suppress
+	python3 test/cocotb/exec/run_exec.py trap2
 
 check-nondestruct:
-	TOP=Core DM=true SINGLE_STEP=true DBG_BASE=65280 bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_nondestruct test/core/tb_core_nondestruct.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_nondestruct
+	python3 test/cocotb/debug/run_dm.py nondestruct
 
 check-autohalt:
-	DM=true bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_autohalt test/core/tb_core_autohalt.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_autohalt
+	python3 test/cocotb/debug/run_dm.py autohalt
 
 check-jtag2gdb:
 	cd tools/jtag2gdb && cargo test

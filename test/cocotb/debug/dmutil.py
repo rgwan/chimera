@@ -39,9 +39,18 @@ class RamSlave:
         lo = self.mem[(addr + 1) & 0xFFFF]
         return (hi << 8) | lo
 
+    def _in_reset(self):
+        rv = self.dut.reset.value
+        return not rv.is_resolvable or int(rv) == 1
+
     def _drive_read(self):
         self.dut.bus_rdy.value = 1
-        self.dut.bus_rdata.value = self.read_word(int(self.dut.bus_addr.value))
+        av = self.dut.bus_addr.value
+        if not av.is_resolvable:  # X until reset settles on Icarus
+            assert self._in_reset(), "bus_addr X after reset release"
+            self.dut.bus_rdata.value = 0
+            return
+        self.dut.bus_rdata.value = self.read_word(int(av))
 
     async def _reads(self):
         self._drive_read()
@@ -52,7 +61,12 @@ class RamSlave:
     async def _writes(self):
         while True:
             await RisingEdge(self.dut.clock)
-            if self.dut.bus_req.value == 1 and self.dut.bus_we.value == 1:
+            req = self.dut.bus_req.value
+            we = self.dut.bus_we.value
+            if not (req.is_resolvable and we.is_resolvable):
+                assert self._in_reset(), "bus_req/bus_we X after reset release"
+                continue
+            if req == 1 and we == 1:
                 addr = int(self.dut.bus_addr.value)
                 wdata = int(self.dut.bus_wdata.value)
                 wmask = int(self.dut.bus_wmask.value)

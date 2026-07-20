@@ -6,9 +6,9 @@ Each test needs a different RTL config, so the runner builds Core per selector,
 then runs the matching test module against the Core toplevel. Invoke from the
 repo root inside `nix develop .#cocotb`:
 
-    python test/cocotb/debug/run_dm.py [debug|hwbp|step]
+    python test/cocotb/debug/run_dm.py [debug|hwbp|step|autohalt|nondestruct]
 
-With no argument all three run.
+With no argument all configs run.
 """
 
 import os
@@ -16,7 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from cocotb_tools.runner import get_runner
+from cocotb_tools.runner import get_results, get_runner
 
 REPO = Path(__file__).resolve().parents[3]
 GENERATED = REPO / "rtl" / "generated"
@@ -38,7 +38,28 @@ CONFIGS = {
         "env": {"DM": "true", "SINGLE_STEP": "true", "DBG_BASE": "65280"},
         "test": "test_dm_step",
     },
+    # These two verify against internal taps (dbgPc, h8rf.dbg, ccrByte), so
+    # they run on Icarus, which surfaces the hierarchy.
+    "autohalt": {"env": {"DM": "true"}, "test": "test_dm_autohalt",
+                 "sim": "icarus"},
+    "nondestruct": {
+        "env": {"DM": "true", "SINGLE_STEP": "true", "DBG_BASE": "65280"},
+        "test": "test_dm_nondestruct",
+        "sim": "icarus",
+    },
 }
+
+VERILATOR_ARGS = [
+    "--timing",
+    "-CFLAGS", "-std=c++20 -fcoroutines",
+    "-Wno-WIDTH",
+    "-Wno-SELRANGE",
+    "-Wno-BLKANDNBLK",
+    "-Wno-MINTYPMAXDLY",
+    "-Wno-CASEINCOMPLETE",
+    "-Wno-UNOPTFLAT",
+    "--bbox-unsup",
+]
 
 
 def rtl_sources():
@@ -55,34 +76,30 @@ def run_one(name):
     sources = rtl_sources()
     assert (GENERATED / f"{TOPLEVEL}.sv") in sources, f"{TOPLEVEL}.sv not generated"
 
-    runner = get_runner("verilator")
+    sim = cfg.get("sim", "verilator")
+    runner = get_runner(sim)
     runner.build(
         sources=sources,
         hdl_toplevel=TOPLEVEL,
         build_dir=GENERATED / f"cocotb_dm_{name}_build",
         always=True,
-        build_args=[
-            "--timing",
-            "-CFLAGS", "-std=c++20 -fcoroutines",
-            "-Wno-WIDTH",
-            "-Wno-SELRANGE",
-            "-Wno-BLKANDNBLK",
-            "-Wno-MINTYPMAXDLY",
-            "-Wno-CASEINCOMPLETE",
-            "-Wno-UNOPTFLAT",
-            "--bbox-unsup",
-        ],
+        build_args=["-g2012"] if sim == "icarus" else VERILATOR_ARGS,
+        timescale=("1ns", "1ps"),
     )
     extra_env = {"PYTHONPATH": os.pathsep.join(
         [str(HERE), os.environ.get("PYTHONPATH", "")]
     )}
-    runner.test(
+    results = runner.test(
         hdl_toplevel=TOPLEVEL,
         test_module=cfg["test"],
         timescale=("1ns", "1ps"),
         results_xml=f"{cfg['test']}.results.xml",
         extra_env=extra_env,
     )
+    # The sim exits 0 even when tests fail; gate on the recorded results.
+    num_tests, num_failed = get_results(results)
+    if num_failed or not num_tests:
+        raise SystemExit(f"{name}: {num_failed}/{num_tests} tests failed")
 
 
 def main():

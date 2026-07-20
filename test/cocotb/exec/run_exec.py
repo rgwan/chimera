@@ -17,7 +17,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from cocotb_tools.runner import get_runner
+from cocotb_tools.runner import get_results, get_runner
 
 REPO = Path(__file__).resolve().parents[3]
 GENERATED = REPO / "rtl" / "generated"
@@ -33,6 +33,15 @@ CONFIGS = {
         "test_exec_strict", "test_exec_trapa", "test_exec_sleep",
     ]},
     "ubit": {"env": {"CCR_UBIT": "true"}, "modules": ["test_exec_ubit"]},
+    "hwbp_self": {"env": {
+        "HW_BREAKPOINT": "true", "HW_BREAKPOINT_COUNT": "2", "DBG_BASE": "65280",
+    }, "modules": ["test_exec_hwbp_self"]},
+    "step_self": {"env": {"SINGLE_STEP": "true", "DBG_BASE": "65280"},
+                  "modules": ["test_exec_step_self"]},
+    "trap2": {"env": {
+        "SINGLE_STEP": "true", "HW_BREAKPOINT": "true",
+        "HW_BREAKPOINT_COUNT": "2", "DBG_BASE": "65280",
+    }, "modules": ["test_exec_trap2"]},
     # ROM_HEX swaps in the $readmemh microcode ROM; its image path is relative
     # to the sim cwd, so the test runs from rtl/generated.
     "romhex": {"env": {"ROM_HEX": "true"}, "modules": ["test_exec_sleep"],
@@ -68,7 +77,7 @@ def run_config(name):
     )}
     test_dir = GENERATED if cfg.get("test_dir") else None
     for module in cfg["modules"]:
-        runner.test(
+        results = runner.test(
             hdl_toplevel=TOPLEVEL,
             test_module=module,
             timescale=("1ns", "1ps"),
@@ -76,6 +85,10 @@ def run_config(name):
             extra_env=extra_env,
             test_dir=test_dir,
         )
+        # The sim exits 0 even when tests fail; gate on the recorded results.
+        num_tests, num_failed = get_results(results)
+        if num_failed or not num_tests:
+            raise SystemExit(f"{name}/{module}: {num_failed}/{num_tests} tests failed")
 
 
 def main():

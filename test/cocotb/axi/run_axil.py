@@ -14,7 +14,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from cocotb_tools.runner import get_runner
+from cocotb_tools.runner import get_results, get_runner
 
 REPO = Path(__file__).resolve().parents[3]
 GENERATED = REPO / "rtl" / "generated"
@@ -58,7 +58,7 @@ def main():
             "--bbox-unsup",
         ],
     )
-    runner.test(
+    results = runner.test(
         hdl_toplevel=TOPLEVEL,
         test_module="test_axil",
         timescale=("1ns", "1ps"),
@@ -68,6 +68,10 @@ def main():
             os.environ.get("PYTHONPATH", ""),
         ])},
     )
+    # The sim exits 0 even when tests fail; gate on recorded results.
+    num_tests, num_failed = get_results(results)
+    if num_failed or not num_tests:
+        raise SystemExit(f"axi: {num_failed}/{num_tests} tests failed")
 
 
 if __name__ == "__main__":

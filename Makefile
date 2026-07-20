@@ -65,10 +65,7 @@ check-sleep:
 	vvp rtl/generated/sim_sleep
 
 check-debug:
-	DM=true bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_debug test/core/tb_core_debug.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_debug
+	python3 test/cocotb/debug/run_dm.py debug
 
 # The standalone JTAG DTM path is verified in cocotb (check-cocotb-jtag), which
 # drives the same TAP pins in-process; this alias keeps the old target name and
@@ -82,10 +79,7 @@ check-hwbp-selfhosted:
 	vvp rtl/generated/sim_hwbp_self
 
 check-hwbp-dm:
-	TOP=Core DM=true HW_BREAKPOINT=true HW_BREAKPOINT_COUNT=2 DBG_BASE=65280 bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_hwbp_dm test/core/tb_core_hwbp_dm.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_hwbp_dm
+	python3 test/cocotb/debug/run_dm.py hwbp
 
 check-step-selfhosted:
 	SINGLE_STEP=true DBG_BASE=65280 bash rtl/build.sh
@@ -94,10 +88,7 @@ check-step-selfhosted:
 	vvp rtl/generated/sim_step_self
 
 check-step-dm:
-	TOP=Core DM=true SINGLE_STEP=true DBG_BASE=65280 bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_step_dm test/core/tb_core_step_dm.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_step_dm
+	python3 test/cocotb/debug/run_dm.py step
 
 check-trap2-suppress:
 	SINGLE_STEP=true HW_BREAKPOINT=true HW_BREAKPOINT_COUNT=2 DBG_BASE=65280 bash rtl/build.sh
@@ -128,10 +119,7 @@ check-jtag2gdb:
 GDB_E2E_EXAMPLE ?= sim_bp
 GDB_E2E_PORT ?= 2542
 check-gdb-e2e:
-	DM=true HW_BREAKPOINT=true HW_BREAKPOINT_COUNT=2 DBG_BASE=65280 bash rtl/build.sh
-	cd rtl/generated && iverilog-vpi --name=rbb_vpi ../../test/core/rbb_vpi.c
-	iverilog -g2012 -o rtl/generated/sim_rbb test/core/tb_core_top_rbb.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
+	python3 test/cocotb/rbb/run_rbb.py build
 	bash scripts/run_gdb_e2e.sh $(GDB_E2E_EXAMPLE) $(GDB_E2E_PORT)
 
 # Debug-subsystem aggregate over every debug gate (RTL + tool + e2e).

@@ -2,15 +2,15 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
 #
-# End-to-end debug bring-up: launch the remote-bitbang sim (tb_core_top_rbb +
-# rbb_vpi) as a JTAG server and drive it with a jtag2gdb example over TCP. This
-# packages the manual bring-up flow (build DM RTL, build the Rust tool, run the
-# sim, attach) into one gate. Callers build the DM RTL and the VPI first; this
+# End-to-end debug bring-up: launch the cocotb remote-bitbang server
+# (test/cocotb/rbb) as a JTAG server and drive it with a jtag2gdb example over
+# TCP. This packages the manual bring-up flow (build DM RTL, build the Rust tool,
+# run the sim, attach) into one gate. Callers build the DM RTL sim first; this
 # script only orchestrates the sim process, the host tool, and cleanup.
 #
-# The VPI server does one blocking accept(), so readiness is detected by
-# passively polling the kernel socket table (/proc/net/tcp, ss fallback), never
-# by a throwaway TCP probe that would consume that accept.
+# The server does one accept(), so readiness is detected by passively polling the
+# kernel socket table (/proc/net/tcp, ss fallback), never by a throwaway TCP
+# probe that would consume that accept.
 #
 # Args:
 #   $1  example name (sim_smoke | sim_bp | ...), default sim_bp
@@ -25,11 +25,10 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 example="${1:-sim_bp}"
 port="${2:-2542}"
 gen="$here/rtl/generated"
-sim="$gen/sim_rbb"
+build="$gen/cocotb_rbb_build"
 log="$gen/sim_rbb_${port}.log"
 
-test -x "$sim" || { echo "missing $sim (run the sim build first)"; exit 1; }
-test -f "$gen/rbb_vpi.vpi" || { echo "missing $gen/rbb_vpi.vpi (compile the VPI first)"; exit 1; }
+test -d "$build" || { echo "missing $build (run 'run_rbb.py build' first)"; exit 1; }
 
 sim_pid=""
 cleanup() {
@@ -48,7 +47,7 @@ echo "[gdb-e2e] building example '$example'"
 
 # True if a LISTEN socket is open on 127.0.0.1:$port. Both probes are passive
 # (they read kernel state, never open a TCP connection), so they do NOT consume
-# the VPI server's single blocking accept() the way a /dev/tcp probe would.
+# the server's single accept() the way a /dev/tcp probe would.
 port_hex=$(printf '%04X' "$port")
 port_listening() {
   # Primary: /proc/net/tcp is always present on Linux. Column 2 is the local
@@ -63,12 +62,12 @@ port_listening() {
 }
 
 echo "[gdb-e2e] launching sim on 127.0.0.1:$port"
-( cd "$gen" && vvp -M. -mrbb_vpi sim_rbb +port="$port" ) > "$log" 2>&1 &
+( cd "$here" && RBB_PORT="$port" python3 test/cocotb/rbb/run_rbb.py run ) \
+  > "$log" 2>&1 &
 sim_pid=$!
 
-# Wait (up to 60s) for the VPI server to actually bind and listen. vvp
-# block-buffers vpi_printf, so the sim's own "listening" line is not visible
-# until the process exits; poll the kernel socket table instead.
+# Wait (up to 60s) for the server to actually bind and listen; poll the kernel
+# socket table rather than the sim's own log line.
 echo "[gdb-e2e] waiting for sim to bind port $port"
 listening=0
 for _ in $(seq 1 600); do

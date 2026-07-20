@@ -516,6 +516,9 @@ EOF
           pkgs.mlir-install
           pkgs.jdk25
           zaoziAssembly
+          # jtag2gdb drives the cocotb remote-bitbang server in the gdb e2e gate.
+          pkgs.cargo
+          pkgs.rustc
         ];
 
         cocotbShellHook = ''

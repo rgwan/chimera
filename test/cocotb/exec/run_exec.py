@@ -25,7 +25,7 @@ HERE = Path(__file__).resolve().parent
 TOPLEVEL = "Core"
 
 CONFIGS = {
-    "base": {"env": {}, "modules": ["test_exec"]},
+    "base": {"env": {}, "modules": ["test_exec", "test_exec_flow"]},
     "strict": {"env": {"STRICT_DECODE": "true"}, "modules": ["test_exec_strict"]},
     "ubit": {"env": {"CCR_UBIT": "true"}, "modules": ["test_exec_ubit"]},
 }

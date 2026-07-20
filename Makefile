@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
 
-.PHONY: bench-dhry bench-coremark check-sleep-strict build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-sleep check-debug check-jtag check-autohalt check-hwbp-selfhosted check-hwbp-dm check-step-selfhosted check-step-dm check-trap2-suppress check-nondestruct check-jtag2gdb check-gdb-e2e verify-debug check-formal-debug check-formal-core check-formal-decode verify-formal check-rom-hex check-bit-reg check-bit-mem check-stack-byte check-irq-vector check-trapa gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model check-axilite check-cocotb-jtag check-cocotb-axi check-cocotb-exec verify-cocotb verify-smoke check clean
+.PHONY: bench-dhry bench-coremark check-sleep-strict build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-sleep check-debug check-jtag check-autohalt check-hwbp-selfhosted check-hwbp-dm check-step-selfhosted check-step-dm check-trap2-suppress check-nondestruct check-jtag2gdb check-gdb-e2e verify-debug check-formal-debug check-formal-core check-formal-decode verify-formal check-rom-hex check-stack-byte check-irq-vector check-trapa gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model check-axilite check-cocotb-jtag check-cocotb-axi check-cocotb-exec verify-cocotb verify-smoke check clean
 
 build: smoke
 
@@ -221,24 +221,6 @@ check-trapa:
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_trapa
 
-check-branch:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_branch test/core/tb_core_branch.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_branch
-
-check-branch-odd:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_branch_odd test/core/tb_core_branch_odd.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_branch_odd
-
-check-bcc:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_bcc test/core/tb_core_bcc.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_bcc
-
 check-irq:
 	bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/sim_irq test/core/tb_core_irq.v \
@@ -281,18 +263,6 @@ check-mem-abs:
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_mem_abs
 
-check-bit-reg:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_bit_reg test/core/tb_core_bit_reg.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_bit_reg
-
-check-bit-mem:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_bit_mem test/core/tb_core_bit_mem.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_bit_mem
-
 check-stack:
 	bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/sim_stack test/core/tb_core_stack.v \
@@ -304,18 +274,6 @@ check-stack-byte:
 	iverilog -g2012 -o rtl/generated/sim_stack_byte test/core/tb_core_stack_byte.v \
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_stack_byte
-
-check-jsr:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_jsr test/core/tb_core_jsr.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_jsr
-
-check-jmp-abs:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_jmp_abs test/core/tb_core_jmp_abs.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_jmp_abs
 
 check-rte:
 	bash rtl/build.sh

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
 
-.PHONY: bench-dhry bench-coremark check-sleep-strict build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-sleep check-debug check-jtag check-autohalt check-hwbp-selfhosted check-hwbp-dm check-step-selfhosted check-step-dm check-trap2-suppress check-nondestruct check-jtag2gdb check-gdb-e2e verify-debug check-formal-debug check-formal-core check-formal-decode verify-formal check-rom-hex check-irq-vector check-trapa gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model check-axilite check-cocotb-jtag check-cocotb-axi check-cocotb-exec verify-cocotb verify-smoke check clean
+.PHONY: bench-dhry bench-coremark build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-debug check-jtag check-autohalt check-hwbp-selfhosted check-hwbp-dm check-step-selfhosted check-step-dm check-trap2-suppress check-nondestruct check-jtag2gdb check-gdb-e2e verify-debug check-formal-debug check-formal-core check-formal-decode verify-formal check-rom-hex gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model check-axilite check-cocotb-jtag check-cocotb-axi check-cocotb-exec verify-cocotb verify-smoke check clean
 
 build: smoke
 
@@ -51,12 +51,6 @@ check-core-wait:
 	iverilog -g2012 -o rtl/generated/sim_core_wait test/core/tb_core_wait.v \
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_core_wait
-
-check-sleep:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_sleep test/core/tb_core_sleep.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_sleep
 
 check-debug:
 	python3 test/cocotb/debug/run_dm.py debug
@@ -197,47 +191,8 @@ check-formal-decode:
 	  echo "[formal] broken property correctly reported as violable"; \
 	fi
 
-check-sleep-strict:
-	STRICT_DECODE=true bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_sleep_strict test/core/tb_core_sleep.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_sleep_strict
-
 check-rom-hex:
-	ROM_HEX=true bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_rom_hex test/core/tb_core_sleep.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	cd rtl/generated && vvp sim_rom_hex
-
-check-trapa:
-	STRICT_DECODE=true bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_trapa test/core/tb_core_trapa.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_trapa
-
-check-irq:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_irq test/core/tb_core_irq.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_irq
-
-check-irq-entry:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_irq_entry test/core/tb_core_irq_entry.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_irq_entry
-
-check-irq-vector:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_irq_vector test/core/tb_core_irq_vector.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_irq_vector
-
-check-rte:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_rte test/core/tb_core_rte.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_rte
+	python3 test/cocotb/exec/run_exec.py romhex
 
 check-exec-sail:
 	bash rtl/build.sh

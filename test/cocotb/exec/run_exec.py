@@ -25,9 +25,18 @@ HERE = Path(__file__).resolve().parent
 TOPLEVEL = "Core"
 
 CONFIGS = {
-    "base": {"env": {}, "modules": ["test_exec", "test_exec_flow", "test_exec_mem"]},
-    "strict": {"env": {"STRICT_DECODE": "true"}, "modules": ["test_exec_strict"]},
+    "base": {"env": {}, "modules": [
+        "test_exec", "test_exec_flow", "test_exec_mem",
+        "test_exec_irq", "test_exec_sleep",
+    ]},
+    "strict": {"env": {"STRICT_DECODE": "true"}, "modules": [
+        "test_exec_strict", "test_exec_trapa", "test_exec_sleep",
+    ]},
     "ubit": {"env": {"CCR_UBIT": "true"}, "modules": ["test_exec_ubit"]},
+    # ROM_HEX swaps in the $readmemh microcode ROM; its image path is relative
+    # to the sim cwd, so the test runs from rtl/generated.
+    "romhex": {"env": {"ROM_HEX": "true"}, "modules": ["test_exec_sleep"],
+               "test_dir": "generated"},
 }
 
 
@@ -57,13 +66,15 @@ def run_config(name):
     extra_env = {"PYTHONPATH": os.pathsep.join(
         [str(HERE), os.environ.get("PYTHONPATH", "")]
     )}
+    test_dir = GENERATED if cfg.get("test_dir") else None
     for module in cfg["modules"]:
         runner.test(
             hdl_toplevel=TOPLEVEL,
             test_module=module,
             timescale=("1ns", "1ps"),
-            results_xml=f"{module}.results.xml",
+            results_xml=f"{name}_{module}.results.xml",
             extra_env=extra_env,
+            test_dir=test_dir,
         )
 
 

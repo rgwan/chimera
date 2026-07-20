@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: MIT
 """Execution-equivalence cases on Core, run on Icarus so the architectural state
 can be read through hierarchical taps (dut.h8rf.dbg, dut.ccr.hnzvc) the way the
-Verilog benches did. Each case loads a small program, runs, and checks the
-register file and CCR after retire. Ports test/core/tb_core_{add,sub,byte,imm,
-flags,loop}.v.
+Verilog benches did. Each case is its own cocotb test: it loads a small program,
+resets, runs, and checks the register file and CCR after retire. Ports
+test/core/tb_core_{add,sub,byte,imm,flags,loop}.v.
 """
 
 import cocotb
@@ -61,8 +61,8 @@ CASES = {
 
 class RamSlave:
     """Byte-addressed RAM on the core bus: combinational big-endian read,
-    synchronous masked write. load() reprograms it in place so one instance
-    serves every case."""
+    synchronous masked write. Unresolvable bus values are tolerated only while
+    reset is asserted (Icarus powers up at X); after release they are errors."""
 
     def __init__(self, dut):
         self.dut = dut
@@ -77,10 +77,15 @@ class RamSlave:
         for i, b in enumerate(prog):
             self.mem[RESET_PC + i] = b
 
+    def _in_reset(self):
+        rv = self.dut.reset.value
+        return not rv.is_resolvable or int(rv) == 1
+
     def _drive_read(self):
         self.dut.bus_rdy.value = 1
         av = self.dut.bus_addr.value
-        if not av.is_resolvable:  # X until reset settles on Icarus
+        if not av.is_resolvable:
+            assert self._in_reset(), "bus_addr X after reset release"
             self.dut.bus_rdata.value = 0
             return
         addr = int(av)
@@ -99,7 +104,10 @@ class RamSlave:
             await RisingEdge(self.dut.clock)
             req = self.dut.bus_req.value
             we = self.dut.bus_we.value
-            if req.is_resolvable and we.is_resolvable and req == 1 and we == 1:
+            if not (req.is_resolvable and we.is_resolvable):
+                assert self._in_reset(), "bus_req/bus_we X after reset release"
+                continue
+            if req == 1 and we == 1:
                 addr = int(self.dut.bus_addr.value)
                 wdata = int(self.dut.bus_wdata.value)
                 wmask = int(self.dut.bus_wmask.value)
@@ -118,8 +126,8 @@ def reg(dut, n):
     return (int(dut.h8rf.dbg.value) >> (16 * n)) & 0xFFFF
 
 
-@cocotb.test()
-async def exec_suite(dut):
+async def run_case(dut, name):
+    spec = CASES[name]
     dut.reset.value = 1
     dut.irq.value = 0
     dut.nmi.value = 0
@@ -129,26 +137,32 @@ async def exec_suite(dut):
     dut.bus_rdata.value = 0
 
     ram = RamSlave(dut)
+    ram.load(spec["prog"])
     cocotb.start_soon(ram.run())
     cocotb.start_soon(Clock(dut.clock, 10, unit="ns").start())
+    await ClockCycles(dut.clock, 4)
+    dut.reset.value = 0
+    await ClockCycles(dut.clock, spec["cycles"])
 
-    fails = []
-    for name, spec in CASES.items():
-        dut.reset.value = 1
-        ram.load(spec["prog"])
-        await ClockCycles(dut.clock, 4)
-        dut.reset.value = 0
-        await ClockCycles(dut.clock, spec["cycles"])
+    for n, exp in spec["regs"].items():
+        got = reg(dut, n)
+        assert got == exp, f"{name}: R{n}=0x{got:04x} exp 0x{exp:04x}"
+    if "ccr" in spec:
+        got = int(dut.ccr.hnzvc.value)
+        assert got == spec["ccr"], (
+            f"{name}: hnzvc=0b{got:05b} exp 0b{spec['ccr']:05b}"
+        )
+    dut._log.info("EXEC %s PASS", name)
 
-        for n, exp in spec["regs"].items():
-            got = reg(dut, n)
-            if got != exp:
-                fails.append(f"{name}: R{n}=0x{got:04x} exp 0x{exp:04x}")
-        if "ccr" in spec:
-            got = int(dut.ccr.hnzvc.value)
-            if got != spec["ccr"]:
-                fails.append(f"{name}: hnzvc=0b{got:05b} exp 0b{spec['ccr']:05b}")
-        dut._log.info("exec %s checked", name)
 
-    assert not fails, "; ".join(fails)
-    dut._log.info("EXEC PASS: %d cases", len(CASES))
+def _make_test(name):
+    async def body(dut):
+        await run_case(dut, name)
+
+    body.__name__ = f"exec_{name}"
+    body.__qualname__ = body.__name__
+    return cocotb.test()(body)
+
+
+for _name in CASES:
+    globals()[f"exec_{_name}"] = _make_test(_name)

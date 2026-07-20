@@ -221,24 +221,6 @@ check-trapa:
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_trapa
 
-check-add:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_add test/core/tb_core_add.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_add
-
-check-byte:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_byte test/core/tb_core_byte.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_byte
-
-check-flags:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_flags test/core/tb_core_flags.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_flags
-
 check-ccr:
 	STRICT_DECODE=true bash rtl/build.sh
 	iverilog -g2012 -o rtl/generated/sim_ccr test/core/tb_core_ccr.v \
@@ -250,12 +232,6 @@ check-ccr-ubit:
 	iverilog -g2012 -o rtl/generated/sim_ccr_ubit test/core/tb_core_ccr_ubit.v \
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_ccr_ubit
-
-check-imm:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_imm test/core/tb_core_imm.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_imm
 
 check-branch:
 	bash rtl/build.sh
@@ -274,18 +250,6 @@ check-bcc:
 	iverilog -g2012 -o rtl/generated/sim_bcc test/core/tb_core_bcc.v \
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	vvp rtl/generated/sim_bcc
-
-check-loop:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_loop test/core/tb_core_loop.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_loop
-
-check-sub:
-	bash rtl/build.sh
-	iverilog -g2012 -o rtl/generated/sim_sub test/core/tb_core_sub.v \
-	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
-	vvp rtl/generated/sim_sub
 
 check-irq:
 	bash rtl/build.sh
@@ -453,6 +417,9 @@ check-cocotb-axi:
 	PYTHONPATH=$(CURDIR)/test:$$PYTHONPATH \
 	  python3 test/cocotb/axi/run_axil.py
 
+# cocotb simulator routing: port-observable tests run on Verilator; tests that
+# read internal taps (dut.h8rf.dbg, dut.ccr.hnzvc) run on Icarus, which
+# surfaces the hierarchy.
 check-cocotb-exec:
 	python3 test/cocotb/exec/run_exec.py
 

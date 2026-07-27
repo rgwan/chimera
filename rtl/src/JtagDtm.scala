@@ -229,26 +229,25 @@ object JtagDtm
 
     // ---- Formal (formal-only; absent from every non-formal build). ----
     // The go-strobe launch is the sole gate on reqReg rising: reqReg may go from
-    // low to high only in a cycle where launch (= updateDr & isControl &
-    // goStrobe & !reqReg) holds. Expressed as a single-cycle combinational
-    // property over the register's next value reqNext, so it holds from any
-    // initial state (circt-bmc seeds registers arbitrarily -> no reset needed).
-    // Emitted directly (unlayered) so circt-bmc sees the assert inside JtagDtm;
-    // parameter.formal defaults off, so production stays byte-identical.
+    // low to high only after a cycle in which launch (= updateDr & isControl &
+    // goStrobe & !reqReg) held. The antecedent is delayed through one-deep
+    // formal-only shadow registers so the assertion observes the real reqReg
+    // flop; circt-bmc seeds registers arbitrarily and applies no reset, so it
+    // runs with --ignore-asserts-until=1. Emitted directly (unlayered) so
+    // circt-bmc sees the assert inside JtagDtm; parameter.formal defaults off,
+    // so production stays byte-identical.
     if parameter.formal then
-      // reqReg's D input: launch sets it, the two clear terms drop it, launch
-      // wins (last connect). When reqReg is low the clears are inactive, so a
-      // rise (reqNext & !reqReg) can come only from launch.
       val launch  = updateDr & isControl & goStrobe & (!reqReg)
-      val clear   = (reqReg & ackSync) | (reqReg & isResumeCmd & (!haltSync))
-      val reqNext = launch | (reqReg & (!clear))
+      val reqPast = RegInit(false.B); reqPast := reqReg
       if parameter.formalBroken then
         // Deliberately false: claims a CONTROL Update-DR with reqReg low must
         // make reqReg rise, ignoring the go strobe. When goStrobe=0 launch is
         // false and reqReg stays low, so circt-bmc must report "Assertion can
         // be violated!".
-        val ctlRise = updateDr & isControl & (!reqReg)
-        Assert(((!ctlRise) | (reqNext & (!reqReg))).I, "go_strobe_sole_gate")
+        val ctlRise     = updateDr & isControl & (!reqReg)
+        val ctlRisePast = RegInit(false.B); ctlRisePast := ctlRise
+        Assert(((!ctlRisePast) | (reqReg & (!reqPast))).I, "go_strobe_sole_gate")
       else
-        // reqNext & !reqReg (a rise) implies launch.
-        Assert(((!(reqNext & (!reqReg))) | launch).I, "go_strobe_sole_gate")
+        // A rise of the real reqReg implies launch held the cycle before.
+        val launchPast = RegInit(false.B); launchPast := launch
+        Assert(((!(reqReg & (!reqPast))) | launchPast).I, "go_strobe_sole_gate")

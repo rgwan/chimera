@@ -104,8 +104,10 @@ verify-debug: $(DEBUG_CHECKS)
 # CIRCT-native bounded model checking (circt-bmc). check-formal-debug proves the
 # JtagDtm go-strobe launch gate holds AND that its deliberately-broken variant is
 # caught, so the harness is demonstrably non-vacuous. FORMAL_BMC_BOUND sets the
-# unroll depth.
+# unroll depth; IGNORE_ASSERTS_UNTIL=1 skips the cycle in which the property's
+# one-deep shadow registers still hold their arbitrary initial value.
 FORMAL_BMC_BOUND ?= 20
+check-formal-debug: export IGNORE_ASSERTS_UNTIL = 1
 check-formal-debug:
 	FORMAL_BROKEN=false bash formal/lower.sh JtagDtm
 	bash formal/run_bmc.sh JtagDtm $(FORMAL_BMC_BOUND)
@@ -127,12 +129,14 @@ verify-formal: check-formal-debug check-formal-core check-formal-decode
 #
 # circt-bmc verifies one self-contained module: lower.sh leaves Core's children
 # as hw.module.extern, which the tool cannot see through (black-box ports merge
-# into a false comb cycle). FLATTEN_CORE lowers every child mlirbc to hw dialect,
-# splices all real hw.module bodies into one file (Microsequencer's registered
-# upc cuts the datapath loop, so no true cycle remains), folds the four DV-probe
-# hw.wire taps that circt-bmc rejects, and lowers array ops to comb. The result
-# is a single sound module circt-bmc flattens; children stay real logic so no
-# signal is over-approximated.
+# into a false comb cycle, and --flatten-modules cannot inline an extern).
+# FLATTEN_CORE lowers every child mlirbc to hw dialect, splices all real
+# hw.module bodies into one file (Microsequencer's registered upc cuts the
+# datapath loop, so no true cycle remains), folds the four DV-probe hw.wire taps
+# that circt-bmc rejects, and lowers array ops to comb. The result is a single
+# sound module circt-bmc flattens; children stay real logic so no signal is
+# over-approximated. Child asserts stay inside their instances, so this target
+# judges only Core's own properties.
 FORMAL_CORE_BOUND ?= 3
 define FLATTEN_CORE
 	out=formal/gen; rm -f $$out/*_hwmod.mlir; \
@@ -146,6 +150,7 @@ define FLATTEN_CORE
 	  < $$out/Core_flat_raw.mlir > $$out/Core_flat_nowire.mlir; \
 	circt-opt --hw-aggregate-to-comb $$out/Core_flat_nowire.mlir -o $$out/Core_flat_bmc.mlir
 endef
+check-formal-core: export IGNORE_ASSERTS_UNTIL = 1
 check-formal-core:
 	DM=true HW_BREAKPOINT=true FORMAL_BROKEN=false bash formal/lower.sh Core
 	@$(FLATTEN_CORE)

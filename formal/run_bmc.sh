@@ -9,6 +9,9 @@
 # Usage: formal/run_bmc.sh <ModuleName> [bound] [mlir]
 #   Prints circt-bmc output and exits 0 only if the bound is reached with no
 #   violations. A violated property (broken variant) exits non-zero.
+#   IGNORE_ASSERTS_UNTIL=N skips the first N cycles, needed when a property
+#   delays its antecedent through N formal-only shadow registers whose initial
+#   value circt-bmc picks arbitrarily.
 # Run inside `nix develop`.
 set -euo pipefail
 
@@ -16,11 +19,13 @@ mod="${1:?usage: run_bmc.sh <ModuleName> [bound] [mlir]}"
 bound="${2:-20}"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mlir="${3:-$here/gen/${mod}_bmc.mlir}"
+ignore="${IGNORE_ASSERTS_UNTIL:-0}"
 
 : "${Z3_LIB:?set Z3_LIB to libz3.so (nix develop provides it)}"
 [ -f "$mlir" ] || { echo "[formal] missing $mlir; run lower.sh first" >&2; exit 2; }
 
 out="$(circt-bmc "$mlir" -b "$bound" --module "$mod" \
+  --ignore-asserts-until="$ignore" \
   --rising-clocks-only --shared-libs="$Z3_LIB" 2>&1)"
 echo "$out"
 grep -q "Bound reached with no violations" <<<"$out"

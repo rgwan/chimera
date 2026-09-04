@@ -45,7 +45,8 @@ scala_args=(
   --extra-jars "$ZAOZI_JAR"
   --scala-version "${SCALA_VERSION:-3.8.4}"
   # .scala-build goes beside the output, so two builds with different
-  # CHIMERA_RTL_OUT never share a workspace.
+  # CHIMERA_RTL_OUT never share a workspace. It is removed again below: the
+  # output of a nix build has to be the emitted RTL and nothing else.
   --workspace "$out"
   --java-home "$JAVA_HOME"
   -O=-experimental
@@ -88,5 +89,7 @@ if [ "${ROM_HEX:-false}" = "true" ]; then
   cp "$here/verilog/MicrocodeRomHex.sv" "$out/MicrocodeRom.sv"
   rm -f "$out"/layers-MicrocodeRom-DV.sv
 fi
+
+rm -rf "$out/.scala-build" "$out/.bsp"
 
 echo "[chimera-rtl] wrote SystemVerilog to $out"

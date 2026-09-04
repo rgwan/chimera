@@ -37,7 +37,7 @@ case class ChimeraParameter(
   singleStep:         Boolean = false,
   dmAutoHalt:         Boolean = false,
   formal:             Boolean = false,
-  formalBroken:       Boolean = false,
+  formalBroken:       Int = 0,
   axilite:            Boolean = false,
   axiDataWidth:       Int = 32,
   idcode:             Long = 0x00114514L,

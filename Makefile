@@ -129,10 +129,10 @@ DEBUG_GEN = $(FORMAL_GEN)/debug
 check-formal-debug: export EXPECT_LABELS = go_strobe_sole_gate
 check-formal-debug:
 	rm -rf $(DEBUG_GEN)
-	FORMAL_BROKEN=false bash formal/lower.sh JtagDtm $(DEBUG_GEN)
+	FORMAL_BROKEN=0 bash formal/lower.sh JtagDtm $(DEBUG_GEN)
 	bash formal/run_bmc.sh JtagDtm $(FORMAL_BMC_BOUND) \
 	  $(DEBUG_GEN)/JtagDtm_bmc.mlir
-	FORMAL_BROKEN=true bash formal/lower.sh JtagDtm $(DEBUG_GEN)
+	FORMAL_BROKEN=2 bash formal/lower.sh JtagDtm $(DEBUG_GEN)
 	$(call formal-must-fail,go_strobe_sole_gate,bash formal/run_bmc.sh JtagDtm \
 	  $(FORMAL_BMC_BOUND) $(DEBUG_GEN)/JtagDtm_bmc.mlir)
 
@@ -158,7 +158,8 @@ verify-formal: check-formal-selftest check-formal-debug check-formal-core \
 # file with the other assertions removed.
 FORMAL_CORE_BOUND ?= 3
 CORE_GEN = $(FORMAL_GEN)/core
-CORE_LABELS = autohalt_resume_sound trap2_single_entry
+CORE_LABELS = autohalt_forces_latch:3 autoresume_releases:4 \
+  trap2_no_spurious_clear:5 trap2_no_spurious_set:6
 define FLATTEN_CORE
 	set -e; out=$(CORE_GEN); rm -f $$out/*_hwmod.mlir $$out/Core_flat_*.mlir; \
 	for f in $$out/*.mlirbc; do b=$$(basename $$f .mlirbc); \
@@ -178,22 +179,21 @@ define FLATTEN_CORE
 	  echo "[formal] Core_flat_bmc.mlir still carries ltl ops" >&2; exit 2; fi; \
 	test "$$(grep -c 'verif\.assert' $$out/Core_flat_bmc.mlir)" -gt 0
 endef
-check-formal-core: export IGNORE_ASSERTS_UNTIL = 1
 check-formal-core:
 	rm -rf $(CORE_GEN)
-	DM=true HW_BREAKPOINT=true FORMAL_BROKEN=false \
+	DM=true HW_BREAKPOINT=true FORMAL_BROKEN=0 \
 	  bash formal/lower.sh Core $(CORE_GEN)
 	@$(FLATTEN_CORE)
-	@set -e; for l in $(CORE_LABELS); do \
+	@set -e; for e in $(CORE_LABELS); do l=$${e%%:*}; \
 	  bash formal/select_label.sh $(CORE_GEN)/Core_flat_bmc.mlir $$l \
 	    $(CORE_GEN)/one.mlir; \
 	  EXPECT_LABELS=$$l bash formal/run_bmc.sh Core $(FORMAL_CORE_BOUND) \
 	    $(CORE_GEN)/one.mlir; \
 	done
-	DM=true HW_BREAKPOINT=true FORMAL_BROKEN=true \
-	  bash formal/lower.sh Core $(CORE_GEN)
-	@$(FLATTEN_CORE)
-	@set -e; for l in $(CORE_LABELS); do \
+	@set -e; for e in $(CORE_LABELS); do l=$${e%%:*}; k=$${e##*:}; \
+	  DM=true HW_BREAKPOINT=true FORMAL_BROKEN=$$k \
+	    bash formal/lower.sh Core $(CORE_GEN) >/dev/null; \
+	  $(FLATTEN_CORE); \
 	  bash formal/select_label.sh $(CORE_GEN)/Core_flat_bmc.mlir $$l \
 	    $(CORE_GEN)/one.mlir; \
 	  echo "[formal] broken variant of $$l must be violated:"; \
@@ -216,11 +216,11 @@ DECODE_GEN = $(FORMAL_GEN)/decode
 check-formal-decode: export EXPECT_LABELS = dispatch_bucket_tag
 check-formal-decode:
 	rm -rf $(DECODE_GEN)
-	TOP=CoarseDecoder DM=false DTM=false FORMAL_BROKEN=false \
+	TOP=CoarseDecoder DM=false DTM=false FORMAL_BROKEN=0 \
 	  bash formal/lower.sh CoarseDecoder $(DECODE_GEN)
 	bash formal/run_bmc.sh CoarseDecoder 1 \
 	  $(DECODE_GEN)/CoarseDecoder_bmc.mlir
-	TOP=CoarseDecoder DM=false DTM=false FORMAL_BROKEN=true \
+	TOP=CoarseDecoder DM=false DTM=false FORMAL_BROKEN=1 \
 	  bash formal/lower.sh CoarseDecoder $(DECODE_GEN)
 	$(call formal-must-fail,dispatch_bucket_tag,bash formal/run_bmc.sh \
 	  CoarseDecoder 1 $(DECODE_GEN)/CoarseDecoder_bmc.mlir)

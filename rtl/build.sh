@@ -44,6 +44,9 @@ scala_args=(
   --server=false
   --extra-jars "$ZAOZI_JAR"
   --scala-version "${SCALA_VERSION:-3.8.4}"
+  # .scala-build goes beside the output, so two builds with different
+  # CHIMERA_RTL_OUT never share a workspace.
+  --workspace "$out"
   --java-home "$JAVA_HOME"
   -O=-experimental
   --java-opt --enable-native-access=ALL-UNNAMED
@@ -64,7 +67,7 @@ scala-cli run "${scala_args[@]}" "$src" -- \
   --hwBreakpointCount "${HW_BREAKPOINT_COUNT:-0}" \
   --singleStep "${SINGLE_STEP:-false}" \
   --dmAutoHalt "${DM_AUTO_HALT:-${DM:-false}}" \
-  --formal "${FORMAL:-false}" --formalBroken "${FORMAL_BROKEN:-false}" \
+  --formal "${FORMAL:-false}" --formalBroken "${FORMAL_BROKEN:-0}" \
   --axilite "${AXIL:-false}" --axiDataWidth "${AXI_DATA_WIDTH:-32}" \
   --dbgBase "${DBG_BASE:-65280}"
 

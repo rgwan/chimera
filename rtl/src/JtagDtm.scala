@@ -235,7 +235,7 @@ object JtagDtm
     if parameter.formal then
       given ClockEvent = posedge(io.tck)
       val launch       = updateDr & isControl & goStrobe & (!reqReg)
-      if parameter.formalBroken then
+      if parameter.formalBroken == 2 then
         // Deliberately false: drops the launch guard, claiming reqReg never
         // rises at all. A CONTROL Update-DR with the go strobe set raises it.
         Assert((!reqReg).S |=> (!reqReg).S, "go_strobe_sole_gate")

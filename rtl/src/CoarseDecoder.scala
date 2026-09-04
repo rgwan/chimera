@@ -55,7 +55,7 @@ object CoarseDecoder
       val inB    = out.bits(7, 6) === 3.B(2)           // [0xC0,0xFF]
       val inC    = !out.bit(7)                         // [0x00,0x7F]
       val tagOk  = d.?(inA, m.?(inB, inC))
-      if parameter.formalBroken then
+      if parameter.formalBroken == 1 then
         // Deliberately false: claims every word lands in bucket C's range
         // (bit7=0), which every d=1 word violates -> circt-bmc reports the
         // assertion can be violated.

@@ -20,7 +20,7 @@ fails=0
 
 src="${1:-}"
 if [ -z "$src" ]; then
-  TOP=CoarseDecoder DM=false DTM=false FORMAL_BROKEN=false \
+  TOP=CoarseDecoder DM=false DTM=false FORMAL_BROKEN=0 \
     bash "$here/lower.sh" CoarseDecoder "$work/gen" >/dev/null 2>&1 ||
     { echo "[selftest] could not lower the decoder" >&2; exit 2; }
   src="$work/gen/CoarseDecoder_bmc.mlir"

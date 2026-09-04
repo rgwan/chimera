@@ -753,32 +753,33 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
         autoResume := primDone
 
         // ---- Formal #2: auto-halt/resume soundness (unlayered, formal-only).
-        // The antecedents are delayed through one-deep formal-only shadow
-        // registers so the assertion reads the real haltLatch / wasRunning
-        // flops. circt-bmc seeds registers arbitrarily and applies no reset, so
-        // it runs with --ignore-asserts-until=1 and the invariants then hold
-        // from ANY initial state.
+        // Two named clauses, each with its own broken index so every one of
+        // them has to be falsifiable on its own.
         if parameter.formal then
-          val autoHaltReqPast = RegInit(false.B); autoHaltReqPast := autoHaltReq
-          val primDonePast    = RegInit(false.B); primDonePast := primDone
-          val autoResumePast  = RegInit(false.B); autoResumePast := autoResume
-          if parameter.formalBroken then
-            // Deliberately false: claims any served+parked window drops the
-            // halt latch, ignoring wasRunning. A host-initiated halt (served,
-            // parked, wasRunning=0) keeps haltLatch high, so BMC must find a
-            // violation.
-            val servedParkedPast = RegInit(false.B)
-            servedParkedPast := served & parked
-            Assert(((!servedParkedPast) | ((!haltLatch) & autoResumePast)).I,
-              "autohalt_resume_sound")
+          given ClockEvent = posedge(io.clock)
+          // circt-bmc leaves reset free, and a synchronous reset in the
+          // antecedent cycle drives every register low, so a clause whose
+          // consequent is "still set" has to exclude it. The two clauses whose
+          // consequent is "still clear" agree with reset and do not.
+          val notRst = !io.reset.asBool
+          // An auto-halt request forces the halt latch on the next cycle.
+          // Broken 3 drops isPrim: a non-primitive request while running takes
+          // neither the auto-halt path nor the accept path, so nothing latches.
+          if parameter.formalBroken == 3 then
+            Assert((request & (!parked) & (!haltLatch) & notRst).S |=>
+              haltLatch.S, "autohalt_forces_latch")
           else
-            // (a) An auto-halt request forces the halt latch on the next cycle;
-            // (b) auto-resume completion pulses resume, drops the latch and
-            // clears wasRunning, so a memop that auto-halted resumes exactly once.
-            val a = (!autoHaltReqPast) | haltLatch
-            val b = (!primDonePast) |
-              ((!haltLatch) & autoResumePast & (!wasRunning))
-            Assert((a & b).I, "autohalt_resume_sound")
+            Assert((autoHaltReq & notRst).S |=> haltLatch.S,
+              "autohalt_forces_latch")
+          // Completion of an auto-halted primitive releases the latch and the
+          // resume flag, so it resumes exactly once. Broken 4 drops wasRunning,
+          // and a host-initiated halt then keeps the latch high.
+          if parameter.formalBroken == 4 then
+            Assert((served & parked).S |=> ((!haltLatch) & (!wasRunning)).S,
+              "autoresume_releases")
+          else
+            Assert(primDone.S |=> ((!haltLatch) & (!wasRunning)).S,
+              "autoresume_releases")
       end if
       dmHalt = Some(haltLatch)
 
@@ -864,30 +865,25 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       // Suppress fires only for a self-hosted handler (no debugger present).
       trap2Suppress := trap2Active & (!dmPresent)
 
-      // ---- Formal #3: trap-2 single-entry (unlayered, formal-only). The edge
-      // antecedents are delayed through one-deep formal-only shadow registers
-      // so the assertion reads the real trap2Active flop. circt-bmc seeds
-      // registers arbitrarily and applies no reset, so it runs with
-      // --ignore-asserts-until=1 and holds over every state.
+      // ---- Formal #3: trap-2 single-entry (unlayered, formal-only). Two named
+      // clauses: suppression clears only on a non-nested RTE with no concurrent
+      // ack, and it sets only on the ack.
       if parameter.formal then
-        val trap2ActivePast = RegInit(false.B); trap2ActivePast := trap2Active
-        val trap2AckPast    = RegInit(false.B); trap2AckPast := trap2Ack
-        val trap2RtePast    = RegInit(false.B); trap2RtePast := trap2Rte
-        if parameter.formalBroken then
-          // Deliberately false: widens the fall antecedent from a 1->0 edge to
-          // "was set at all", claiming every set cycle was preceded by a
-          // non-nested RTE. A suppression that simply stays set violates it.
-          Assert((((!trap2ActivePast) | (trap2RtePast & (!trap2AckPast))) &
-            ((!((!trap2ActivePast) & trap2Active)) | trap2AckPast)).I,
-            "trap2_single_entry")
+        given ClockEvent = posedge(io.clock)
+        val notRst = !io.reset.asBool
+        // Broken 5 drops the RTE guard, claiming suppression never clears.
+        if parameter.formalBroken == 5 then
+          Assert((trap2Active & notRst).S |=> trap2Active.S,
+            "trap2_no_spurious_clear")
         else
-          // A clear (1->0) implies a non-nested RTE and no concurrent ack, and
-          // a set (0->1) implies the trap-2 ack, so entry is single.
-          val fallGuard = (!(trap2ActivePast & (!trap2Active))) |
-            (trap2RtePast & (!trap2AckPast))
-          val riseImpliesAck =
-            (!((!trap2ActivePast) & trap2Active)) | trap2AckPast
-          Assert((fallGuard & riseImpliesAck).I, "trap2_single_entry")
+          Assert((trap2Active & (!(trap2Rte & (!trap2Ack))) & notRst).S |=>
+            trap2Active.S, "trap2_no_spurious_clear")
+        // Broken 6 drops the ack term, claiming suppression never sets.
+        if parameter.formalBroken == 6 then
+          Assert((!trap2Active).S |=> (!trap2Active).S, "trap2_no_spurious_set")
+        else
+          Assert(((!trap2Active) & (!trap2Ack)).S |=> (!trap2Active).S,
+            "trap2_no_spurious_set")
 
       // FSM invariant: the clear (trap2Rte) is guarded by !serviceActive so an
       // RTE taken while an NMI/IRQ is in service never lifts the suppression, and

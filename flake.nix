@@ -14,7 +14,12 @@
       let
         pkgs = zaozi.legacyPackages.${system};
 
-        pythonEnv = pkgs.python3.withPackages (ps: with ps; [
+        # Both environments name the interpreter explicitly. cocotb does not
+        # build against 3.14, and pinning only the cocotb one would split the
+        # scripts across two interpreters.
+        python = pkgs.python313;
+
+        pythonEnv = python.withPackages (ps: with ps; [
           pytest
           pyyaml
         ]);
@@ -22,7 +27,7 @@
         # cocotb + Verilator harness. cocotb-bus comes from nixpkgs; the two
         # cocotbext.* extensions are vendored under test/cocotbext and reach the
         # interpreter through PYTHONPATH (see cocotbShellHook).
-        cocotbPythonEnv = pkgs.python3.withPackages (ps: with ps; [
+        cocotbPythonEnv = python.withPackages (ps: with ps; [
           cocotb
           cocotb-bus
           pytest

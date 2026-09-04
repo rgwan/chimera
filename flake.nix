@@ -388,6 +388,10 @@ EOF
         zaoziJar = "${zaoziAssembly}/share/java/elaborator.jar";
 
         shellHook = ''
+          # The maven repository's setup hook points COURSIER_CACHE at the
+          # build sandbox's TMPDIR, which does not exist in an interactive
+          # shell. Put it back where coursier would have put it.
+          export COURSIER_CACHE="''${XDG_CACHE_HOME:-$HOME/.cache}/coursier"
           export BENCH_CC=${h8300BenchGcc}/bin/h8300-elf-gcc
           export BENCH_OBJCOPY=${h8300BenchBinutils}/bin/h8300-elf-objcopy
           export BENCH_OBJDUMP=${h8300BenchBinutils}/bin/h8300-elf-objdump
@@ -534,6 +538,10 @@ EOF
         ];
 
         cocotbShellHook = ''
+          # The maven repository's setup hook points COURSIER_CACHE at the
+          # build sandbox's TMPDIR, which does not exist in an interactive
+          # shell. Put it back where coursier would have put it.
+          export COURSIER_CACHE="''${XDG_CACHE_HOME:-$HOME/.cache}/coursier"
           export PYTHONPATH="$PWD/test:''${PYTHONPATH:-}"
           export ZAOZI_JAR=${zaoziJar}
           export CIRCT_INSTALL_PATH=${pkgs.circt-install}

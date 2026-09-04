@@ -18,6 +18,9 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$here/.." && pwd)"
 out="${2:-$here/gen}"
 mkdir -p "$out"
+# rtl/build.sh cd's into the output directory and then reopens paths under it,
+# so a relative out_dir would resolve twice.
+out="$(cd "$out" && pwd)"
 
 # Build the module with debug + formal on. DM=true reaches the debug
 # collateral JtagDtm needs; FORMAL=true emits the (unlayered) assert.

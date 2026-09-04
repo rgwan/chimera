@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
 
-.PHONY: bench-dhry bench-coremark build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-debug check-jtag check-autohalt check-hwbp-selfhosted check-hwbp-dm check-step-selfhosted check-step-dm check-trap2-suppress check-nondestruct check-jtag2gdb check-gdb-e2e verify-debug check-formal-debug check-formal-core check-formal-decode verify-formal check-rom-hex gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model check-axilite check-cocotb-jtag check-cocotb-axi check-cocotb-exec verify-cocotb verify-smoke check clean
+.PHONY: bench-dhry bench-coremark build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-debug check-jtag check-autohalt check-hwbp-selfhosted check-hwbp-dm check-step-selfhosted check-step-dm check-trap2-suppress check-nondestruct check-jtag2gdb check-gdb-e2e verify-debug check-formal-debug check-formal-core check-formal-decode check-formal-selftest verify-formal check-rom-hex gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model check-axilite check-cocotb-jtag check-cocotb-axi check-cocotb-exec verify-cocotb verify-smoke check clean
 
 build: smoke
 
@@ -101,25 +101,45 @@ DEBUG_CHECKS ?= check-jtag check-debug check-autohalt check-hwbp-selfhosted \
   check-nondestruct check-jtag2gdb check-gdb-e2e
 verify-debug: $(DEBUG_CHECKS)
 
-# CIRCT-native bounded model checking (circt-bmc). check-formal-debug proves the
-# JtagDtm go-strobe launch gate holds AND that its deliberately-broken variant is
-# caught, so the harness is demonstrably non-vacuous. FORMAL_BMC_BOUND sets the
-# unroll depth; IGNORE_ASSERTS_UNTIL=1 skips the cycle in which the property's
-# one-deep shadow registers still hold their arbitrary initial value.
-FORMAL_BMC_BOUND ?= 20
-check-formal-debug: export IGNORE_ASSERTS_UNTIL = 1
-check-formal-debug:
-	FORMAL_BROKEN=false bash formal/lower.sh JtagDtm
-	bash formal/run_bmc.sh JtagDtm $(FORMAL_BMC_BOUND)
-	FORMAL_BROKEN=true bash formal/lower.sh JtagDtm
-	@echo "[formal] broken variant must be violated:"
-	@if bash formal/run_bmc.sh JtagDtm $(FORMAL_BMC_BOUND); then \
-	  echo "[formal] ERROR: broken property was not caught"; exit 1; \
-	else \
-	  echo "[formal] broken property correctly reported as violable"; \
-	fi
+# CIRCT-native bounded model checking (circt-bmc). Each target proves its
+# property holds AND that the deliberately-broken variant is reported violable.
+# run_bmc.sh separates the two verdicts from a harness failure by exit code, so
+# a lowering error can no longer read as a caught bug, and EXPECT_LABELS names
+# the assertions the file must carry, so a deleted or renamed property cannot
+# pass as "no violations". Each target owns a gen subdirectory, so the three run
+# under make -j.
+# FORMAL_BMC_BOUND sets the unroll depth; IGNORE_ASSERTS_UNTIL=1 skips the cycle
+# in which the property's one-deep shadow registers still hold their arbitrary
+# initial value.
+FORMAL_GEN ?= formal/gen
 
-verify-formal: check-formal-debug check-formal-core check-formal-decode
+# $(call formal-must-fail,<label>,<cmd...>) requires exit 1 exactly.
+define formal-must-fail
+	@echo "[formal] broken variant of $(1) must be violated:"; \
+	if $(2); then \
+	  echo "[formal] ERROR: broken $(1) was not caught"; exit 1; \
+	else rc=$$?; \
+	  [ $$rc -eq 1 ] || { echo "[formal] ERROR: $(1) harness failed ($$rc)"; \
+	    exit 1; }; \
+	  echo "[formal] broken $(1) correctly reported as violable"; \
+	fi
+endef
+
+FORMAL_BMC_BOUND ?= 20
+DEBUG_GEN = $(FORMAL_GEN)/debug
+check-formal-debug: export IGNORE_ASSERTS_UNTIL = 1
+check-formal-debug: export EXPECT_LABELS = go_strobe_sole_gate
+check-formal-debug:
+	rm -rf $(DEBUG_GEN)
+	FORMAL_BROKEN=false bash formal/lower.sh JtagDtm $(DEBUG_GEN)
+	bash formal/run_bmc.sh JtagDtm $(FORMAL_BMC_BOUND) \
+	  $(DEBUG_GEN)/JtagDtm_bmc.mlir
+	FORMAL_BROKEN=true bash formal/lower.sh JtagDtm $(DEBUG_GEN)
+	$(call formal-must-fail,go_strobe_sole_gate,bash formal/run_bmc.sh JtagDtm \
+	  $(FORMAL_BMC_BOUND) $(DEBUG_GEN)/JtagDtm_bmc.mlir)
+
+verify-formal: check-formal-selftest check-formal-debug check-formal-core \
+  check-formal-decode
 
 # check-formal-core proves the debug-FSM transition invariants on module Core
 # (auto-halt/resume soundness, trap-2 single-entry, dmactive gating) AND that
@@ -135,11 +155,14 @@ verify-formal: check-formal-debug check-formal-core check-formal-decode
 # datapath loop, so no true cycle remains), folds the four DV-probe hw.wire taps
 # that circt-bmc rejects, and lowers array ops to comb. The result is a single
 # sound module circt-bmc flattens; children stay real logic so no signal is
-# over-approximated. Child asserts stay inside their instances, so this target
-# judges only Core's own properties.
+# over-approximated. The splice also pulls every child's assertion into the
+# merged module, so each of Core's labels is checked in its own copy of the
+# file with the other assertions removed.
 FORMAL_CORE_BOUND ?= 3
+CORE_GEN = $(FORMAL_GEN)/core
+CORE_LABELS = autohalt_resume_sound trap2_single_entry_gated
 define FLATTEN_CORE
-	out=formal/gen; rm -f $$out/*_hwmod.mlir; \
+	set -e; out=$(CORE_GEN); rm -f $$out/*_hwmod.mlir $$out/Core_flat_*.mlir; \
 	for f in $$out/*.mlirbc; do b=$$(basename $$f .mlirbc); \
 	  case $$b in Core|CoreTop) continue;; esac; \
 	  firtool $$f --ir-hw -o $$out/$${b}_hwmod.mlir; done; \
@@ -152,34 +175,57 @@ define FLATTEN_CORE
 endef
 check-formal-core: export IGNORE_ASSERTS_UNTIL = 1
 check-formal-core:
-	DM=true HW_BREAKPOINT=true FORMAL_BROKEN=false bash formal/lower.sh Core
+	rm -rf $(CORE_GEN)
+	DM=true HW_BREAKPOINT=true FORMAL_BROKEN=false \
+	  bash formal/lower.sh Core $(CORE_GEN)
 	@$(FLATTEN_CORE)
-	bash formal/run_bmc.sh Core $(FORMAL_CORE_BOUND) formal/gen/Core_flat_bmc.mlir
-	DM=true HW_BREAKPOINT=true FORMAL_BROKEN=true bash formal/lower.sh Core
+	@set -e; for l in $(CORE_LABELS); do \
+	  bash formal/select_label.sh $(CORE_GEN)/Core_flat_bmc.mlir $$l \
+	    $(CORE_GEN)/one.mlir; \
+	  EXPECT_LABELS=$$l bash formal/run_bmc.sh Core $(FORMAL_CORE_BOUND) \
+	    $(CORE_GEN)/one.mlir; \
+	done
+	DM=true HW_BREAKPOINT=true FORMAL_BROKEN=true \
+	  bash formal/lower.sh Core $(CORE_GEN)
 	@$(FLATTEN_CORE)
-	@echo "[formal] broken variant must be violated:"
-	@if bash formal/run_bmc.sh Core $(FORMAL_CORE_BOUND) formal/gen/Core_flat_bmc.mlir; then \
-	  echo "[formal] ERROR: broken property was not caught"; exit 1; \
-	else \
-	  echo "[formal] broken property correctly reported as violable"; \
-	fi
+	@set -e; for l in $(CORE_LABELS); do \
+	  bash formal/select_label.sh $(CORE_GEN)/Core_flat_bmc.mlir $$l \
+	    $(CORE_GEN)/one.mlir; \
+	  echo "[formal] broken variant of $$l must be violated:"; \
+	  if EXPECT_LABELS=$$l bash formal/run_bmc.sh Core $(FORMAL_CORE_BOUND) \
+	    $(CORE_GEN)/one.mlir; then \
+	    echo "[formal] ERROR: broken $$l was not caught"; exit 1; \
+	  else rc=$$?; \
+	    [ $$rc -eq 1 ] || { echo "[formal] ERROR: $$l harness failed ($$rc)"; \
+	      exit 1; }; \
+	    echo "[formal] broken $$l correctly reported as violable"; \
+	  fi; \
+	done
 
 # CoarseDecoder is pure combinational over the 16-bit opcode word, so a bound of
 # 1 makes circt-bmc quantify over the whole 64K space. check-formal-decode proves
-# the dispatch output always tags one of three pairwise-disjoint buckets (decode
-# is total and unambiguous) AND that its broken variant is caught.
+# the dispatch address always lies in the range its own bucket tag selects, over
+# every opcode. The three ranges are disjoint by construction, so decode is also
+# unambiguous, but that half is by inspection and not submitted to the solver.
+DECODE_GEN = $(FORMAL_GEN)/decode
+check-formal-decode: export EXPECT_LABELS = dispatch_bucket_tag
 check-formal-decode:
+	rm -rf $(DECODE_GEN)
 	TOP=CoarseDecoder DM=false DTM=false FORMAL_BROKEN=false \
-	  bash formal/lower.sh CoarseDecoder
-	bash formal/run_bmc.sh CoarseDecoder 1
+	  bash formal/lower.sh CoarseDecoder $(DECODE_GEN)
+	bash formal/run_bmc.sh CoarseDecoder 1 \
+	  $(DECODE_GEN)/CoarseDecoder_bmc.mlir
 	TOP=CoarseDecoder DM=false DTM=false FORMAL_BROKEN=true \
-	  bash formal/lower.sh CoarseDecoder
-	@echo "[formal] broken variant must be violated:"
-	@if bash formal/run_bmc.sh CoarseDecoder 1; then \
-	  echo "[formal] ERROR: broken property was not caught"; exit 1; \
-	else \
-	  echo "[formal] broken property correctly reported as violable"; \
-	fi
+	  bash formal/lower.sh CoarseDecoder $(DECODE_GEN)
+	$(call formal-must-fail,dispatch_bucket_tag,bash formal/run_bmc.sh \
+	  CoarseDecoder 1 $(DECODE_GEN)/CoarseDecoder_bmc.mlir)
+
+# The harness itself is a gate. selftest.sh damages a lowered module the way a
+# regression would (property deleted, renamed, unexpected label set, missing
+# file, wrong module) and requires run_bmc.sh to reject each one, so a green
+# check-formal-* carries information.
+check-formal-selftest:
+	bash formal/selftest.sh
 
 check-rom-hex:
 	python3 test/cocotb/exec/run_exec.py romhex

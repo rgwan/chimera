@@ -78,9 +78,8 @@ jobs:
       # zaozi pins a from-source CIRCT/LLVM/MLIR (no public binary cache), so a
       # cold runner spends hours compiling the toolchain. Persist /nix/store
       # across runs: the first run builds and caches it, later runs restore.
-      # The key covers flake.lock and flake.nix, so any toolchain bump pays that
-      # cold build once on each profile. That cost is accepted; the alternative
-      # is a substituter or a self-hosted runner, and neither exists yet.
+      # The key covers flake.lock and flake.nix, so a toolchain bump pays one
+      # cold build on each profile.
       - name: Cache Nix store
         uses: nix-community/cache-nix-action@v6
         with:
@@ -135,7 +134,8 @@ jobs:
 
       # Both datapath configs: the default single-cycle core and the pipeline.
       # The retire-trace gate drives the RTL from cocotb, so it needs the cocotb
-      # shell; the default one carries no cocotb.
+      # shell; the default one carries no cocotb. That shell carries no sail,
+      # h8300 toolchain or reuse, so keep those targets out of this step.
       - name: Run RTL Retire-Trace Gates
         run: |
           nix develop --option sandbox false '.#cocotb' -c sh -c '
@@ -223,7 +223,7 @@ jobs:
           purge-primary-key: never
 
       # CIRCT-native bounded model checking (circt-bmc): JTAG go-strobe sole-launch,
-      # Core debug-FSM transition invariants, and decoder totality over all 64K.
+      # Core debug-FSM transition invariants, and decoder bucket tagging.
       - name: Run Formal Verification
         run: nix develop --option sandbox false -c make verify-formal
 

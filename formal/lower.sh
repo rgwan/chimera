@@ -51,4 +51,27 @@ awk '
   { print }
 ' "$hw" > "$stripped"
 
+# Temporal operators reach circt-bmc as ltl ops it cannot legalize, so lower
+# them to registers and comb first. A property built only from `.I` booleans
+# carries no ltl op and the pass is a no-op for it.
+before="$(grep -c 'verif\.assert' "$stripped" || true)"
+circt-opt "$stripped" --pass-pipeline='builtin.module(hw.module(lower-ltl-to-core,
+  lower-seq-shiftreg,lower-seq-compreg-ce,canonicalize))' -o "$stripped.ltl"
+mv "$stripped.ltl" "$stripped"
+
+# The pass is silent when it cannot lower an operator, and canonicalize deletes
+# an assert whose operand folds to a constant, so both are checked here rather
+# than surfacing later as a legalization error or a vacuous pass.
+if grep -qE '(^|[^A-Za-z_.])ltl\.' "$stripped"; then
+  echo "[formal] $stripped still carries ltl ops after lowering" >&2
+  grep -nE '(^|[^A-Za-z_.])ltl\.' "$stripped" | head -5 >&2
+  exit 2
+fi
+after="$(grep -c 'verif\.assert' "$stripped" || true)"
+[ "$before" = "$after" ] || {
+  echo "[formal] lowering changed the assertion count: $before -> $after" >&2
+  exit 2
+}
+[ "$after" -gt 0 ] || { echo "[formal] $stripped has no assertion" >&2; exit 2; }
+
 echo "[formal] lowered $mod -> $stripped"

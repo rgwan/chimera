@@ -171,7 +171,14 @@ define FLATTEN_CORE
 	  awk "$$awkx" $$out/Core_hw.mlir; echo "}"; } > $$out/Core_flat_raw.mlir; \
 	perl -e 'my %m; my @l; while(<STDIN>){ if(/^\s*(\%\S+)\s*=\s*hw\.wire\s+(\%\S+)/){$$m{$$1}=$$2; next;} push @l,$$_; } for my $$k (keys %m){ my $$v=$$m{$$k}; $$v=$$m{$$v} while exists $$m{$$v}; $$m{$$k}=$$v; } for my $$x (@l){ for my $$k (keys %m){ my $$q=quotemeta($$k); $$x =~ s/$$q(?![A-Za-z0-9_.])/$$m{$$k}/g; } print $$x; }' \
 	  < $$out/Core_flat_raw.mlir > $$out/Core_flat_nowire.mlir; \
-	circt-opt --hw-aggregate-to-comb $$out/Core_flat_nowire.mlir -o $$out/Core_flat_bmc.mlir
+	circt-opt --hw-aggregate-to-comb $$out/Core_flat_nowire.mlir \
+	  -o $$out/Core_flat_agg.mlir; \
+	circt-opt $$out/Core_flat_agg.mlir --pass-pipeline='builtin.module(hw.module(\
+	  lower-ltl-to-core,lower-seq-shiftreg,lower-seq-compreg-ce,canonicalize))' \
+	  -o $$out/Core_flat_bmc.mlir; \
+	if grep -qE '(^|[^A-Za-z_.])ltl\.' $$out/Core_flat_bmc.mlir; then \
+	  echo "[formal] Core_flat_bmc.mlir still carries ltl ops" >&2; exit 2; fi; \
+	test "$$(grep -c 'verif\.assert' $$out/Core_flat_bmc.mlir)" -gt 0
 endef
 check-formal-core: export IGNORE_ASSERTS_UNTIL = 1
 check-formal-core:

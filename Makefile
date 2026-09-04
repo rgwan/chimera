@@ -108,9 +108,8 @@ verify-debug: $(DEBUG_CHECKS)
 # the assertions the file must carry, so a deleted or renamed property cannot
 # pass as "no violations". Each target owns a gen subdirectory, so the three run
 # under make -j.
-# FORMAL_BMC_BOUND sets the unroll depth; IGNORE_ASSERTS_UNTIL=1 skips the cycle
-# in which the property's one-deep shadow registers still hold their arbitrary
-# initial value.
+# FORMAL_BMC_BOUND sets the unroll depth. IGNORE_ASSERTS_UNTIL skips leading
+# cycles and is set only where a shadow register still holds its seed there.
 FORMAL_GEN ?= formal/gen
 
 # $(call formal-must-fail,<label>,<cmd...>) requires exit 1 exactly.
@@ -127,7 +126,6 @@ endef
 
 FORMAL_BMC_BOUND ?= 20
 DEBUG_GEN = $(FORMAL_GEN)/debug
-check-formal-debug: export IGNORE_ASSERTS_UNTIL = 1
 check-formal-debug: export EXPECT_LABELS = go_strobe_sole_gate
 check-formal-debug:
 	rm -rf $(DEBUG_GEN)

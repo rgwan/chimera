@@ -33,13 +33,12 @@ deleted or renamed property cannot pass as "no violations".
 | core | Core | auto-halt always drops the latch and resumes on completion; trap-2 is single-entry (no clear under nested service, no double-set) |
 | decode | CoarseDecoder | for all 65536 opcodes the dispatch address lies in the range its own bucket tag selects; the three ranges are disjoint by construction, so decode is also unambiguous |
 
-The debug and core properties are single-cycle transition invariants: the
-antecedent is delayed through a formal-only shadow register so the assertion
-reads the real flop, not a hand-copied next-state expression. circt-bmc seeds
-registers arbitrarily and applies no reset, which proves them over every state
-rather than only the reachable ones; the first cycle is skipped because the
-shadow register still holds its seed. They constrain the FSM registers, not
-downstream datapath behavior.
+The debug property is an SVA implication over the real flops. The core ones are
+single-cycle transition invariants whose antecedent is delayed through a
+formal-only shadow register, so they still skip the cycle in which that register
+holds its seed. circt-bmc seeds registers arbitrarily and applies no reset,
+which proves all of them over every state rather than only the reachable ones.
+They constrain the FSM registers, not downstream datapath behavior.
 
 ## Flow
 

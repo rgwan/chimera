@@ -54,6 +54,15 @@ awk '
 # Temporal operators reach circt-bmc as ltl ops it cannot legalize, so lower
 # them to registers and comb first. A property built only from `.I` booleans
 # carries no ltl op and the pass is a no-op for it.
+#
+# LOWER_LTL=0 leaves this file un-lowered, for a caller that splices children in
+# and lowers the merged module itself. Lowering here as well would be work whose
+# result nobody reads.
+if [ "${LOWER_LTL:-1}" = 0 ]; then
+  echo "[formal] lowered $mod -> $stripped (ltl pass deferred to the caller)"
+  exit 0
+fi
+
 before="$(grep -c 'verif\.assert' "$stripped" || true)"
 circt-opt "$stripped" --pass-pipeline='builtin.module(hw.module(lower-ltl-to-core,
   lower-seq-shiftreg,lower-seq-compreg-ce,canonicalize))' -o "$stripped.ltl"

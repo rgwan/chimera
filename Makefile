@@ -181,7 +181,7 @@ define FLATTEN_CORE
 endef
 check-formal-core:
 	rm -rf $(CORE_GEN)
-	DM=true HW_BREAKPOINT=true FORMAL_BROKEN=0 \
+	DM=true HW_BREAKPOINT=true FORMAL_BROKEN=0 LOWER_LTL=0 \
 	  bash formal/lower.sh Core $(CORE_GEN)
 	@$(FLATTEN_CORE)
 	@set -e; for e in $(CORE_LABELS); do l=$${e%%:*}; \
@@ -191,7 +191,7 @@ check-formal-core:
 	    $(CORE_GEN)/one.mlir; \
 	done
 	@set -e; for e in $(CORE_LABELS); do l=$${e%%:*}; k=$${e##*:}; \
-	  DM=true HW_BREAKPOINT=true FORMAL_BROKEN=$$k \
+	  DM=true HW_BREAKPOINT=true FORMAL_BROKEN=$$k LOWER_LTL=0 \
 	    bash formal/lower.sh Core $(CORE_GEN) >/dev/null; \
 	  $(FLATTEN_CORE); \
 	  bash formal/select_label.sh $(CORE_GEN)/Core_flat_bmc.mlir $$l \

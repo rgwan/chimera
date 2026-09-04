@@ -78,6 +78,9 @@ jobs:
       # zaozi pins a from-source CIRCT/LLVM/MLIR (no public binary cache), so a
       # cold runner spends hours compiling the toolchain. Persist /nix/store
       # across runs: the first run builds and caches it, later runs restore.
+      # The key covers flake.lock and flake.nix, so any toolchain bump pays that
+      # cold build once on each profile. That cost is accepted; the alternative
+      # is a substituter or a self-hosted runner, and neither exists yet.
       - name: Cache Nix store
         uses: nix-community/cache-nix-action@v6
         with:
@@ -131,9 +134,11 @@ jobs:
           purge-primary-key: never
 
       # Both datapath configs: the default single-cycle core and the pipeline.
+      # The retire-trace gate drives the RTL from cocotb, so it needs the cocotb
+      # shell; the default one carries no cocotb.
       - name: Run RTL Retire-Trace Gates
         run: |
-          nix develop --option sandbox false -c sh -c '
+          nix develop --option sandbox false '.#cocotb' -c sh -c '
             make check-decode check-exec-sail &&
             PIPELINE=true make check-exec-sail
           '
@@ -177,8 +182,10 @@ jobs:
       # jtag2gdb unit tests, the DM/JTAG/HW-breakpoint sim gates, and the
       # remote-bitbang gdb-transport e2e (pure-Rust example; real gdb-in-the-
       # loop stays a manual bring-up step).
+      # Every debug gate drives the RTL from cocotb or from the Rust host tool,
+      # so this runs in the cocotb shell.
       - name: Run Debug Verification
-        run: nix develop --option sandbox false -c make verify-debug
+        run: nix develop --option sandbox false '.#cocotb' -c make verify-debug
 
       - name: Upload Artifacts
         if: always()

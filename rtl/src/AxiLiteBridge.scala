@@ -73,8 +73,8 @@ object SramToAxiLite
 
   def architecture(parameter: ChimeraParameter) =
     val io = summon[Interface[SramToAxiLiteIO]]
-    given Ref[Clock] = io.clock
-    given Ref[Reset] = io.reset
+    given ClockScope = ClockScope.posedge(io.clock)
+    given ResetScope = ResetScope.syncActiveHigh(io.reset)
 
     val aw = io.axi.aw
     val w  = io.axi.w

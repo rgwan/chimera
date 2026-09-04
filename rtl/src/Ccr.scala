@@ -37,8 +37,8 @@ object Ccr extends Generator[ChimeraParameter, ChimeraLayers, CcrIO, ChimeraProb
 
   def architecture(parameter: ChimeraParameter) =
     val io = summon[Interface[CcrIO]]
-    given Ref[Clock] = io.clock
-    given Ref[Reset] = io.reset
+    given ClockScope = ClockScope.posedge(io.clock)
+    given ResetScope = ResetScope.syncActiveHigh(io.reset)
 
     val state = RegInit(0x20.U(6)) // I H N Z V C; reset masks interrupts
     val stateBits = state.asBits

@@ -30,8 +30,8 @@ object H8RegFile
 
   def architecture(parameter: ChimeraParameter) =
     val io = summon[Interface[H8RegFileIO]]
-    given Ref[Clock] = io.clock
-    given Ref[Reset] = io.reset
+    given ClockScope = ClockScope.posedge(io.clock)
+    given ResetScope = ResetScope.syncActiveHigh(io.reset)
 
     val regs = (0 until parameter.regCount).map(_ => RegInit(0.U(parameter.dataWidth)))
     val wd   = io.wdata.asBits

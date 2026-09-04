@@ -35,8 +35,8 @@ object IntRegFile
 
   def architecture(parameter: ChimeraParameter) =
     val io = summon[Interface[IntRegFileIO]]
-    given Ref[Clock] = io.clock
-    given Ref[Reset] = io.reset
+    given ClockScope = ClockScope.posedge(io.clock)
+    given ResetScope = ResetScope.syncActiveHigh(io.reset)
 
     val pc   = RegInit(0.U(parameter.dataWidth))
     val ireg = RegInit(0.U(parameter.dataWidth))

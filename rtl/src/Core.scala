@@ -44,8 +44,8 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
 
   def architecture(parameter: ChimeraParameter) =
     val io = summon[Interface[CoreIO]]
-    given Ref[Clock] = io.clock
-    given Ref[Reset] = io.reset
+    given ClockScope = ClockScope.posedge(io.clock)
+    given ResetScope = ResetScope.syncActiveHigh(io.reset)
 
     val coarse = CoarseDecoder.instantiate(parameter)
     if parameter.romHex then
@@ -923,7 +923,7 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
     io.is_halted.foreach(_ := useq.io.halted.get)
 
     // Retire trace is lowered into DV bind collateral and stripped in production.
-    val probe = summon[Interface[CoreProbe]]
+    val probe = summon[ProbeInterface[CoreProbe]]
     layer("DV"):
       probe.traceH8    <== h8rf.io.dbg
       probe.tracePc    <== intrf.io.dbgPc

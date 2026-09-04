@@ -37,8 +37,8 @@ object CoreTop
   def architecture(parameter: ChimeraParameter) =
     require(parameter.debug, "CoreTop is the debug-enabled top; build with debug=true")
     val io = summon[Interface[CoreTopIO]]
-    given Ref[Clock] = io.clock
-    given Ref[Reset] = io.reset
+    given ClockScope = ClockScope.posedge(io.clock)
+    given ResetScope = ResetScope.syncActiveHigh(io.reset)
 
     val core = Core.instantiate(parameter)
     val dtm  = JtagDtm.instantiate(parameter)

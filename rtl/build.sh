@@ -43,7 +43,7 @@ rm -f "$out"/*.sv "$out"/*.mlirbc "$out"/urom.memh
 scala_args=(
   --server=false
   --extra-jars "$ZAOZI_JAR"
-  --scala-version "${SCALA_VERSION:-3.7.4}"
+  --scala-version "${SCALA_VERSION:-3.8.4}"
   --java-home "$JAVA_HOME"
   -O=-experimental
   --java-opt --enable-native-access=ALL-UNNAMED

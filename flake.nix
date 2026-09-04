@@ -4,7 +4,8 @@
   description = "Chimera CPU core build environment";
 
   inputs = {
-    zaozi.url = "github:sequencer/zaozi";
+    zaozi.url =
+      "github:xinpian-tech/zaozi/79128d9c7381289d7be8d3b24692f750d4aaeba3";
     nixpkgs.follows = "zaozi/nixpkgs";
     flake-utils.follows = "zaozi/flake-utils";
   };
@@ -95,9 +96,16 @@ EOF
           touch $out
         '';
 
+        # scala-cli derives its cache from the build user's passwd home, which is
+        # /dev/null when the sandbox is off, so point HOME at a writable tree the
+        # way rtlBuild does.
         smokeCheck = pkgs.runCommand "chimera-build-smoke" {
           nativeBuildInputs = [ buildScript ];
         } ''
+          export HOME=$(mktemp -d)
+          export XDG_CACHE_HOME=$HOME/.cache
+          export COURSIER_CACHE=$HOME/coursier
+          mkdir -p "$XDG_CACHE_HOME" "$COURSIER_CACHE"
           export CHIMERA_SMOKE_OUT=$out
           build-chimera --smoke
         '';
@@ -368,17 +376,14 @@ EOF
           touch $out
         '';
 
-        zaoziIvyLock = pkgs.writeText "chimera-zaozi-lock.nix" ''
-          { fetchurl }:
-          (import ${zaozi.outPath}/nix/zaozi/zaozi-lock.nix { inherit fetchurl; })
-          // (import ${./nix/zaozi-extra-lock.nix} { inherit fetchurl; })
-        '';
+        zaoziAssembly = zaozi.packages.${system}.zaozi-assembly;
 
-        zaoziAssembly = zaozi.packages.${system}.zaozi-assembly.overrideAttrs (_old: {
-          buildInputs = [
-            (pkgs.ivy-gather zaoziIvyLock)
-          ];
-        });
+        # The elaborator's own dependency set, as a Maven tree. Its setup hook
+        # exports COURSIER_REPOSITORIES, so scala-cli resolves offline from it
+        # in the sandbox and in the shells.
+        mavenRepo = pkgs.mkMavenRepository {
+          lockFile = "${zaozi.outPath}/mtf.lock.json";
+        };
 
         zaoziJar = "${zaoziAssembly}/share/java/elaborator.jar";
 
@@ -424,8 +429,6 @@ EOF
           asic-soc      = { strictDecode = false; romHex = false; asic = true;  pipeline = true; axilite = true; dm = true; dtm = true; };
         };
 
-        chimeraIvyCache = pkgs.ivy-gather zaoziIvyLock;
-
         rtlBuild = name: cfg: pkgs.runCommand "chimera-rtl-${name}" {
           nativeBuildInputs = [
             pkgs.scala-cli
@@ -433,6 +436,7 @@ EOF
             pkgs.mlir-install
             pkgs.jdk25
             zaoziAssembly
+            mavenRepo
           ];
         } ''
           cp -R ${self} src
@@ -449,14 +453,11 @@ EOF
           mkdir -p "$XDG_CACHE_HOME" "$XDG_DATA_HOME" "$XDG_CONFIG_HOME"
           export JAVA_TOOL_OPTIONS="--enable-preview"
           export COURSIER_CACHE=$HOME/coursier
-          export COURSIER_MODE=offline
           mkdir -p "$COURSIER_CACHE"
-          cp -r ${chimeraIvyCache}/cache/. "$COURSIER_CACHE/"
-          chmod -R u+w "$COURSIER_CACHE"
           export ZAOZI_JAR=${zaoziJar}
           export CIRCT_INSTALL_PATH=${pkgs.circt-install}
           export MLIR_INSTALL_PATH=${pkgs.mlir-install}
-          export JAVA_HOME=${pkgs.jdk25}
+          export JAVA_HOME=${pkgs.jdk25.home}
           mkdir -p $out
           CHIMERA_RTL_OUT=$out \
             STRICT_DECODE=${pkgs.lib.boolToString cfg.strictDecode} \
@@ -483,6 +484,9 @@ EOF
         z3Lib = "${pkgs.z3.lib}/lib/libz3${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
 
         smokeBuildInputs = [
+          # pythonEnv leads so it wins the PATH over any interpreter another
+          # input propagates.
+          pythonEnv
           buildScript
           pkgs.git
           pkgs.gnumake
@@ -494,7 +498,6 @@ EOF
           pkgs.reuse
           pkgs.scala-cli
           pkgs.z3
-          pythonEnv
         ];
 
         fullBuildInputs = smokeBuildInputs ++ [
@@ -502,6 +505,7 @@ EOF
           pkgs.jdk25
           pkgs.mlir-install
           zaoziAssembly
+          mavenRepo
           # Debug-subsystem host tool (jtag2gdb) and its gdb-transport e2e.
           pkgs.cargo
           pkgs.rustc
@@ -523,6 +527,7 @@ EOF
           pkgs.mlir-install
           pkgs.jdk25
           zaoziAssembly
+          mavenRepo
           # jtag2gdb drives the cocotb remote-bitbang server in the gdb e2e gate.
           pkgs.cargo
           pkgs.rustc

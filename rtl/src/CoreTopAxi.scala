@@ -36,8 +36,8 @@ object CoreTopAxi
   def architecture(parameter: ChimeraParameter) =
     require(parameter.axilite, "CoreTopAxi is the AXI-Lite top; build with axilite=true")
     val io = summon[Interface[CoreTopAxiIO]]
-    given Ref[Clock] = io.clock
-    given Ref[Reset] = io.reset
+    given ClockScope = ClockScope.posedge(io.clock)
+    given ResetScope = ResetScope.syncActiveHigh(io.reset)
 
     val core   = Core.instantiate(parameter)
     val bridge = SramToAxiLite.instantiate(parameter)

@@ -52,8 +52,8 @@ object Biu extends Generator[ChimeraParameter, ChimeraLayers, BiuIO, ChimeraProb
       0.U(parameter.wmaskWidth))
 
     if parameter.mmio then
-      given Ref[Clock] = io.clock.get
-      given Ref[Reset] = io.reset.get
+      given ClockScope = ClockScope.posedge(io.clock.get)
+      given ResetScope = ResetScope.syncActiveHigh(io.reset.get)
       // 32-byte MMIO window: constant prefix compare on addr[15:5]. To keep this
       // compare off the memory-read critical cone, the access is served on the
       // cycle AFTER the decode: `hit` suppresses the external request and clears

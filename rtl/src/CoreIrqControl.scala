@@ -43,8 +43,8 @@ object CoreIrqControl
 
   def architecture(parameter: ChimeraParameter) =
     val io = summon[Interface[CoreIrqControlIO]]
-    given Ref[Clock] = io.clock
-    given Ref[Reset] = io.reset
+    given ClockScope = ClockScope.posedge(io.clock)
+    given ResetScope = ResetScope.syncActiveHigh(io.reset)
 
     val irqVectorAddr = RegInit(0.U(parameter.dataWidth))
     val irqLatch = RegInit(false.B)

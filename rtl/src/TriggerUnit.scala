@@ -83,8 +83,8 @@ object TriggerUnit
 
   def architecture(parameter: ChimeraParameter) =
     val io = summon[Interface[TriggerUnitIO]]
-    given Ref[Clock] = io.clock
-    given Ref[Reset] = io.reset
+    given ClockScope = ClockScope.posedge(io.clock)
+    given ResetScope = ResetScope.syncActiveHigh(io.reset)
 
     val n  = parameter.hwBreakpointCount
     val dw = parameter.dataWidth

@@ -77,8 +77,8 @@ object JtagDtm
 
   def architecture(parameter: ChimeraParameter) =
     val io = summon[Interface[JtagDtmIO]]
-    given Ref[Clock] = io.tck
-    given Ref[Reset] = io.trst
+    given ClockScope = ClockScope.posedge(io.tck)
+    given ResetScope = ResetScope.syncActiveHigh(io.trst)
 
     val dw = parameter.dataWidth   // 16
     val aw = parameter.addrWidth   // 16

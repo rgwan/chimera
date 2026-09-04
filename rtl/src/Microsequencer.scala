@@ -86,8 +86,8 @@ object Microsequencer
 
   def architecture(parameter: ChimeraParameter) =
     val io = summon[Interface[MicrosequencerIO]]
-    given Ref[Clock] = io.clock
-    given Ref[Reset] = io.reset
+    given ClockScope = ClockScope.posedge(io.clock)
+    given ResetScope = ResetScope.syncActiveHigh(io.reset)
 
     if parameter.pipeline then {
 

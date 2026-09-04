@@ -22,8 +22,8 @@ object MicrocodeRom
 
   def architecture(parameter: ChimeraParameter) =
     val io = summon[Interface[MicrocodeRomIO]]
-    given Ref[Clock] = io.clock
-    given Ref[Reset] = io.reset
+    given ClockScope = ClockScope.posedge(io.clock)
+    given ResetScope = ResetScope.syncActiveHigh(io.reset)
 
     val d = Wire(UInt(parameter.uromWidth))
     d := 0.U(parameter.uromWidth)

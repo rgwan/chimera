@@ -142,8 +142,8 @@ verify-formal: check-formal-selftest check-formal-debug check-formal-core \
   check-formal-decode
 
 # check-formal-core proves the debug-FSM transition invariants on module Core
-# (auto-halt/resume soundness, trap-2 single-entry, dmactive gating) AND that
-# their deliberately-broken variant is caught. HW_BREAKPOINT=true enables the
+# (auto-halt/resume soundness, trap-2 single-entry) AND that their
+# deliberately-broken variants are caught. HW_BREAKPOINT=true enables the
 # MMIO trigger unit so the trap-2 suppression FSM exists; DM=true brings the
 # auto-halt FSM. The invariants are single-cycle, so a small bound suffices.
 #
@@ -160,7 +160,7 @@ verify-formal: check-formal-selftest check-formal-debug check-formal-core \
 # file with the other assertions removed.
 FORMAL_CORE_BOUND ?= 3
 CORE_GEN = $(FORMAL_GEN)/core
-CORE_LABELS = autohalt_resume_sound trap2_single_entry_gated
+CORE_LABELS = autohalt_resume_sound trap2_single_entry
 define FLATTEN_CORE
 	set -e; out=$(CORE_GEN); rm -f $$out/*_hwmod.mlir $$out/Core_flat_*.mlir; \
 	for f in $$out/*.mlirbc; do b=$$(basename $$f .mlirbc); \

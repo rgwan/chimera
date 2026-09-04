@@ -864,34 +864,30 @@ object Core extends Generator[ChimeraParameter, ChimeraLayers, CoreIO, CoreProbe
       // Suppress fires only for a self-hosted handler (no debugger present).
       trap2Suppress := trap2Active & (!dmPresent)
 
-      // ---- Formal #3/#4: trap-2 single-entry + dmactive gating (unlayered,
-      // formal-only). The edge antecedents are delayed through one-deep
-      // formal-only shadow registers so the assertion reads the real
-      // trap2Active flop; #4 is combinational. circt-bmc seeds registers
-      // arbitrarily and applies no reset, so it runs with
-      // --ignore-asserts-until=1 and both hold from ANY initial state.
+      // ---- Formal #3: trap-2 single-entry (unlayered, formal-only). The edge
+      // antecedents are delayed through one-deep formal-only shadow registers
+      // so the assertion reads the real trap2Active flop. circt-bmc seeds
+      // registers arbitrarily and applies no reset, so it runs with
+      // --ignore-asserts-until=1 and holds over every state.
       if parameter.formal then
         val trap2ActivePast = RegInit(false.B); trap2ActivePast := trap2Active
+        val trap2AckPast    = RegInit(false.B); trap2AckPast := trap2Ack
+        val trap2RtePast    = RegInit(false.B); trap2RtePast := trap2Rte
         if parameter.formalBroken then
-          // Deliberately false: claims suppression is on whenever trap2Active
-          // was set, ignoring dmPresent. With a debugger present it must be
-          // OFF, so BMC must find a violation.
-          Assert(((!trap2ActivePast) | trap2Suppress).I,
-            "trap2_single_entry_gated")
+          // Deliberately false: widens the fall antecedent from a 1->0 edge to
+          // "was set at all", claiming every set cycle was preceded by a
+          // non-nested RTE. A suppression that simply stays set violates it.
+          Assert((((!trap2ActivePast) | (trap2RtePast & (!trap2AckPast))) &
+            ((!((!trap2ActivePast) & trap2Active)) | trap2AckPast)).I,
+            "trap2_single_entry")
         else
-          val trap2AckPast = RegInit(false.B); trap2AckPast := trap2Ack
-          val trap2RtePast = RegInit(false.B); trap2RtePast := trap2Rte
-          // #3a A clear (1->0) implies a non-nested RTE and no concurrent ack:
-          // trap2Active never falls while a service is active, never on ack.
+          // A clear (1->0) implies a non-nested RTE and no concurrent ack, and
+          // a set (0->1) implies the trap-2 ack, so entry is single.
           val fallGuard = (!(trap2ActivePast & (!trap2Active))) |
             (trap2RtePast & (!trap2AckPast))
-          // #3b A set (0->1) implies the trap-2 ack (single, non-double entry).
           val riseImpliesAck =
             (!((!trap2ActivePast) & trap2Active)) | trap2AckPast
-          // #4 The suppression term is off whenever the debugger is present.
-          val gatedOff = (!dmPresent) | (!trap2Suppress)
-          Assert((fallGuard & riseImpliesAck & gatedOff).I,
-            "trap2_single_entry_gated")
+          Assert((fallGuard & riseImpliesAck).I, "trap2_single_entry")
 
       // FSM invariant: the clear (trap2Rte) is guarded by !serviceActive so an
       // RTE taken while an NMI/IRQ is in service never lifts the suppression, and

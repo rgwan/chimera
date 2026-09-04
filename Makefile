@@ -106,10 +106,9 @@ verify-debug: $(DEBUG_CHECKS)
 # run_bmc.sh separates the two verdicts from a harness failure by exit code, so
 # a lowering error can no longer read as a caught bug, and EXPECT_LABELS names
 # the assertions the file must carry, so a deleted or renamed property cannot
-# pass as "no violations". Each target owns a gen subdirectory, so the three run
-# under make -j.
-# FORMAL_BMC_BOUND sets the unroll depth. IGNORE_ASSERTS_UNTIL skips leading
-# cycles and is set only where a shadow register still holds its seed there.
+# pass as "no violations". Each target owns a gen subdirectory, so a stale
+# artefact from one cannot reach another.
+# FORMAL_BMC_BOUND sets the unroll depth.
 FORMAL_GEN ?= formal/gen
 
 # $(call formal-must-fail,<label>,<cmd...>) requires exit 1 exactly.
@@ -172,9 +171,7 @@ define FLATTEN_CORE
 	  < $$out/Core_flat_raw.mlir > $$out/Core_flat_nowire.mlir; \
 	circt-opt --hw-aggregate-to-comb $$out/Core_flat_nowire.mlir \
 	  -o $$out/Core_flat_agg.mlir; \
-	circt-opt $$out/Core_flat_agg.mlir --pass-pipeline='builtin.module(hw.module(\
-	  lower-ltl-to-core,lower-seq-shiftreg,lower-seq-compreg-ce,canonicalize))' \
-	  -o $$out/Core_flat_bmc.mlir; \
+	bash formal/ltl_lower.sh $$out/Core_flat_agg.mlir $$out/Core_flat_bmc.mlir; \
 	if grep -qE '(^|[^A-Za-z_.])ltl\.' $$out/Core_flat_bmc.mlir; then \
 	  echo "[formal] Core_flat_bmc.mlir still carries ltl ops" >&2; exit 2; fi; \
 	test "$$(grep -c 'verif\.assert' $$out/Core_flat_bmc.mlir)" -gt 0
@@ -289,7 +286,7 @@ check-cocotb-exec:
 verify-cocotb: check-cocotb-jtag check-cocotb-axi check-cocotb-exec
 
 clean:
-	rm -rf result
+	rm -rf result $(FORMAL_GEN)
 
 BENCH_RUNS ?= 200
 BENCH_CC ?= h8300-elf-gcc

@@ -8,7 +8,7 @@
 # collateral (unregistered `sv` dialect ops circt-bmc rejects).
 #
 # Usage: formal/lower.sh <ModuleName> [out_dir]
-#   FORMAL_BROKEN=true selects the deliberately-broken property variant.
+#   FORMAL_BROKEN=<n> selects the n-th deliberately-broken property.
 # Env: DM/HW_BREAKPOINT/... forwarded to rtl/build.sh via the caller.
 # Run inside `nix develop` (provides firtool via CIRCT_INSTALL_PATH).
 set -euo pipefail
@@ -25,7 +25,7 @@ out="$(cd "$out" && pwd)"
 # Build the module with debug + formal on. DM=true reaches the debug
 # collateral JtagDtm needs; FORMAL=true emits the (unlayered) assert.
 TOP="$mod" DM="${DM:-true}" FORMAL=true \
-  FORMAL_BROKEN="${FORMAL_BROKEN:-false}" \
+  FORMAL_BROKEN="${FORMAL_BROKEN:-0}" \
   HW_BREAKPOINT="${HW_BREAKPOINT:-false}" \
   HW_BREAKPOINT_COUNT="${HW_BREAKPOINT_COUNT:-0}" \
   SINGLE_STEP="${SINGLE_STEP:-false}" \
@@ -64,8 +64,7 @@ if [ "${LOWER_LTL:-1}" = 0 ]; then
 fi
 
 before="$(grep -c 'verif\.assert' "$stripped" || true)"
-circt-opt "$stripped" --pass-pipeline='builtin.module(hw.module(lower-ltl-to-core,
-  lower-seq-shiftreg,lower-seq-compreg-ce,canonicalize))' -o "$stripped.ltl"
+bash "$here/ltl_lower.sh" "$stripped" "$stripped.ltl" || exit 2
 mv "$stripped.ltl" "$stripped"
 
 # The pass is silent when it cannot lower an operator, and canonicalize deletes

@@ -44,6 +44,13 @@ want() {
 cp "$src" "$work/honest.mlir"
 want 0 honest dispatch_bucket_tag "$work/honest.mlir"
 
+# Exit 1 is the verdict the whole gate rests on, so it gets a case of its own:
+# without it a violation reported as 0 would surface as an RTL regression.
+TOP=CoarseDecoder DM=false DTM=false FORMAL_BROKEN=1 \
+  bash "$here/lower.sh" CoarseDecoder "$work/broken" >/dev/null 2>&1 ||
+  { echo "[selftest] could not lower the broken decoder" >&2; exit 2; }
+want 1 property-violated dispatch_bucket_tag "$work/broken/CoarseDecoder_bmc.mlir"
+
 grep -v 'verif\.assert' "$src" > "$work/noassert.mlir"
 want 2 property-deleted dispatch_bucket_tag "$work/noassert.mlir"
 

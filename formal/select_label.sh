@@ -21,10 +21,10 @@ grep -q "label \"$label\"" "$in" ||
   { echo "[formal] $in carries no assertion labelled $label" >&2; exit 2; }
 
 awk -v keep="$label" '
-  /verif\.assert/ { if ($0 ~ ("label \"" keep "\"")) print; next }
+  /verif\.assert/ { if (index($0, "label \"" keep "\"")) print; next }
   { print }
 ' "$in" > "$out"
 
-kept="$(grep -c 'verif\.assert' "$out")"
+kept="$(grep -c 'verif\.assert' "$out" || true)"
 [ "$kept" = 1 ] ||
   { echo "[formal] $out kept $kept assertions, expected 1" >&2; exit 2; }

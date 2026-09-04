@@ -33,11 +33,13 @@ ignore="${IGNORE_ASSERTS_UNTIL:-0}"
 : "${Z3_LIB:?set Z3_LIB to libz3.so (nix develop provides it)}"
 [ -n "${EXPECT_LABELS:-}" ] || die "set EXPECT_LABELS to the labels $mod must carry"
 [ -f "$mlir" ] || die "missing $mlir; run lower.sh first"
+# Skipping as many cycles as the bound would disarm both legs of the gate.
+[ "$ignore" -lt "$bound" ] || die "IGNORE_ASSERTS_UNTIL=$ignore disarms bound $bound"
 
 # The file must carry exactly the labels the caller named. This is what stops a
 # renamed, deleted or constant-folded property from passing as "no violations".
-got="$(grep -o 'verif\.assert[^\n]*label "[A-Za-z0-9_]*"' "$mlir" |
-  sed 's/.*label "//; s/"//' | sort -u | paste -sd, -)"
+got="$(grep -E '^[[:space:]]*verif\.assert' "$mlir" | grep -o 'label "[^"]*"' |
+  sed 's/label "//; s/"$//' | sort -u | paste -sd, -)"
 want="$(tr ',' '\n' <<<"$EXPECT_LABELS" | sort -u | paste -sd, -)"
 [ -n "$got" ] || die "$mlir carries no labelled verif.assert"
 [ "$got" = "$want" ] || die "label set mismatch in $mlir: want [$want], got [$got]"
@@ -45,6 +47,7 @@ want="$(tr ',' '\n' <<<"$EXPECT_LABELS" | sort -u | paste -sd, -)"
 out="$(circt-bmc "$mlir" -b "$bound" --module "$mod" \
   --ignore-asserts-until="$ignore" \
   --rising-clocks-only --shared-libs="$Z3_LIB" 2>&1)"
+rc=$?
 echo "$out"
 
 # circt-bmc prints the success line even for a module it found nothing to check
@@ -52,6 +55,9 @@ echo "$out"
 grep -q "no property provided to check" <<<"$out" &&
   die "circt-bmc found no property in $mod"
 
-grep -q "Bound reached with no violations" <<<"$out" && exit 0
+# A violation is reported with exit 0, so it is read first; only then is a
+# non-zero status a tool failure rather than a result.
 grep -q "Assertion can be violated" <<<"$out" && exit 1
+[ "$rc" = 0 ] || die "circt-bmc failed on $mod (exit $rc)"
+grep -q "Bound reached with no violations" <<<"$out" && exit 0
 die "circt-bmc gave no verdict for $mod"

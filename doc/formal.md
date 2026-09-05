@@ -15,7 +15,7 @@ design. Properties live in the zaozi source as `Assert(...)` behind
 make verify-formal          # all properties
 make check-formal-debug     # JTAG go-strobe is the sole launch gate
 make check-formal-core      # Core debug-FSM transition invariants
-make check-formal-decode    # decoder bucket tagging over all 64K opcodes
+make check-formal-decode    # decoder bucket tagging, see the note below
 make check-formal-selftest  # the harness rejects an injected fault
 ```
 
@@ -30,7 +30,7 @@ property cannot pass as "no violations".
 |---|---|---|
 | debug | JtagDtm | `reqReg` rises only on `updateDr & isControl & goStrobe & !reqReg` — a stuck-high or undriven cmd never launches a command |
 | core | Core | an auto-halt request latches the halt and its completion releases it; trap-2 suppression clears only on a non-nested RTE and sets only on the ack |
-| decode | CoarseDecoder | for all 65536 opcodes the dispatch address lies in the range its own bucket tag selects; the three ranges are disjoint by construction, which the solver is not asked to show |
+| decode | CoarseDecoder | the dispatch address lies in the range its own bucket tag selects. The ranges come from literals in the same expression, so this witnesses the lowering, not the decode. `make check-decode` is what verifies decoding, by sweeping all 65536 opcodes against a golden table |
 
 The debug and core properties are SVA implications over the real flops, each a
 named clause with its own `FORMAL_BROKEN` index so none rides on another's twin;

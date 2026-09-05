@@ -41,9 +41,9 @@ object CoarseDecoder
     io.dispatch := d.?(aAddr, m.?(bAddr, cAddr)).asUInt
 
     // ---- Formal (formal-only; absent from every non-formal build). ----
-    // Over the entire 64K opcode space the dispatch address lies in the range
-    // its own bucket tag selects. The three ranges are disjoint by
-    // construction, which the solver is not asked to show. Bucket A (d=1)
+    // The dispatch address lies in the range its own bucket tag selects. The
+    // ranges are literals from the expression this checks, so it witnesses the
+    // lowering, not the decode; check-decode verifies decoding. Bucket A (d=1)
     // -> [0x80,0x87] (bits[7:3]=0b10000); bucket B (d=0 & m) -> [0xC0,0xFF]
     // (bits[7:6]=0b11); bucket C (else) -> [0x00,0x7F] (bit7=0). Purely
     // combinational, so a bound of 1 makes circt-bmc quantify over all inputs.

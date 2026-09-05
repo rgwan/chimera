@@ -139,7 +139,7 @@ jobs:
       - name: Run RTL Retire-Trace Gates
         run: |
           nix develop --option sandbox false '.#cocotb' -c sh -c '
-            make check-decode check-exec-sail &&
+            make check-config-guards check-decode check-exec-sail &&
             PIPELINE=true make check-exec-sail
           '
 

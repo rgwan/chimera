@@ -444,13 +444,13 @@ EOF
           asic-lean   = { strictDecode = false; romHex = false; asic = true;  pipeline = false; };
           asic-pipe   = { strictDecode = false; romHex = false; asic = true;  pipeline = true;  };
           asic-strict = { strictDecode = true;  romHex = false; asic = true;  pipeline = false; };
-          # AXI-Lite variants (pipe tier, to match fabric clocks). `-axi` is the
-          # bare production core over AXI-Lite; `-soc` adds the JTAG debug module
-          # for SoC bring-up. Both key on the same axilite flag.
+          # AXI-Lite variants. `-axi` is the bare production core over AXI-Lite
+          # at the pipe tier, to match fabric clocks; `-soc` adds the JTAG debug
+          # module, which needs the single-cycle datapath. Both key on axilite.
           fpga-pipe-axi = { strictDecode = false; romHex = true;  asic = false; pipeline = true; axilite = true; };
           asic-pipe-axi = { strictDecode = false; romHex = false; asic = true;  pipeline = true; axilite = true; };
-          fpga-soc      = { strictDecode = false; romHex = true;  asic = false; pipeline = true; axilite = true; dm = true; dtm = true; };
-          asic-soc      = { strictDecode = false; romHex = false; asic = true;  pipeline = true; axilite = true; dm = true; dtm = true; };
+          fpga-soc      = { strictDecode = false; romHex = true;  asic = false; pipeline = false; axilite = true; dm = true; dtm = true; };
+          asic-soc      = { strictDecode = false; romHex = false; asic = true;  pipeline = false; axilite = true; dm = true; dtm = true; };
         };
 
         rtlBuild = name: cfg: pkgs.runCommand "chimera-rtl-${name}" {
@@ -613,6 +613,10 @@ EOF
           gnu-oracle-smoke = gnuOracleCheck;
           isa-cases = isaCasesCheck;
           reuse = reuseCheck;
+          # The only automatic build of an RTL preset. It covers the parameter
+          # guards and the -soc configuration, which otherwise elaborate for the
+          # first time inside the job that publishes a release.
+          rtl-fpga-soc = rtlBuild "fpga-soc" chimeraConfigs.fpga-soc;
           sail-coverage = sailCoverageCheck;
           sail-model = sailModelCheck;
         };

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Huang Rui <vowstar@gmail.com>
 # SPDX-License-Identifier: MIT
 
-.PHONY: bench-dhry bench-coremark build smoke rtl-verilog check-decode-table check-decode check-biu check-core-wait check-debug check-jtag check-autohalt check-hwbp-selfhosted check-hwbp-dm check-step-selfhosted check-step-dm check-trap2-suppress check-nondestruct check-jtag2gdb check-gdb-e2e verify-debug check-formal-debug check-formal-core check-formal-decode check-formal-selftest verify-formal check-rom-hex gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model check-axilite check-cocotb-jtag check-cocotb-axi check-cocotb-exec verify-cocotb verify-smoke check clean
+.PHONY: bench-dhry bench-coremark build smoke rtl-verilog check-config-guards check-decode-table check-decode check-biu check-core-wait check-debug check-jtag check-autohalt check-hwbp-selfhosted check-hwbp-dm check-step-selfhosted check-step-dm check-trap2-suppress check-nondestruct check-jtag2gdb check-gdb-e2e verify-debug check-formal-debug check-formal-core check-formal-decode check-formal-selftest verify-formal check-rom-hex gnu-oracle gdb-oracle gcc-footprint isa-cases sail-coverage sail-model check-axilite check-cocotb-jtag check-cocotb-axi check-cocotb-exec verify-cocotb verify-smoke check clean
 
 build: smoke
 
@@ -28,6 +28,20 @@ check-axilite:
 	  test/cocotb/wrappers/coretop_axil.sv \
 	  $$(ls rtl/generated/*.sv | grep -vE 'layers-|ref_')
 	@echo "[check-axilite] CoreTopAxi + wrapper elaborate"
+
+# The parameter guards are the only thing stopping a combination that elaborates
+# into broken hardware, so deleting one has to fail here rather than ship.
+check-config-guards:
+	@d=$$(mktemp -d); \
+	if DM=true PIPELINE=true TOP=CoreTop CHIMERA_RTL_OUT=$$d \
+	  bash rtl/build.sh >$$d/log 2>&1; then \
+	  echo "[guards] dm with pipeline elaborated; the require is gone" >&2; \
+	  exit 1; \
+	fi; \
+	grep -q "dm needs the single-cycle datapath" $$d/log || { \
+	  echo "[guards] rejected for the wrong reason:" >&2; \
+	  tail -3 $$d/log >&2; exit 1; }; \
+	rm -rf $$d; echo "[guards] dm with pipeline is rejected"
 
 check-decode-table:
 	python3 scripts/check_decode_dispatch.py --table-only

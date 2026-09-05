@@ -48,6 +48,10 @@ case class ChimeraParameter(
     "irqNumberWidth must be 1..8")
   // dm requires a DTM to reach it.
   require(!dm || dtm, "dm implies dtm")
+  // The microsequencer's debug dispatch lives only in the single-cycle branch,
+  // while the redirect into the park word is live in both. A pipelined build
+  // with a debug module therefore enters the park word and never leaves it.
+  require(!dm || !pipeline, "dm needs the single-cycle datapath")
   require(hwBreakpointCount >= 0 && hwBreakpointCount <= 8,
     "hwBreakpointCount must be 0..8")
   require(hwBreakpointCount == 0 || hardwareBreakpoint,

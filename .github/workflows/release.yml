@@ -96,7 +96,7 @@ jobs:
           | chimera-asic-strict.tar.gz | ASIC | gates | illegal-encoding guards | simple | - |
           | chimera-fpga-pipe-axi.tar.gz | FPGA | block RAM | pipelined | AXI-Lite | - |
           | chimera-asic-pipe-axi.tar.gz | ASIC | gates | pipelined | AXI-Lite | - |
-          | chimera-fpga-soc.tar.gz | FPGA | block RAM | pipelined | AXI-Lite | JTAG DM |
-          | chimera-asic-soc.tar.gz | ASIC | gates | pipelined | AXI-Lite | JTAG DM |
+          | chimera-fpga-soc.tar.gz | FPGA | block RAM | single-cycle | AXI-Lite | JTAG DM |
+          | chimera-asic-soc.tar.gz | ASIC | gates | single-cycle | AXI-Lite | JTAG DM |
 
-          FPGA tarballs include urom.memh (readmemh path is tarball-relative); ASIC tarballs carry filelist.f. AXI-Lite tarballs (-axi bare core, -soc with JTAG debug) add coretop_axil.sv exposing canonical m_axil_* ports. See README for area, frequency, power, and benchmark numbers."
+          FPGA tarballs include urom.memh (readmemh path is tarball-relative); ASIC tarballs carry filelist.f. AXI-Lite tarballs add coretop_axil.sv exposing canonical m_axil_* ports; -axi is the bare core at the pipe tier, -soc adds the JTAG debug module and is single-cycle, which the debug hold requires. See README for area, frequency, power, and benchmark numbers."

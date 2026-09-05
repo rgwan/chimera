@@ -24,6 +24,13 @@ Requires: `dm ⟹ dtm`; `hwBreakpointCount>0 ⟹ hardwareBreakpoint`;
 `hardwareBreakpoint | singleStep ⟹ dbgBase`. Single-step and hardware
 breakpoints are DM-independent.
 
+**`dm` needs the single-cycle datapath, and elaboration rejects the pair.**
+The microsequencer's debug dispatch, which is what leaves the park word, exists
+only in the single-cycle branch, while the redirect into that word is live in
+both. A pipelined build with a debug module would therefore enter the park word
+on the first halt, breakpoint or trap-2 and never leave it. The `-soc` presets
+are single-cycle for this reason.
+
 ## Self-hosted vs external
 
 - Self-hosted: a program drives the `dbgBase` MMIO registers inside its

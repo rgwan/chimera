@@ -180,6 +180,15 @@ check-formal-core:
 	rm -rf $(CORE_GEN)
 	DM=true HW_BREAKPOINT=true FORMAL_BROKEN=0 LOWER_LTL=0 \
 	  bash formal/lower.sh Core $(CORE_GEN)
+	@# Core's own assertions, before the splice pulls the children's in. A
+	@# property added to Core.scala and not to CORE_LABELS would otherwise
+	@# never be checked by anything.
+	@n=$$(grep -cE '^ *verif\.assert' $(CORE_GEN)/Core_bmc.mlir); \
+	if [ "$$n" != "$(words $(CORE_LABELS))" ]; then \
+	  echo "[formal] Core defines $$n properties, CORE_LABELS names \
+$(words $(CORE_LABELS)); add it there with a fresh FORMAL_BROKEN index" >&2; \
+	  exit 2; \
+	fi
 	@$(FLATTEN_CORE)
 	@set -e; for e in $(CORE_LABELS); do l=$${e%%:*}; \
 	  bash formal/select_label.sh $(CORE_GEN)/Core_flat_bmc.mlir $$l \

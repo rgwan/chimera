@@ -62,9 +62,12 @@ want 2 label-set-mismatch not_the_label "$work/honest.mlir"
 
 want 2 missing-file dispatch_bucket_tag "$work/absent.mlir"
 
+# The label scan is scoped to the module under check, so an assert that sits
+# in a different module must not satisfy it. Renaming the module moves the
+# assert out of @CoarseDecoder's body without touching the assert itself.
 sed 's/^  hw\.module @CoarseDecoder/  hw.module @Other/' "$src" \
   > "$work/wrongmod.mlir"
-want 2 module-not-found dispatch_bucket_tag "$work/wrongmod.mlir"
+want 2 label-outside-the-module dispatch_bucket_tag "$work/wrongmod.mlir"
 
 if [ "$fails" = 0 ]; then
   echo "[selftest] harness rejects every injected fault"

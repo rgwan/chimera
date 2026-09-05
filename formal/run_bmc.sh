@@ -38,7 +38,13 @@ ignore="${IGNORE_ASSERTS_UNTIL:-0}"
 
 # The file must carry exactly the labels the caller named. This is what stops a
 # renamed, deleted or constant-folded property from passing as "no violations".
-got="$(grep -E '^[[:space:]]*verif\.assert' "$mlir" | grep -o 'label "[^"]*"' |
+# Scoped to the body of the module under check: a labelled assert sitting in
+# some other module would otherwise satisfy the check for this one.
+got="$(awk -v m="hw.module @$mod(" '
+    index($0, m) { inmod = 1 }
+    inmod && /^[[:space:]]*verif\.assert/ { print }
+    inmod && /^  }/ { inmod = 0 }
+  ' "$mlir" | grep -o 'label "[^"]*"' |
   sed 's/label "//; s/"$//' | sort -u | paste -sd, -)"
 want="$(tr ',' '\n' <<<"$EXPECT_LABELS" | sort -u | paste -sd, -)"
 [ -n "$got" ] || die "$mlir carries no labelled verif.assert"

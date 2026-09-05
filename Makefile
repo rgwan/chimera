@@ -214,10 +214,9 @@ $(words $(CORE_LABELS)); add it there with a fresh FORMAL_BROKEN index" >&2; \
 	done
 
 # CoarseDecoder is pure combinational over the 16-bit opcode word, so a bound of
-# 1 makes circt-bmc quantify over the whole 64K space. check-formal-decode proves
-# the dispatch address always lies in the range its own bucket tag selects, over
-# every opcode. The three ranges are disjoint by construction, so decode is also
-# unambiguous, but that half is by inspection and not submitted to the solver.
+# 1 makes circt-bmc quantify over the whole 64K space. The ranges are literals
+# from the expression the property checks, so it witnesses the lowering, not the
+# decode; check-decode is what verifies decoding.
 DECODE_GEN = $(FORMAL_GEN)/decode
 check-formal-decode: export EXPECT_LABELS = dispatch_bucket_tag
 check-formal-decode:

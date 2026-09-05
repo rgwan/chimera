@@ -376,7 +376,27 @@ EOF
           touch $out
         '';
 
-        zaoziAssembly = zaozi.packages.${system}.zaozi-assembly;
+        # mill and scala-cli derive their cache and data dirs from the build
+        # user's passwd home, which is not writable (/var/empty or /dev/null,
+        # depending on the sandbox setting), and upstream sets no HOME. Without
+        # this the elaborator cannot be built on a machine that has not already
+        # got it, which is every CI runner.
+        #
+        # Upstream sets buildPhase as a variable, so stdenv runs it in place of
+        # the default phase and never reaches runHook preBuild. Prepending to
+        # the variable is what actually executes.
+        zaoziAssembly = zaozi.packages.${system}.zaozi-assembly.overrideAttrs
+          (old: {
+            buildPhase = ''
+              export HOME=$(mktemp -d)
+              export XDG_CACHE_HOME=$HOME/.cache
+              export XDG_DATA_HOME=$HOME/.local/share
+              export XDG_CONFIG_HOME=$HOME/.config
+              export COURSIER_CACHE=$HOME/coursier
+              mkdir -p "$XDG_CACHE_HOME" "$XDG_DATA_HOME" \
+                "$XDG_CONFIG_HOME" "$COURSIER_CACHE"
+            '' + old.buildPhase;
+          });
 
         # The elaborator's own dependency set, as a Maven tree. Its setup hook
         # exports COURSIER_REPOSITORIES, so scala-cli resolves offline from it

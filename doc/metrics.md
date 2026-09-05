@@ -4,6 +4,12 @@ Measured numbers per configuration. Remeasure after RTL changes; the
 microarchitecture itself is described in
 [microarchitecture.md](microarchitecture.md).
 
+The FPGA, ASIC and benchmark numbers were measured on the RTL as of 3dd7efb.
+The emitted SystemVerilog changed only in one node name across the elaborator
+and CIRCT move, so they should still hold, but nothing has re-run the vendor
+flows. The debug table is older still: it predates a change to the JTAG
+control register.
+
 ## FPGA (evaluation standard)
 
 The FPGA numbers of record come from the vendor place-and-route flow on

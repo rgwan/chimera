@@ -57,5 +57,5 @@ and AXI-Lite paths are described in [doc/axilite.md](doc/axilite.md).
 nix develop
 make rtl-verilog     # elaborate to SystemVerilog
 make check-exec-sail # RTL retire trace vs Sail model
-make verify-smoke    # all verification gates
+make verify-smoke    # Sail model and the GNU oracles, no RTL
 ```

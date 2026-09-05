@@ -16,6 +16,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # The annotated tag body becomes the "what changed" half of the
+          # release notes, so the tag object has to be fetched.
+          fetch-depth: 0
 
       - name: Install Nix
         uses: cachix/install-nix-action@v31
@@ -68,6 +72,29 @@ jobs:
             tar czf "chimera-$cfg.tar.gz" -C "$stage" .
           done
 
+      - name: Assemble release notes
+        run: |
+          git tag -l --format='%(contents)' "${{ github.ref_name }}" > notes.md
+          cat >> notes.md <<'EOF'
+
+          FPGA-first H8/300 CPU core: hybrid-microcode, multi-cycle, verified against a Sail model. Synthesizable RTL built in CI by nix; one tarball per config (production SystemVerilog, no DV collateral).
+
+          | Download | Platform | ROM | Tier | Bus | Debug |
+          |---|---|---|---|---|---|
+          | chimera-fpga-lean.tar.gz | FPGA | block RAM | single-cycle, smallest | simple | - |
+          | chimera-fpga-pipe.tar.gz | FPGA | block RAM | pipelined, highest clock | simple | - |
+          | chimera-fpga-strict.tar.gz | FPGA | block RAM | illegal-encoding guards | simple | - |
+          | chimera-asic-lean.tar.gz | ASIC | gates | single-cycle, smallest | simple | - |
+          | chimera-asic-pipe.tar.gz | ASIC | gates | pipelined, highest clock | simple | - |
+          | chimera-asic-strict.tar.gz | ASIC | gates | illegal-encoding guards | simple | - |
+          | chimera-fpga-pipe-axi.tar.gz | FPGA | block RAM | pipelined | AXI-Lite | - |
+          | chimera-asic-pipe-axi.tar.gz | ASIC | gates | pipelined | AXI-Lite | - |
+          | chimera-fpga-soc.tar.gz | FPGA | block RAM | single-cycle | AXI-Lite | JTAG DM |
+          | chimera-asic-soc.tar.gz | ASIC | gates | single-cycle | AXI-Lite | JTAG DM |
+
+          FPGA tarballs include urom.memh (readmemh path is tarball-relative); ASIC tarballs carry filelist.f. AXI-Lite tarballs add coretop_axil.sv exposing canonical m_axil_* ports; -axi is the bare core at the pipe tier, -soc adds the JTAG debug module and is single-cycle, which the debug hold requires. See README for area, frequency, power, and benchmark numbers.
+          EOF
+
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -84,19 +111,4 @@ jobs:
             chimera-fpga-soc.tar.gz \
             chimera-asic-soc.tar.gz \
             --title "Chimera ${{ github.ref_name }}" \
-            --notes "FPGA-first H8/300 CPU core: hybrid-microcode, multi-cycle, verified against a Sail model. Synthesizable RTL built in CI by nix; one tarball per config (production SystemVerilog, no DV collateral).
-
-          | Download | Platform | ROM | Tier | Bus | Debug |
-          |---|---|---|---|---|---|
-          | chimera-fpga-lean.tar.gz | FPGA | block RAM | single-cycle, smallest | simple | - |
-          | chimera-fpga-pipe.tar.gz | FPGA | block RAM | pipelined, highest clock | simple | - |
-          | chimera-fpga-strict.tar.gz | FPGA | block RAM | illegal-encoding guards | simple | - |
-          | chimera-asic-lean.tar.gz | ASIC | gates | single-cycle, smallest | simple | - |
-          | chimera-asic-pipe.tar.gz | ASIC | gates | pipelined, highest clock | simple | - |
-          | chimera-asic-strict.tar.gz | ASIC | gates | illegal-encoding guards | simple | - |
-          | chimera-fpga-pipe-axi.tar.gz | FPGA | block RAM | pipelined | AXI-Lite | - |
-          | chimera-asic-pipe-axi.tar.gz | ASIC | gates | pipelined | AXI-Lite | - |
-          | chimera-fpga-soc.tar.gz | FPGA | block RAM | single-cycle | AXI-Lite | JTAG DM |
-          | chimera-asic-soc.tar.gz | ASIC | gates | single-cycle | AXI-Lite | JTAG DM |
-
-          FPGA tarballs include urom.memh (readmemh path is tarball-relative); ASIC tarballs carry filelist.f. AXI-Lite tarballs add coretop_axil.sv exposing canonical m_axil_* ports; -axi is the bare core at the pipe tier, -soc adds the JTAG debug module and is single-cycle, which the debug hold requires. See README for area, frequency, power, and benchmark numbers."
+            --notes-file notes.md
